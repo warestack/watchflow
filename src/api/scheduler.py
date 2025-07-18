@@ -1,0 +1,27 @@
+from typing import Any
+
+from fastapi import APIRouter, BackgroundTasks
+
+from src.tasks.scheduler.deployment_scheduler import deployment_scheduler
+
+router = APIRouter()
+
+
+@router.get("/status")
+async def get_scheduler_status() -> dict[str, Any]:
+    """Get scheduler status and pending deployments."""
+    return deployment_scheduler.get_status()
+
+
+@router.post("/check-deployments")
+async def check_pending_deployments(background_tasks: BackgroundTasks):
+    """Manually re-evaluate the status of pending deployments."""
+    background_tasks.add_task(deployment_scheduler._check_pending_deployments)
+    return {"status": "scheduled", "message": "Deployment statuses will be updated on GitHub accordingly."}
+
+
+@router.get("/pending-deployments")
+async def get_pending_deployments():
+    """Get list of pending deployments."""
+    status = deployment_scheduler.get_status()
+    return {"pending_count": status["pending_count"], "deployments": status["pending_deployments"]}

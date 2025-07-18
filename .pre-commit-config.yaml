@@ -1,0 +1,39 @@
+default_stages:
+  - pre-commit
+  - pre-push
+
+# Configuration for pre-commit hooks
+repos:
+  # General hooks from the pre-commit-hooks repository
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        # Removes any trailing whitespace from lines in text files
+      - id: end-of-file-fixer
+        # Ensures files end with a newline
+      - id: check-yaml
+        exclude: '^eks_deploy/helm/templates.*\.yaml$'
+        # Checks YAML files for syntax errors
+      - id: check-json
+        # Checks JSON files for syntax errors
+
+  # Ruff hooks for Python linting and formatting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.9
+    hooks:
+      # First, run ruff format - won't change imports but will format them
+      - id: ruff-format
+        name: "Format code (without changing imports)"
+
+      # Then, use a single ruff pass for both import sorting and linting
+      - id: ruff
+        name: "Linting and import sorting"
+        args: ["--fix"]
+
+  # Conventional pre-commit hooks for commit messages
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.0.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]

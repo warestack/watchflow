@@ -1,0 +1,80 @@
+# Default values for the helm chart.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: watchflow
+    # get it from https://eu-west-2.console.aws.amazon.com/ecr/repositories?region=eu-west-2 or run:
+  # aws ecr describe-repositories --profile=warestack --output=json | jq -r '.repositories[].repositoryUri'
+  pullPolicy: Always
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "latest"
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: watchflow.dev
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: watchflow-tls
+      hosts:
+        - watchflow.dev
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Secrets - only the required ones (no defaults in config.py)
+secrets:
+  APP_NAME_GITHUB: ""
+  CLIENT_ID_GITHUB: ""
+  APP_CLIENT_SECRET: ""
+  PRIVATE_KEY_BASE64_GITHUB: ""
+  GITHUB_WEBHOOK_SECRET: ""
+  OPENAI_API_KEY: ""
+  LANGCHAIN_API_KEY: ""
+  LANGCHAIN_PROJECT: ""

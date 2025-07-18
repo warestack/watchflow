@@ -1,0 +1,84 @@
+# Workflow name
+name: "Run pre-commit hooks"
+
+# Trigger the workflow on pull requests and pushes to the "main" branch
+on:
+  pull_request:
+    branches:
+      - "main"
+  push:
+    branches:
+      - "main"
+
+# Define the jobs for the workflow
+jobs:
+  # Job name
+  pre-commit:
+    # Readable name for the job
+    name: Lint code and README files
+    # Runner environment for the job
+    runs-on: ubuntu-latest
+
+    # Steps to be executed in the job
+    steps:
+      # Checkout the repository
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN }}  # Use PAT for checkout to avoid permission issues
+
+      # Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Set up a Python virtual environment
+      - name: Set up Python and Virtual Environment
+        run: |
+          python3 -m venv venv  # Create a virtual environment
+          source venv/bin/activate  # Activate the virtual environment
+          pip install --upgrade pip  # Upgrade pip to the latest version
+          pip install pre-commit  # Install pre-commit in the virtual environment
+
+      # Install pre-commit hooks
+      - name: Install pre-commit hooks
+        run: |
+          source venv/bin/activate
+          pre-commit install
+
+      # Run pre-commit hooks on all files
+      - name: Run pre-commit
+        id: precommit
+        run: |
+          source venv/bin/activate
+          pre-commit run --all-files --show-diff-on-failure
+        continue-on-error: true  # Allow the job to continue even if pre-commit fails
+
+      # Commit and push changes if pre-commit fails
+      - name: Commit and push changes
+        if: steps.precommit.outcome == 'failure'  # Only run this step if pre-commit fails
+        run: |
+          # Set Git user name and email for committing changes
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+          # Checkout the branch associated with the pull request
+          git checkout ${{ github.head_ref }}
+
+          # Stage all changes
+          git add .
+
+          # Check if there are any changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            # Commit the changes with a meaningful message
+            git commit -m "chore: apply pre-commit hook fixes"
+
+            # Push the changes to the pull request branch using the PAT
+            git push https://${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.head_ref }}
+          fi
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}  # Set the PAT as an environment variable

@@ -1,0 +1,80 @@
+name: 'Deploy to EKS'
+on:
+  push:
+    branches:
+      - 'main'
+  release:
+    types: [created]
+
+jobs:
+  deploy:
+    name: Setup, Build, Publish, and Deploy
+    runs-on: ubuntu-latest
+    environment: preview
+    env:
+      EKS_CLUSTER: ${{ secrets.EKS_CLUSTER }}
+      EKS_NAMESPACE: ${{ secrets.EKS_NAMESPACE }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      RELEASE_NAME: ${{ secrets.RELEASE_NAME }}
+      PUBLIC_DOMAIN: ${{ secrets.PUBLIC_DOMAIN }}
+      PORT: 8000
+      HELM_PATH: helm-chart
+      JOB_STATUS: succeeded
+
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      packages: 'write'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: ecr-push
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "image_repository=$ECR_REGISTRY/$ECR_REPOSITORY" >> $GITHUB_OUTPUT
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER }}
+
+      - name: Install or upgrade helm chart
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          IMAGE_REPOSITORY: ${{ steps.ecr-push.outputs.image_repository }}
+        run: |-
+          helm upgrade ${{ env.RELEASE_NAME }} ${{ env.HELM_PATH }} --namespace ${{ env.EKS_NAMESPACE }} \
+            --values ${{ env.HELM_PATH }}/values.yaml \
+            --set image.repository=${{ env.IMAGE_REPOSITORY }} \
+            --set image.tag=${{ env.IMAGE_TAG }} \
+            --set secrets.APP_NAME_GITHUB=${{ secrets.APP_NAME_GITHUB }} \
+            --set secrets.CLIENT_ID_GITHUB=${{ secrets.CLIENT_ID_GITHUB }} \
+            --set secrets.APP_CLIENT_SECRET=${{ secrets.APP_CLIENT_SECRET }} \
+            --set secrets.PRIVATE_KEY_BASE64_GITHUB=${{ secrets.PRIVATE_KEY_BASE64_GITHUB }} \
+            --set secrets.GITHUB_WEBHOOK_SECRET=${{ secrets.GITHUB_WEBHOOK_SECRET }} \
+            --set secrets.OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} \
+            --set secrets.LANGCHAIN_API_KEY=${{ secrets.LANGCHAIN_API_KEY }} \
+            --set secrets.LANGCHAIN_PROJECT=${{ secrets.LANGCHAIN_PROJECT }} \
+            --set ingress.hosts[0].host=${{ env.PUBLIC_DOMAIN }} \
+            --set service.port=${{ env.PORT }} \
+            --install
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/${{ env.RELEASE_NAME }} -n ${{ env.EKS_NAMESPACE }} --timeout=300s
