@@ -32,6 +32,19 @@ service:
   type: ClusterIP
   port: 8000
 
+# Certificate configuration
+cert:
+  enabled: true
+  tls:
+    secretName: watchflow-tls
+  issuerRef:
+    name: cert-issuer
+    kind: ClusterIssuer
+  commonName: watchflow.dev
+  dnsNames:
+    hosts:
+      - sample.com
+
 ingress:
   enabled: true
   className: "nginx"
