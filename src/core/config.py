@@ -1,7 +1,6 @@
-import os
 import json
+import os
 from dataclasses import dataclass
-from typing import List
 
 from dotenv import load_dotenv
 
@@ -43,8 +42,8 @@ class LangSmithConfig:
 class CORSConfig:
     """CORS configuration."""
 
-    headers: List[str]
-    origins: List[str]
+    headers: list[str]
+    origins: list[str]
 
 
 @dataclass
@@ -99,7 +98,7 @@ class Config:
         # CORS configuration
         cors_headers = os.getenv("CORS_HEADERS", '["*"]')
         cors_origins = os.getenv("CORS_ORIGINS", '["http://localhost:3000", "http://127.0.0.1:3000"]')
-        
+
         try:
             self.cors = CORSConfig(
                 headers=json.loads(cors_headers),

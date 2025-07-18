@@ -180,7 +180,7 @@ class MyAgent(BaseAgent):
     def _build_graph(self) -> StateGraph:
         # Build LangGraph workflow
         pass
-    
+
     async def execute(self, **kwargs) -> AgentResult:
         # Execute agent logic
         pass

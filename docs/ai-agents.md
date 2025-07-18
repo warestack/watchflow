@@ -46,16 +46,16 @@ The Engine Agent is the core rule evaluation system that processes GitHub events
 class RuleEngineAgent(BaseAgent):
     def _build_graph(self) -> StateGraph:
         workflow = StateGraph(EngineState)
-        
+
         # Add nodes
         workflow.add_node("smart_rule_evaluation", smart_rule_evaluation)
         workflow.add_node("validate_violations", validate_violations)
-        
+
         # Add edges
         workflow.add_edge(START, "smart_rule_evaluation")
         workflow.add_edge("smart_rule_evaluation", "validate_violations")
         workflow.add_edge("validate_violations", END)
-        
+
         return workflow.compile()
 ```
 
@@ -131,14 +131,14 @@ The Feasibility Agent analyzes natural language rule descriptions and determines
 class RuleFeasibilityAgent(BaseAgent):
     def _build_graph(self) -> StateGraph:
         workflow = StateGraph(FeasibilityState)
-        
+
         workflow.add_node("analyze_feasibility", analyze_rule_feasibility)
         workflow.add_node("generate_yaml", generate_yaml_config)
-        
+
         workflow.add_edge(START, "analyze_feasibility")
         workflow.add_edge("analyze_feasibility", "generate_yaml")
         workflow.add_edge("generate_yaml", END)
-        
+
         return workflow.compile()
 ```
 
@@ -261,11 +261,11 @@ class BaseAgent(ABC):
         self._validate_config()
         self.llm = self._create_llm_client()
         self.graph = self._build_graph()
-    
+
     @abstractmethod
     def _build_graph(self) -> StateGraph:
         pass
-    
+
     @abstractmethod
     async def execute(self, **kwargs) -> AgentResult:
         pass

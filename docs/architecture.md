@@ -9,10 +9,10 @@ Watchflow is built as a stateless, event-driven system that processes GitHub web
 ## Core Architecture
 
 ```
-┌─────────────────┐    ┌──────────────────┐  
+┌─────────────────┐    ┌──────────────────┐
 │   GitHub App    │── ▶│  Webhook Router  │
-│                 │    │                  │   
-└─────────────────┘    └──────────────────┘   
+│                 │    │                  │
+└─────────────────┘    └──────────────────┘
                                 │
                                 ▼
                        ┌──────────────────┐
@@ -26,7 +26,7 @@ Watchflow is built as a stateless, event-driven system that processes GitHub web
                        │                  │
                        └──────────────────┘
                                 │
-                                ▼                                
+                                ▼
                        ┌──────────────────┐
                        │  AI Agents       │
                        │  (LangGraph)     │
@@ -121,7 +121,7 @@ sequenceDiagram
     participant WR as Webhook Router
     participant ED as Event Dispatcher
     participant EP as Event Processor
-    
+
     GH->>WR: Webhook Event
     WR->>WR: Verify Signature
     WR->>ED: Route Event
@@ -140,7 +140,7 @@ sequenceDiagram
     participant EA as Engine Agent
     participant V as Validators
     participant LLM as LLM
-    
+
     EP->>EA: Event + Rules
     EA->>EA: Filter Applicable Rules
     EA->>EA: Select Evaluation Strategy
@@ -296,4 +296,4 @@ sequenceDiagram
 
 - **Multi-tenancy**: Support for multiple organizations
 - **Audit Logging**: Comprehensive audit trails
-- **Compliance Reporting**: Built-in compliance reporting 
+- **Compliance Reporting**: Built-in compliance reporting

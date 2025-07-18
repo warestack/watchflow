@@ -36,4 +36,4 @@ RUN chmod +x scripts/*.sh
 EXPOSE 8000
 
 # Start the application using production script
-CMD ["./scripts/start-prod.sh"] 
+CMD ["./scripts/start-prod.sh"]
