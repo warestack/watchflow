@@ -7,11 +7,6 @@ set -e
 SCRIPT_DIR=$(dirname "$0")
 PROJECT_ROOT="$SCRIPT_DIR/.."
 
-# Run migrations
-echo "Running database migrations..."
-"$SCRIPT_DIR/db-migrate.sh" upgrade head
-echo "Migrations complete."
-
 # Application path for FastAPI CLI
 APP_PATH="src/main.py"
 
