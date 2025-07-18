@@ -2,8 +2,10 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
+# Application deployment configuration
 replicaCount: 1
 
+# Docker image configuration
 image:
   repository: watchflow
     # get it from https://eu-west-2.console.aws.amazon.com/ecr/repositories?region=eu-west-2 or run:
@@ -12,27 +14,37 @@ image:
   # Overrides the image tag whose default is the chart appVersion.
   tag: "latest"
 
+# Image pull secrets for private registries
 imagePullSecrets: []
 
+# Name overrides for the chart
 nameOverride: ""
 fullnameOverride: ""
 
+# Service account configuration
 serviceAccount:
   create: true
   annotations: {}
   name: ""
 
+# Pod annotations and security context
 podAnnotations: {}
 
 podSecurityContext: {}
 
 securityContext: {}
 
+# Kubernetes service configuration
 service:
   type: ClusterIP
   port: 8000
 
-# Certificate configuration
+# Health check configuration for liveness and readiness probes
+healthChecks:
+  path: /
+  enabled: true
+
+# Certificate configuration for TLS termination
 cert:
   enabled: true
   tls:
@@ -45,6 +57,7 @@ cert:
     hosts:
       - sample.com
 
+# Ingress configuration for external access
 ingress:
   enabled: true
   className: "nginx"
@@ -61,6 +74,7 @@ ingress:
       hosts:
         - watchflow.dev
 
+# Resource limits and requests for the application
 resources:
   limits:
     cpu: 1000m
@@ -69,19 +83,21 @@ resources:
     cpu: 500m
     memory: 512Mi
 
+# Horizontal Pod Autoscaler configuration
 autoscaling:
   enabled: true
   minReplicas: 1
   maxReplicas: 10
   targetCPUUtilizationPercentage: 80
 
+# Node placement configuration
 nodeSelector: {}
 
 tolerations: []
 
 affinity: {}
 
-# Secrets - only the required ones (no defaults in config.py)
+# Application secrets configuration - only the required ones (no defaults in config.py)
 secrets:
   APP_NAME_GITHUB: ""
   CLIENT_ID_GITHUB: ""
