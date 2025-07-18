@@ -67,7 +67,7 @@ jobs:
             --set secrets.CLIENT_ID_GITHUB=${{ secrets.CLIENT_ID_GITHUB }} \
             --set secrets.APP_CLIENT_SECRET=${{ secrets.APP_CLIENT_SECRET }} \
             --set secrets.PRIVATE_KEY_BASE64_GITHUB=${{ secrets.PRIVATE_KEY_BASE64_GITHUB }} \
-            --set secrets.GITHUB_WEBHOOK_SECRET=${{ secrets.GITHUB_WEBHOOK_SECRET }} \
+            --set secrets.WEBHOOK_SECRET_GITHUB=${{ secrets.WEBHOOK_SECRET_GITHUB }} \
             --set secrets.OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} \
             --set secrets.LANGCHAIN_API_KEY=${{ secrets.LANGCHAIN_API_KEY }} \
             --set secrets.LANGCHAIN_PROJECT=${{ secrets.LANGCHAIN_PROJECT }} \

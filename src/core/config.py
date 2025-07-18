@@ -76,7 +76,7 @@ class Config:
             app_id=os.getenv("CLIENT_ID_GITHUB", ""),
             app_client_secret=os.getenv("APP_CLIENT_SECRET", ""),
             private_key=os.getenv("PRIVATE_KEY_BASE64_GITHUB", ""),
-            webhook_secret=os.getenv("GITHUB_WEBHOOK_SECRET", ""),
+            webhook_secret=os.getenv("WEBHOOK_SECRET_GITHUB", ""),
         )
 
         self.ai = AIConfig(
@@ -143,7 +143,7 @@ class Config:
             errors.append("PRIVATE_KEY_BASE64_GITHUB is required")
 
         if not self.github.webhook_secret:
-            errors.append("GITHUB_WEBHOOK_SECRET is required")
+            errors.append("WEBHOOK_SECRET_GITHUB is required")
 
         if self.ai.provider == "openai" and not self.ai.api_key:
             errors.append("OPENAI_API_KEY is required for OpenAI provider")
