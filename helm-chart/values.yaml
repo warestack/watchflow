@@ -23,7 +23,7 @@ fullnameOverride: ""
 
 # Service account configuration
 serviceAccount:
-  create: true
+  create: false
   annotations: {}
   name: ""
 
@@ -36,8 +36,10 @@ securityContext: {}
 
 # Kubernetes service configuration
 service:
-  type: ClusterIP
-  port: 8000
+  type: NodePort
+  ports:
+    - port: 8000
+      targetPort: 8000
 
 # Health check configuration for liveness and readiness probes
 healthChecks:
@@ -62,8 +64,7 @@ ingress:
   enabled: true
   className: "nginx"
   annotations:
-    kubernetes.io/ingress.class: nginx
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
   hosts:
     - host: watchflow.dev
       paths:
