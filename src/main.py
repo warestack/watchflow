@@ -30,7 +30,7 @@ logging.basicConfig(
 
 app = FastAPI(
     title="Watchflow",
-    description="Intelligent GitHub workflow monitoring and enforcement.",
+    description="Agentic GitHub Guardrails.",
     version="0.1.0",
 )
 
@@ -56,7 +56,7 @@ app.include_router(scheduler_api_router, prefix="/api/v1/scheduler", tags=["Sche
 @app.get("/", tags=["Health Check"])
 async def read_root():
     """A simple health check endpoint to confirm the service is running."""
-    return {"status": "ok", "message": "Watchflow service is running."}
+    return {"status": "ok", "message": "Watchflow agents are running."}
 
 
 # --- Application Lifecycle ---

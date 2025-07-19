@@ -1,33 +1,38 @@
 # Watchflow
 
-Intelligent GitHub workflow monitoring and enforcement powered by AI agents.
+Agentic Guardrails for GitHub repositories that enforces rules and improves team collaboration.
 
 ## Overview
 
-Watchflow is an intelligent governance solution for GitHub repositories that uses AI agents to automate policy enforcement and improve collaboration. By combining natural language rule definitions with real-time event processing, Watchflow provides nuanced governance that adapts to your team's workflow.
+Watchflow is a governance tool that uses AI agents to automate policy enforcement across your GitHub repositories. By
+combining rule-based logic with AI-powered intelligence, Watchflow provides context-aware governance that adapts to your
+team's workflow and scales with your organization.
 
-## Problem Statement
+## Why Watchflow?
 
-Traditional CI/CD rules are rigid and often fail to capture the complexity of real-world development scenarios. Teams need:
+Traditional governance tools are rigid and often fail to capture the complexity of real-world development scenarios.
+Teams need:
 
 - **Intelligent rule evaluation** that understands context and intent
-- **Flexible acknowledgment systems** that allow for justified exceptions
+- **Flexible acknowledgment systems** that allow for legitimate exceptions
 - **Real-time governance** that scales with repository activity
-- **Natural language interfaces** that make rule creation accessible
+- **Plug n play GitHub integration** that works within existing workflows
 
-## Solution
+## How It Works
 
 Watchflow addresses these challenges through:
 
-- **AI-Powered Rule Engine**: Uses LangGraph agents with GPT-4.1-mini to intelligently evaluate rules against repository events
-- **Hybrid Evaluation Strategy**: Combines fast validators for common checks with LLM reasoning for complex scenarios
-- **Intelligent Acknowledgments**: Processes acknowledgment requests through PR comments with context-aware decision making
-- **Stateless Architecture**: Fully scalable FastAPI backend with no persistent storage requirements
+- **AI-Powered Rule Engine**: Uses AI agents to intelligently evaluate rules against repository events
+- **Hybrid Architecture**: Combines rule-based logic with AI intelligence for optimal performance
+- **Intelligent Acknowledgments**: Processes acknowledgment requests through PR comments with context-aware decision
+  making
+- **Plug n play Integration**: Works within GitHub interface with no additional UI required
 
-## Core Features
+## Key Features
 
 ### Natural Language Rules
-Define governance rules in plain English. Watchflow translates these into actionable YAML configurations and provides intelligent evaluation.
+Define governance rules in plain English. Watchflow translates these into actionable YAML configurations and provides
+intelligent evaluation.
 
 ```yaml
 rules:
@@ -42,96 +47,42 @@ rules:
       message: "Deployments are not allowed on weekends"
 ```
 
-### Agent-Powered Decisions
-Three specialized AI agents work together:
+### Flexible Rule System
+Define governance rules in YAML format with rich conditions and actions. Support for approval requirements, security
+reviews, deployment protection, and more.
 
-- **Engine Agent**: Hybrid rule evaluation using validators and LLM reasoning
-- **Feasibility Agent**: Analyzes rule descriptions and generates YAML configurations
-- **Acknowledgment Agent**: Evaluates acknowledgment requests with context awareness
+### Intelligent Acknowledgment Workflow
+When rules are violated, developers can acknowledge them with simple comments. AI agents evaluate requests and provide
+context-aware decisions.
 
-### Real-time Event Processing
-Processes GitHub events (push, pull_request, check_run, deployment, etc.) securely and asynchronously, with dynamic context enrichment via GitHub API.
+## Hybrid Architecture
 
-## Architecture
+Watchflow uses a unique hybrid architecture that combines rule-based logic with AI-powered intelligence:
 
-### Key Components
-
-- **Webhook Handlers**: Secure GitHub event processing with signature verification
-- **Event Processors**: Context enrichment and rule evaluation orchestration
-- **AI Agents**: LangGraph-based intelligent decision making
-- **Task Queue**: Asynchronous processing for scalability
-- **Rule System**: YAML-based rule definition and validation
+- **Rule Engine**: Fast, deterministic rule evaluation for common scenarios
+- **AI Agents**: Intelligent context analysis and decision making
+- **Decision Orchestrator**: Combines both approaches for optimal results
+- **GitHub Integration**: Plug n play event processing and action execution
 
 ## Quick Start
 
-### Prerequisites
+Get Watchflow up and running in minutes to start enforcing governance rules in your GitHub repositories.
 
-- Python 3.12+
-- GitHub App credentials
-- OpenAI API key
-- Public webhook endpoint (ngrok for local development)
+### Step 1: Install GitHub App
 
-### Installation
+1. **Go to GitHub App Installation**
+   - Visit [Watchflow GitHub App](https://github.com/apps/watchflow)
+   - Click "Install"
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/watchflow/watchflow.git
-   cd watchflow
-   ```
+2. **Configure App Settings**
+   - Select repositories to install on
+   - Grant required permissions:
+     - Repository permissions: Contents (Read), Pull requests (Read & write), Issues (Read & write)
+     - Subscribe to events: Pull requests, Push, Deployment
 
-2. **Install dependencies**:
-   ```bash
-   pip install -e .
-   ```
+### Step 2: Create Rules Configuration
 
-3. **Configure environment**:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your credentials
-   ```
-
-4. **Run the application**:
-   ```bash
-   uvicorn src.main:app --reload
-   ```
-
-### Environment Variables
-
-```bash
-# GitHub App Configuration
-APP_NAME_GITHUB=your-app-name
-CLIENT_ID_GITHUB=your-app-id
-APP_CLIENT_SECRET=your-client-secret
-PRIVATE_KEY_BASE64_GITHUB=your-base64-private-key
-GITHUB_WEBHOOK_SECRET=your-webhook-secret
-
-# AI Configuration
-OPENAI_API_KEY=your-openai-api-key
-AI_MODEL=gpt-4.1-mini
-AI_MAX_TOKENS=4096
-AI_TEMPERATURE=0.1
-
-# LangSmith Configuration (Optional - for debugging AI agents)
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
-LANGCHAIN_API_KEY=your-langsmith-api-key
-LANGCHAIN_PROJECT=watchflow-dev
-
-# Development Settings
-DEBUG=true
-LOG_LEVEL=DEBUG
-ENVIRONMENT=development
-
-# CORS Configuration
-CORS_HEADERS=["*"]
-CORS_ORIGINS='["http://localhost:3000", "http://127.0.0.1:3000"]'
-```
-
-## Usage
-
-### Creating Rules
-
-Define rules in `.watchflow/rules.yaml` in your repository:
+Create `.watchflow/rules.yaml` in your repository root:
 
 ```yaml
 rules:
@@ -156,56 +107,66 @@ rules:
       message: "Deployments are not allowed on weekends"
 ```
 
-### Acknowledging Violations
+### Step 3: Test Your Setup
 
-When rules are violated, team members can acknowledge them via PR comments:
+1. **Create a test pull request**
+2. **Try acknowledgment workflow**: Comment `@watchflow acknowledge` when rules are violated
+3. **Verify rule enforcement**: Check that blocking rules prevent merging
 
-```
-@watchflow acknowledge: This is a hotfix for a critical production issue
-```
+## Configuration
 
-The acknowledgment agent will evaluate the request and approve or reject based on context.
+For advanced configuration options, see the [Configuration Guide](docs/getting-started/configuration.md).
 
-## API Reference
+## Usage
 
-### Webhook Endpoints
+### Comment Commands
 
-- `POST /webhooks/github` - GitHub webhook receiver
-
-### Public API
-
-- `GET /` - Health check
-- `POST /api/v1/rules/evaluate` - Evaluate natural language rules
-- `GET /health/tasks` - Task queue status
-- `GET /health/scheduler` - Scheduler status
-
-## Development
-
-See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed development setup instructions.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
-
-## Deployment
-
-### Docker
+Use these commands in PR comments to interact with Watchflow:
 
 ```bash
-docker-compose up --build
+# Acknowledge a violation
+@watchflow acknowledge
+
+# Acknowledge with reasoning
+@watchflow acknowledge - Documentation updates only, no code changes
+
+# Request escalation
+@watchflow escalate - Critical security fix needed, reviewers unavailable
+
+# Check rule status
+@watchflow status
+
+# Get help
+@watchflow help
 ```
 
-### Kubernetes
+### Example Scenarios
 
-Helm charts are available in the `eks_deploy/helm/` directory for Kubernetes deployment.
+**Can Acknowledge**: When a PR lacks required approvals but it's an emergency fix, developers can acknowledge with
+`@watchflow acknowledge - Emergency fix, team is unavailable`.
+
+**Remains Blocked**: When deploying to production without security review, the deployment stays blocked even with
+acknowledgment - security review is mandatory.
+
+**Can Acknowledge**: When weekend deployment rules are violated for a critical issue, developers can acknowledge with
+`@watchflow acknowledge - Critical production fix needed`.
+
+**Remains Blocked**: When sensitive files are modified without proper review, the PR remains blocked until security team
+approval - no acknowledgment possible.
+
+## Documentation
+
+- [Quick Start Guide](docs/getting-started/quick-start.md) - Get up and running in 5 minutes
+- [Configuration Guide](docs/getting-started/configuration.md) - Advanced rule configuration
+- [Features](docs/features.md) - Platform capabilities and benefits
+- [Performance Benchmarks](docs/benchmarks.md) - Impact metrics and results
+
+## Support
+
+- **GitHub Issues**: [Report problems](https://github.com/warestack/watchflow/issues)
+- **Discussions**: [Ask questions](https://github.com/warestack/watchflow/discussions)
+- **Documentation**: [Full documentation](docs/)
 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Support
-
-- [Documentation](https://docs.watchflow.dev)
-- [Issues](https://github.com/warestack/watchflow/issues)
-- [Discussions](https://github.com/warestack/watchflow/discussions)
-- [Email](mailto:team@warestack.com)
