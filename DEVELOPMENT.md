@@ -19,15 +19,31 @@ git clone https://github.com/watchflow/watchflow.git
 cd watchflow
 ```
 
-### 2. Install Dependencies
+### 2. Create Virtual Environment
 
 Using uv (recommended):
 ```bash
+# Create and activate virtual environment
+uv venv
+source .venv/bin/activate  # On macOS/Linux
+# or
+.venv\Scripts\activate     # On Windows
+
+# Install dependencies
 uv sync
 ```
 
 Or using pip:
 ```bash
+# Create virtual environment
+python -m venv .venv
+
+# Activate virtual environment
+source .venv/bin/activate  # On macOS/Linux
+# or
+.venv\Scripts\activate     # On Windows
+
+# Install dependencies
 pip install -e ".[dev]"
 ```
 
@@ -47,7 +63,7 @@ APP_NAME_GITHUB=your-app-name
 CLIENT_ID_GITHUB=your-app-id
 APP_CLIENT_SECRET=your-client-secret
 PRIVATE_KEY_BASE64_GITHUB=your-base64-private-key
-GITHUB_WEBHOOK_SECRET=your-webhook-secret
+WEBHOOK_SECRET_GITHUB=your-webhook-secret
 
 # AI Configuration
 OPENAI_API_KEY=your-openai-api-key
