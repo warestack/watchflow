@@ -108,7 +108,7 @@ class Config:
             # Fallback to default values if JSON parsing fails
             self.cors = CORSConfig(
                 headers=["*"],
-                origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+                origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5500"],
             )
 
         self.repo_config = RepoConfig(
