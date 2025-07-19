@@ -45,7 +45,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync
+          uv sync --extra docs
 
       - name: Build documentation
         run: mkdocs build
@@ -66,4 +66,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4 
+        uses: actions/deploy-pages@v4

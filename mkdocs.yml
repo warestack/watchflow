@@ -59,11 +59,14 @@ theme:
 # Navigation structure
 nav:
   - Home: index.md
-  - Quick Start: getting-started/quick-start.md
-  - Configuration: getting-started/configuration.md
-  - Features: features.md
-  - Benchmarks: benchmarks.md
-  - Architecture: concepts/overview.md
+  - Getting Started:
+    - Quick Start: getting-started/quick-start.md
+    - Configuration: getting-started/configuration.md
+  - Features & Capabilities:
+    - Features: features.md
+    - Comparative Analysis: benchmarks.md
+  - Architecture:
+    - Overview: concepts/overview.md
 
 # Plugins
 plugins:
@@ -131,4 +134,4 @@ extra:
       link: https://github.com/warestack/watchflow
   analytics:
     provider: google
-    property: !ENV GOOGLE_ANALYTICS_KEY 
+    property: ${GOOGLE_ANALYTICS_KEY}

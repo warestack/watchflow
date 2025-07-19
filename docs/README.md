@@ -16,7 +16,7 @@ This directory contains the documentation for Watchflow, built with [MkDocs](htt
    ```bash
    # Install all dependencies including docs
    uv sync
-   
+
    # Or install just the docs dependencies
    uv add mkdocs-material mkdocs-git-revision-date-localized-plugin mkdocs-minify-plugin pymdown-extensions
    ```
@@ -218,4 +218,4 @@ The documentation is configured via `mkdocs.yml` in the root directory. Key conf
 
 ---
 
-*For questions about the documentation, please open an issue or start a discussion on GitHub.* 
+*For questions about the documentation, please open an issue or start a discussion on GitHub.*

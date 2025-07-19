@@ -3,19 +3,19 @@
 <div class="grid cards" markdown>
 
 -   :fontawesome-solid-rocket: __[Quick Start](getting-started/quick-start.md)__
-    
+
     Get up and running in minutes
 
 -   :fontawesome-solid-shield: __[Features](features.md)__
-    
+
     Explore context-aware monitoring capabilities
 
 -   :fontawesome-solid-chart-line: __[Comparative Analysis](benchmarks.md)__
-    
+
     See real-world impact and results
 
 -   :fontawesome-solid-cog: __[Configuration](getting-started/configuration.md)__
-    
+
     Advanced rule configuration
 
 </div>
@@ -33,7 +33,7 @@ deployments, and workflow changes based on real context.
 Traditional GitHub protection rules are:
 
 - **Static**: Rigid true/false decisions
-- **Context-blind**: Don't consider urgency, roles, or circumstances  
+- **Context-blind**: Don't consider urgency, roles, or circumstances
 - **High maintenance**: Require constant updates
 - **Limited coverage**: Catch only obvious violations
 
@@ -111,4 +111,4 @@ Guardrails work.
 
 ---
 
-*Watchflow ensures consistent quality standards so teams can focus on building, increase trust, and move fast.* 
+*Watchflow ensures consistent quality standards so teams can focus on building, increase trust, and move fast.*

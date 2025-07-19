@@ -100,22 +100,22 @@ parameters:
   min_approvals: 2
   required_teams: ["security-team", "senior-engineers"]
   excluded_reviewers: ["author"]
-  
+
   # File patterns (glob syntax)
   file_patterns: ["**/security/**", "**/auth/**", "*.env*"]
   excluded_files: ["docs/**", "*.md", "**/test/**"]
-  
+
   # Time restrictions
   restricted_days: [Saturday, Sunday]
   restricted_hours: [22, 23, 0, 1, 2, 3, 4, 5, 6]
   timezone: "UTC"
-  
+
   # Size limits
   max_files: 20
   max_lines: 500
   max_deletions: 100
   max_additions: 1000
-  
+
   # Branch patterns
   protected_branches: ["main", "master", "production"]
   excluded_branches: ["feature/*", "hotfix/*"]
@@ -141,7 +141,7 @@ rules:
     actions:
       - type: comment
         message: "Consider updating documentation for this change"
-        
+
   - id: warning-rule
     name: Large PR Warning
     description: Warn about large pull requests
@@ -149,7 +149,7 @@ rules:
     actions:
       - type: comment
         message: "This is a large PR. Consider breaking it into smaller changes."
-        
+
   - id: critical-rule
     name: Security Review Required
     description: Block security-sensitive changes
@@ -177,12 +177,12 @@ rules:
   - id: pr-rule
     name: PR Review Required
     event_types: [pull_request]
-    
+
   # Deployment-specific rule
   - id: deployment-rule
     name: Production Deployment Protection
     event_types: [deployment]
-    
+
   # Multi-event rule
   - id: general-rule
     name: General Security Check
