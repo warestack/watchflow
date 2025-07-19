@@ -40,43 +40,6 @@ mkdocs build
 mkdocs serve
 ```
 
-## Documentation Structure
-
-```
-docs/
-├── index.md                    # Homepage
-├── getting-started/            # Quick start guides
-│   ├── quick-start.md
-│   ├── installation.md
-│   └── configuration.md
-├── concepts/                   # Core concepts
-│   ├── overview.md
-│   ├── agentic-devops.md
-│   ├── grammar-for-devops.md
-│   └── context-aware-rules.md
-├── user-guide/                 # User documentation
-│   ├── setting-up-rules.md
-│   ├── github-integration.md
-│   ├── webhook-configuration.md
-│   └── monitoring-alerts.md
-├── api/                        # API documentation
-│   ├── overview.md
-│   ├── webhooks.md
-│   └── configuration.md
-├── deployment/                 # Deployment guides
-│   ├── docker.md
-│   ├── kubernetes.md
-│   └── cloud-platforms.md
-├── development/                # Developer documentation
-│   ├── contributing.md
-│   ├── architecture.md
-│   └── testing.md
-├── troubleshooting/            # Troubleshooting guides
-│   ├── common-issues.md
-│   └── debugging.md
-└── glossary.md                 # Terminology and definitions
-```
-
 ## Writing Guidelines
 
 ### Markdown Format

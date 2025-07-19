@@ -45,7 +45,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --extra docs
+          uv sync --locked --all-extras --dev
 
       - name: Build documentation
         run: mkdocs build
