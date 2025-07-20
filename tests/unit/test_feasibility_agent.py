@@ -3,7 +3,7 @@ Unit tests for the Rule Feasibility Agent with structured output.
 These tests mock external dependencies (OpenAI API) for fast, isolated testing.
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -17,8 +17,11 @@ class TestRuleFeasibilityAgent:
     @pytest.fixture
     def agent(self):
         """Create agent instance for testing."""
-        # Mock the config validation to avoid requiring API key
-        with patch("src.agents.base.BaseAgent._validate_config"):
+        # Mock both config validation and LLM client creation to avoid requiring API key
+        with (
+            patch("src.agents.base.BaseAgent._validate_config"),
+            patch("src.agents.base.BaseAgent._create_llm_client", return_value=MagicMock()),
+        ):
             return RuleFeasibilityAgent()
 
     @pytest.fixture
