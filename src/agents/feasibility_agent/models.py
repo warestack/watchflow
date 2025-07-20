@@ -5,14 +5,20 @@ Data models for the Rule Feasibility Agent.
 from pydantic import BaseModel, Field
 
 
-class FeasibilityResult(BaseModel):
-    """Result of checking if a rule is feasible."""
+class FeasibilityAnalysis(BaseModel):
+    """Structured output model for rule feasibility analysis."""
 
-    is_feasible: bool
-    yaml_content: str
-    feedback: str
-    confidence_score: float | None = None
-    rule_type: str | None = None
+    is_feasible: bool = Field(description="Whether the rule is feasible to implement with Watchflow")
+    rule_type: str = Field(description="Type of rule (time_restriction, branch_pattern, title_pattern, etc.)")
+    confidence_score: float = Field(description="Confidence score from 0.0 to 1.0", ge=0.0, le=1.0)
+    feedback: str = Field(description="Detailed feedback on implementation considerations")
+    analysis_steps: list[str] = Field(description="Step-by-step analysis breakdown", default_factory=list)
+
+
+class YamlGeneration(BaseModel):
+    """Structured output model for YAML configuration generation."""
+
+    yaml_content: str = Field(description="Generated Watchflow YAML rule configuration")
 
 
 class FeasibilityState(BaseModel):
