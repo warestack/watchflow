@@ -17,7 +17,9 @@ class TestRuleFeasibilityAgent:
     @pytest.fixture
     def agent(self):
         """Create agent instance for testing."""
-        return RuleFeasibilityAgent()
+        # Mock the config validation to avoid requiring API key
+        with patch("src.agents.base.BaseAgent._validate_config"):
+            return RuleFeasibilityAgent()
 
     @pytest.fixture
     def mock_feasible_analysis(self):
