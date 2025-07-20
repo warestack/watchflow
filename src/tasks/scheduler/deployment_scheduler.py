@@ -16,8 +16,15 @@ class DeploymentScheduler:
         self.running = False
         self.pending_deployments: list[dict[str, Any]] = []
         self.scheduler_task = None
-        # Create instance of RuleAnalysisAgent
-        self.engine_agent = RuleEngineAgent()
+        # Lazy-load engine agent to avoid API key validation at import time
+        self._engine_agent = None
+
+    @property
+    def engine_agent(self) -> RuleEngineAgent:
+        """Lazy-load the engine agent to avoid API key validation at import time."""
+        if self._engine_agent is None:
+            self._engine_agent = RuleEngineAgent()
+        return self._engine_agent
 
     async def start(self):
         """Start the scheduler."""
@@ -351,5 +358,13 @@ class DeploymentScheduler:
             await self.stop()
 
 
-# Global instance
-deployment_scheduler = DeploymentScheduler()
+# Global instance - lazy loaded to avoid API key validation at import time
+deployment_scheduler = None
+
+
+def get_deployment_scheduler() -> DeploymentScheduler:
+    """Get the global deployment scheduler instance, creating it if needed."""
+    global deployment_scheduler
+    if deployment_scheduler is None:
+        deployment_scheduler = DeploymentScheduler()
+    return deployment_scheduler

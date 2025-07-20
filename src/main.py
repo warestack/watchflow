@@ -9,7 +9,7 @@ from src.api.rules import router as rules_api_router
 from src.api.scheduler import router as scheduler_api_router
 from src.core.config import config
 from src.core.models import EventType
-from src.tasks.scheduler.deployment_scheduler import deployment_scheduler
+from src.tasks.scheduler.deployment_scheduler import get_deployment_scheduler
 from src.tasks.task_queue import task_queue
 from src.webhooks.dispatcher import dispatcher
 from src.webhooks.handlers.check_run import CheckRunEventHandler
@@ -40,7 +40,7 @@ async def lifespan(_app: FastAPI):
     await task_queue.start_workers(num_workers=5)
 
     # Start deployment scheduler
-    await deployment_scheduler.start()
+    await get_deployment_scheduler().start()
 
     # Register event handlers
     pull_request_handler = PullRequestEventHandler()
@@ -64,7 +64,7 @@ async def lifespan(_app: FastAPI):
     print("Event handlers registered, background workers started, and deployment scheduler started.")
 
     # Start the deployment scheduler
-    asyncio.create_task(deployment_scheduler.start_background_scheduler())
+    asyncio.create_task(get_deployment_scheduler().start_background_scheduler())
     logging.info("🚀 Deployment scheduler started")
 
     yield
@@ -73,7 +73,7 @@ async def lifespan(_app: FastAPI):
     print("Watchflow application shutting down...")
 
     # Stop deployment scheduler
-    await deployment_scheduler.stop()
+    await get_deployment_scheduler().stop()
 
     # Stop background workers
     await task_queue.stop_workers()
@@ -140,4 +140,4 @@ async def health_tasks():
 @app.get("/health/scheduler", tags=["Health Check"])
 async def health_scheduler():
     """Check the status of the deployment scheduler."""
-    return deployment_scheduler.get_status()
+    return get_deployment_scheduler().get_status()
