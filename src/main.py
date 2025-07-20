@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,43 +29,11 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)8s %(message)s",
 )
 
-app = FastAPI(
-    title="Watchflow",
-    description="Agentic GitHub Guardrails.",
-    version="0.1.0",
-)
 
-# --- CORS Configuration ---
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=config.cors.origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=config.cors.headers,
-)
-
-# --- Include Routers ---
-
-app.include_router(webhook_router, prefix="/webhooks", tags=["GitHub Webhooks"])
-app.include_router(rules_api_router, prefix="/api/v1", tags=["Public API"])
-app.include_router(scheduler_api_router, prefix="/api/v1/scheduler", tags=["Scheduler API"])
-
-# --- Root Endpoint ---
-
-
-@app.get("/", tags=["Health Check"])
-async def read_root():
-    """A simple health check endpoint to confirm the service is running."""
-    return {"status": "ok", "message": "Watchflow agents are running."}
-
-
-# --- Application Lifecycle ---
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Application startup logic."""
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Application lifespan manager for startup and shutdown logic."""
+    # Startup logic
     print("Watchflow application starting up...")
 
     # Start background task workers
@@ -98,10 +67,9 @@ async def startup_event():
     asyncio.create_task(deployment_scheduler.start_background_scheduler())
     logging.info("🚀 Deployment scheduler started")
 
+    yield
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Application shutdown logic."""
+    # Shutdown logic
     print("Watchflow application shutting down...")
 
     # Stop deployment scheduler
@@ -111,6 +79,38 @@ async def shutdown_event():
     await task_queue.stop_workers()
 
     print("Background workers and deployment scheduler stopped.")
+
+
+app = FastAPI(
+    title="Watchflow",
+    description="Agentic GitHub Guardrails.",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+
+# --- CORS Configuration ---
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=config.cors.origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=config.cors.headers,
+)
+
+# --- Include Routers ---
+
+app.include_router(webhook_router, prefix="/webhooks", tags=["GitHub Webhooks"])
+app.include_router(rules_api_router, prefix="/api/v1", tags=["Public API"])
+app.include_router(scheduler_api_router, prefix="/api/v1/scheduler", tags=["Scheduler API"])
+
+# --- Root Endpoint ---
+
+
+@app.get("/", tags=["Health Check"])
+async def read_root():
+    """A simple health check endpoint to confirm the service is running."""
+    return {"status": "ok", "message": "Watchflow agents are running."}
 
 
 # --- Health Check Endpoints ---
