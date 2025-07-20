@@ -97,7 +97,10 @@ class Config:
 
         # CORS configuration
         cors_headers = os.getenv("CORS_HEADERS", '["*"]')
-        cors_origins = os.getenv("CORS_ORIGINS", '["http://localhost:3000", "http://127.0.0.1:3000"]')
+        cors_origins = os.getenv(
+            "CORS_ORIGINS",
+            '["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5500", "https://warestack.github.io"]',
+        )
 
         try:
             self.cors = CORSConfig(
@@ -108,7 +111,12 @@ class Config:
             # Fallback to default values if JSON parsing fails
             self.cors = CORSConfig(
                 headers=["*"],
-                origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5500"],
+                origins=[
+                    "http://localhost:3000",
+                    "http://127.0.0.1:3000",
+                    "http://localhost:5500",
+                    "https://warestack.github.io",
+                ],
             )
 
         self.repo_config = RepoConfig(
