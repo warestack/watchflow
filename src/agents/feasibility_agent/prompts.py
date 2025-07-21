@@ -10,28 +10,17 @@ Rule Description: {rule_description}
 Please analyze this rule and determine:
 1. Is it feasible to implement with Watchflow's rule system?
 2. What type of rule is it (time restriction, branch pattern, approval requirement, etc.)?
-3. Generate appropriate Watchflow YAML configuration if feasible
-4. Provide feedback on implementation considerations
+3. Provide feedback on implementation considerations
 
 Consider the following rule types:
-- Time restrictions (weekends, holidays, specific hours)
-- Branch naming conventions and patterns
-- PR title patterns and requirements
-- Label requirements
-- File size limits
-- Approval requirements
-- Commit message conventions
-- Branch protection rules
-
-Respond in the following JSON format:
-{{
-    "is_feasible": boolean,
-    "rule_type": "string",
-    "confidence_score": float (0.0-1.0),
-    "yaml_content": "string (if feasible)",
-    "feedback": "string",
-    "analysis_steps": ["step1", "step2", ...]
-}}
+- time_restriction: Rules about when actions can occur (weekends, hours, days)
+- branch_pattern: Rules about branch naming conventions
+- title_pattern: Rules about PR title formatting
+- label_requirement: Rules requiring specific labels
+- file_size: Rules about file size limits
+- approval_requirement: Rules about required approvals
+- commit_message: Rules about commit message format
+- branch_protection: Rules about protected branches
 
 FEEDBACK GUIDELINES:
 Keep feedback concise and practical. Focus on:
@@ -42,6 +31,8 @@ Keep feedback concise and practical. Focus on:
 - Severity and enforcement level recommendations
 
 Keep feedback under 200 words and avoid technical jargon.
+
+Provide your analysis with step-by-step reasoning in the analysis_steps field.
 """
 
 RULE_TYPE_ANALYSIS_PROMPT = """
@@ -99,5 +90,5 @@ Rule type specific parameters:
 - commit_message: use "pattern" parameter with regex pattern
 - branch_protection: use "protected_branches" parameter with array of branch names
 
-Generate ONLY the YAML rule configuration, no explanations or additional text.
+Return only the YAML rule configuration content.
 """

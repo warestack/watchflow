@@ -8,7 +8,7 @@ from langgraph.graph import END, START, StateGraph
 
 from src.agents.base import AgentResult, BaseAgent
 
-from .models import FeasibilityResult, FeasibilityState
+from .models import FeasibilityState
 from .nodes import analyze_rule_feasibility, generate_yaml_config
 
 logger = logging.getLogger(__name__)
@@ -27,11 +27,19 @@ class RuleFeasibilityAgent(BaseAgent):
         workflow.add_node("analyze_feasibility", analyze_rule_feasibility)
         workflow.add_node("generate_yaml", generate_yaml_config)
 
-        # Add edges
+        # Add edges with conditional logic
         workflow.add_edge(START, "analyze_feasibility")
-        workflow.add_edge("analyze_feasibility", "generate_yaml")
+
+        # Conditional edge: only generate YAML if feasible
+        workflow.add_conditional_edges(
+            "analyze_feasibility",
+            lambda state: "generate_yaml" if state.is_feasible else END,
+            {"generate_yaml": "generate_yaml", END: END},
+        )
+
         workflow.add_edge("generate_yaml", END)
 
+        logger.info("🔧 FeasibilityAgent graph built with conditional structured output workflow")
         return workflow.compile()
 
     async def execute(self, rule_description: str) -> AgentResult:
@@ -39,39 +47,33 @@ class RuleFeasibilityAgent(BaseAgent):
         Check if a rule description is feasible and return YAML or feedback.
         """
         try:
+            logger.info(f"🚀 Starting feasibility analysis for rule: {rule_description[:100]}...")
+
             # Prepare initial state
             initial_state = FeasibilityState(rule_description=rule_description)
 
             # Run the graph
             result = await self.graph.ainvoke(initial_state)
 
+            # Convert dict result back to FeasibilityState if needed
+            if isinstance(result, dict):
+                result = FeasibilityState(**result)
+
+            logger.info(f"✅ Feasibility analysis completed: feasible={result.is_feasible}, type={result.rule_type}")
+
             # Convert to AgentResult
             return AgentResult(
-                success=result.get("is_feasible", False),
-                message=result.get("feedback", ""),
+                success=result.is_feasible,
+                message=result.feedback,
                 data={
-                    "is_feasible": result.get("is_feasible", False),
-                    "yaml_content": result.get("yaml_content", ""),
-                    "confidence_score": result.get("confidence_score", 0.0),
-                    "rule_type": result.get("rule_type", ""),
-                    "analysis_steps": result.get("analysis_steps", []),
+                    "is_feasible": result.is_feasible,
+                    "yaml_content": result.yaml_content,
+                    "confidence_score": result.confidence_score,
+                    "rule_type": result.rule_type,
+                    "analysis_steps": result.analysis_steps,
                 },
             )
 
         except Exception as e:
-            logger.error(f"Error in rule feasibility check: {e}")
+            logger.error(f"❌ Error in rule feasibility check: {e}")
             return AgentResult(success=False, message=f"Feasibility check failed: {str(e)}", data={})
-
-    async def check_feasibility(self, rule_description: str) -> FeasibilityResult:
-        """
-        Legacy method for backwards compatibility.
-        """
-        result = await self.execute(rule_description)
-
-        return FeasibilityResult(
-            is_feasible=result.data.get("is_feasible", False),
-            yaml_content=result.data.get("yaml_content", ""),
-            feedback=result.message,
-            confidence_score=result.data.get("confidence_score"),
-            rule_type=result.data.get("rule_type"),
-        )

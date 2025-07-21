@@ -16,8 +16,12 @@ async def evaluate_rule(request: RuleEvaluationRequest):
     # Create agent instance (uses centralized config)
     agent = RuleFeasibilityAgent()
 
-    # Use the new method signature
-    result = await agent.check_feasibility(rule_description=request.rule_text)
+    # Use the execute method
+    result = await agent.execute(rule_description=request.rule_text)
 
     # Return the result in the expected format
-    return {"supported": result.is_feasible, "snippet": result.yaml_content, "feedback": result.feedback}
+    return {
+        "supported": result.data.get("is_feasible", False),
+        "snippet": result.data.get("yaml_content", ""),
+        "feedback": result.message,
+    }

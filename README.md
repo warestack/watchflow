@@ -113,6 +113,48 @@ rules:
 2. **Try acknowledgment workflow**: Comment `@watchflow acknowledge` when rules are violated
 3. **Verify rule enforcement**: Check that blocking rules prevent merging
 
+## 🧪 Testing
+
+The project includes comprehensive tests that run **without making real API calls** by default:
+
+### Running Tests
+
+```bash
+# Run all tests (mocked - no API costs)
+pytest
+
+# Run only unit tests (very fast)
+pytest tests/unit/
+
+# Run only integration tests (mocked)
+pytest tests/integration/
+```
+
+### Test Structure
+
+```
+tests/
+├── unit/                     # ⚡ Fast unit tests (mocked OpenAI)
+│   └── test_feasibility_agent.py
+└── integration/              # 🌐 Full HTTP stack tests (mocked OpenAI)
+    └── test_rules_api.py
+```
+
+### Real API Testing (Local Development Only)
+
+If you want to test with **real OpenAI API calls** locally:
+
+```bash
+# Set environment variables
+export OPENAI_API_KEY="your-api-key"
+export INTEGRATION_TEST_REAL_API=true
+
+# Run integration tests with real API calls (costs money!)
+pytest tests/integration/ -m integration
+```
+
+**⚠️ Warning:** Real API tests make actual OpenAI calls and will cost money. They're disabled by default in CI/CD.
+
 ## Configuration
 
 For advanced configuration options, see the [Configuration Guide](docs/getting-started/configuration.md).

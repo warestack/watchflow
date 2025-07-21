@@ -4,7 +4,7 @@ from typing import Any
 
 from src.agents.engine_agent.agent import RuleEngineAgent
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
-from src.tasks.scheduler.deployment_scheduler import deployment_scheduler
+from src.tasks.scheduler.deployment_scheduler import get_deployment_scheduler
 from src.tasks.task_queue import Task
 
 logger = logging.getLogger(__name__)
@@ -115,7 +115,7 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
             else:
                 time_based_violations = self._check_time_based_violations(violations)
                 if time_based_violations:
-                    await deployment_scheduler.add_pending_deployment(
+                    await get_deployment_scheduler().add_pending_deployment(
                         {
                             "deployment_id": deployment_id,
                             "repo": task.repo_full_name,
