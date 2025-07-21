@@ -113,7 +113,7 @@ rules:
 2. **Try acknowledgment workflow**: Comment `@watchflow acknowledge` when rules are violated
 3. **Verify rule enforcement**: Check that blocking rules prevent merging
 
-## 🧪 Testing
+## Testing
 
 The project includes comprehensive tests that run **without making real API calls** by default:
 
@@ -136,7 +136,7 @@ pytest tests/integration/
 tests/
 ├── unit/                     # ⚡ Fast unit tests (mocked OpenAI)
 │   └── test_feasibility_agent.py
-└── integration/              # 🌐 Full HTTP stack tests (mocked OpenAI)
+└── integration/              # Full HTTP stack tests (mocked OpenAI)
     └── test_rules_api.py
 ```
 
@@ -167,16 +167,15 @@ Use these commands in PR comments to interact with Watchflow:
 
 ```bash
 # Acknowledge a violation
-@watchflow acknowledge
+@watchflow acknowledge "Documentation updates only, no code changes"
+@watchflow ack "Documentation updates only, no code changes"
 
 # Acknowledge with reasoning
-@watchflow acknowledge - Documentation updates only, no code changes
+@watchflow acknowledge "Emergency fix, team is unavailable"
+@watchflow ack "Emergency fix, team is unavailable"
 
-# Request escalation
-@watchflow escalate - Critical security fix needed, reviewers unavailable
-
-# Check rule status
-@watchflow status
+# Evaluate the feasibility of a rule
+@watchflow evaluate "Require 2 approvals for PRs to main"
 
 # Get help
 @watchflow help
@@ -185,13 +184,13 @@ Use these commands in PR comments to interact with Watchflow:
 ### Example Scenarios
 
 **Can Acknowledge**: When a PR lacks required approvals but it's an emergency fix, developers can acknowledge with
-`@watchflow acknowledge - Emergency fix, team is unavailable`.
+`@watchflow acknowledge "Emergency fix, team is unavailable"` or `@watchflow ack "Emergency fix, team is unavailable"`.
 
 **Remains Blocked**: When deploying to production without security review, the deployment stays blocked even with
 acknowledgment - security review is mandatory.
 
 **Can Acknowledge**: When weekend deployment rules are violated for a critical issue, developers can acknowledge with
-`@watchflow acknowledge - Critical production fix needed`.
+`@watchflow acknowledge "Critical production fix needed"`.
 
 **Remains Blocked**: When sensitive files are modified without proper review, the PR remains blocked until security team
 approval - no acknowledgment possible.

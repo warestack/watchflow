@@ -148,16 +148,15 @@ standards so teams can focus on building, increase trust, and move fast.
 **Simple Comment Commands**
 ```bash
 # Acknowledge a violation
-@watchflow acknowledge
+@watchflow acknowledge "Security review completed offline"
+@watchflow ack "Security review completed offline"
 
 # Acknowledge with reasoning
-@watchflow acknowledge - Security review completed offline
+@watchflow acknowledge "Emergency fix, team is unavailable"
+@watchflow ack "Emergency fix, team is unavailable"
 
-# Request escalation
-@watchflow escalate - Need urgent deployment
-
-# Check rule status
-@watchflow status
+# Evaluate the feasibility of a rule
+@watchflow evaluate "Require 2 approvals for PRs to main"
 
 # Get help
 @watchflow help

@@ -65,8 +65,7 @@ rules:
    - Verify that rules are being applied correctly
 
 2. **Try acknowledgment workflow**
-   - When a rule violation occurs, comment: `@watchflow acknowledge`
-   - Add reasoning: `@watchflow acknowledge - Emergency fix, all comments have been resolved`
+   - When a rule violation occurs, comment: `@watchflow acknowledge "Emergency fix, all comments have been resolved"` or `@watchflow ack "Emergency fix, all comments have been resolved"`
    - Watch how AI evaluates your acknowledgment request
 
 3. **Verify rule enforcement**
@@ -102,16 +101,15 @@ Use these commands in PR comments to interact with Watchflow:
 
 ```bash
 # Acknowledge a violation
-@watchflow acknowledge
+@watchflow acknowledge "Documentation updates only, no code changes"
+@watchflow ack "Documentation updates only, no code changes"
 
 # Acknowledge with reasoning
-@watchflow acknowledge - Emergency fix, all comments have been resolved
+@watchflow acknowledge "Emergency fix, all comments have been resolved"
+@watchflow ack "Emergency fix, all comments have been resolved"
 
-# Request escalation for urgent cases
-@watchflow escalate - Critical security fix needed
-
-# Check current rule status
-@watchflow status
+# Evaluate the feasibility of a rule
+@watchflow evaluate "Add a rule that requires 2 approvals for PRs to main"
 
 # Get help and available commands
 @watchflow help
@@ -151,7 +149,7 @@ Use these commands in PR comments to interact with Watchflow:
 
 **Situation**: PR lacks required approvals but it's an emergency fix
 **Watchflow Action**: Blocks PR, requires acknowledgment
-**Developer Response**: `@watchflow acknowledge - Emergency fix, team is unavailable`
+**Developer Response**: `@watchflow acknowledge "Emergency fix, team is unavailable"` or `@watchflow ack "Emergency fix, team is unavailable"`
 **Result**: PR approved with documented exception
 
 ### Remains Blocked: Security Review
@@ -165,7 +163,7 @@ Use these commands in PR comments to interact with Watchflow:
 
 **Situation**: Weekend deployment rules are violated for critical issue
 **Watchflow Action**: Blocks deployment, allows acknowledgment
-**Developer Response**: `@watchflow acknowledge - Critical production fix needed`
+**Developer Response**: `@watchflow acknowledge "Critical production fix needed"` or `@watchflow ack "Critical production fix needed"`
 **Result**: Deployment proceeds with documented exception
 
 ### Remains Blocked: Sensitive Files
