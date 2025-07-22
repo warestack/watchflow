@@ -195,19 +195,45 @@ uv run mypy src/
 
 ### Testing
 
+The project includes comprehensive tests that run **without making real API calls** by default:
+
+### Running Tests
+
 ```bash
-# Run all tests
-uv run pytest
+# Run all tests (mocked - no API costs)
+pytest
 
-# Run with coverage
-uv run pytest --cov=src --cov-report=html
+# Run only unit tests (very fast)
+pytest tests/unit/
 
-# Run specific test file
-uv run pytest tests/test_agents.py
-
-# Run with verbose output
-uv run pytest -v
+# Run only integration tests (mocked)
+pytest tests/integration/
 ```
+
+### Test Structure
+
+```
+tests/
+├── unit/                     # ⚡ Fast unit tests (mocked OpenAI)
+│   └── test_feasibility_agent.py
+└── integration/              # Full HTTP stack tests (mocked OpenAI)
+    └── test_rules_api.py
+```
+
+### Real API Testing (Local Development Only)
+
+If you want to test with **real OpenAI API calls** locally:
+
+```bash
+# Set environment variables
+export OPENAI_API_KEY="your-api-key"
+export INTEGRATION_TEST_REAL_API=true
+
+# Run integration tests with real API calls (costs money!)
+pytest tests/integration/ -m integration
+```
+
+_Note: Real API tests make actual OpenAI calls and will cost money. They're disabled by default in CI/CD._
 
 ### Pre-commit Hooks
 

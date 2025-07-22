@@ -99,7 +99,7 @@ class Config:
         cors_headers = os.getenv("CORS_HEADERS", '["*"]')
         cors_origins = os.getenv(
             "CORS_ORIGINS",
-            '["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5500", "https://warestack.github.io"]',
+            '["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5500", "https://warestack.github.io", "https://watchflow.dev"]',
         )
 
         try:
@@ -116,6 +116,7 @@ class Config:
                     "http://127.0.0.1:3000",
                     "http://localhost:5500",
                     "https://warestack.github.io",
+                    "https://watchflow.dev",
                 ],
             )
 

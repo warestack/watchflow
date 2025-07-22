@@ -1,6 +1,9 @@
 # Watchflow
 
-Agentic Guardrails for GitHub repositories that enforces rules and improves team collaboration.
+![Watchflow - Agentic GitHub Guardrails](docs/images/Watchflow%20-%20Agentic%20GitHub%20Guardrails.png)
+
+Replace static protection rules with agentic guardrails. Watchflow ensures consistent quality standards with smarter,
+context-aware protection for every repo.
 
 ## Overview
 
@@ -24,13 +27,14 @@ Watchflow addresses these challenges through:
 
 - **AI-Powered Rule Engine**: Uses AI agents to intelligently evaluate rules against repository events
 - **Hybrid Architecture**: Combines rule-based logic with AI intelligence for optimal performance
-- **Intelligent Acknowledgments**: Processes acknowledgment requests through PR comments with context-aware decision
-  making
+- **Intelligent ACKs**: Processes acknowledgment requests through PR comments with context-aware
+  decision-making
 - **Plug n play Integration**: Works within GitHub interface with no additional UI required
 
 ## Key Features
 
 ### Natural Language Rules
+
 Define governance rules in plain English. Watchflow translates these into actionable YAML configurations and provides
 intelligent evaluation.
 
@@ -48,10 +52,12 @@ rules:
 ```
 
 ### Flexible Rule System
+
 Define governance rules in YAML format with rich conditions and actions. Support for approval requirements, security
 reviews, deployment protection, and more.
 
 ### Intelligent Acknowledgment Workflow
+
 When rules are violated, developers can acknowledge them with simple comments. AI agents evaluate requests and provide
 context-aware decisions.
 
@@ -70,15 +76,9 @@ Get Watchflow up and running in minutes to start enforcing governance rules in y
 
 ### Step 1: Install GitHub App
 
-1. **Go to GitHub App Installation**
-   - Visit [Watchflow GitHub App](https://github.com/apps/watchflow)
-   - Click "Install"
-
-2. **Configure App Settings**
-   - Select repositories to install on
-   - Grant required permissions:
-     - Repository permissions: Contents (Read), Pull requests (Read & write), Issues (Read & write)
-     - Subscribe to events: Pull requests, Push, Deployment
+**Go to GitHub App Installation**
+  - Visit [Watchflow GitHub App](https://github.com/apps/watchflow)
+  - Click "Install"
 
 ### Step 2: Create Rules Configuration
 
@@ -88,13 +88,12 @@ Create `.watchflow/rules.yaml` in your repository root:
 rules:
   - id: pr-approval-required
     name: PR Approval Required
-    description: All pull requests must have at least 2 approvals
+    description: All pull requests must have a min num of approvals unless the author is a maintainer
     enabled: true
     severity: high
     event_types: [pull_request]
     parameters:
       min_approvals: 2
-      message: "Pull requests require at least 2 approvals"
 
   - id: no-deploy-weekends
     name: No Weekend Deployments
@@ -104,7 +103,6 @@ rules:
     event_types: [deployment]
     parameters:
       restricted_days: [Saturday, Sunday]
-      message: "Deployments are not allowed on weekends"
 ```
 
 ### Step 3: Test Your Setup
@@ -112,48 +110,6 @@ rules:
 1. **Create a test pull request**
 2. **Try acknowledgment workflow**: Comment `@watchflow acknowledge` when rules are violated
 3. **Verify rule enforcement**: Check that blocking rules prevent merging
-
-## Testing
-
-The project includes comprehensive tests that run **without making real API calls** by default:
-
-### Running Tests
-
-```bash
-# Run all tests (mocked - no API costs)
-pytest
-
-# Run only unit tests (very fast)
-pytest tests/unit/
-
-# Run only integration tests (mocked)
-pytest tests/integration/
-```
-
-### Test Structure
-
-```
-tests/
-├── unit/                     # ⚡ Fast unit tests (mocked OpenAI)
-│   └── test_feasibility_agent.py
-└── integration/              # Full HTTP stack tests (mocked OpenAI)
-    └── test_rules_api.py
-```
-
-### Real API Testing (Local Development Only)
-
-If you want to test with **real OpenAI API calls** locally:
-
-```bash
-# Set environment variables
-export OPENAI_API_KEY="your-api-key"
-export INTEGRATION_TEST_REAL_API=true
-
-# Run integration tests with real API calls (costs money!)
-pytest tests/integration/ -m integration
-```
-
-**⚠️ Warning:** Real API tests make actual OpenAI calls and will cost money. They're disabled by default in CI/CD.
 
 ## Configuration
 
@@ -211,3 +167,7 @@ approval - no acknowledgment possible.
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Contributing & Development
+
+For instructions on running tests, local development, and contributing, see [DEVELOPMENT.md](DEVELOPMENT.md).
