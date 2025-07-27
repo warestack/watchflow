@@ -198,9 +198,7 @@ class PullRequestProcessor(BaseEventProcessor):
                 event_data["files"] = files or []
 
                 # Get checks and statuses for status check rules
-                checks = await self.github_client.get_pr_checks(
-                    task.repo_full_name, pr_number, task.installation_id
-                )
+                checks = await self.github_client.get_pr_checks(task.repo_full_name, pr_number, task.installation_id)
                 event_data["checks"] = checks or []
 
             except Exception as e:
@@ -386,9 +384,7 @@ class PullRequestProcessor(BaseEventProcessor):
                 api_data["files"] = files or []
 
             # Fetch checks and statuses for status check rules
-            checks = await self.github_client.get_pr_checks(
-                task.repo_full_name, pr_number, task.installation_id
-            )
+            checks = await self.github_client.get_pr_checks(task.repo_full_name, pr_number, task.installation_id)
             api_data["checks"] = checks or []
 
         except Exception as e:

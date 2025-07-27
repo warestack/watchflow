@@ -441,7 +441,7 @@ class RequiredChecksValidator(ConditionValidator):
                 # For statuses: state should be "success"
                 conclusion = check.get("conclusion")
                 state = check.get("state")
-                
+
                 if conclusion == "success" or state == "success":
                     check_status[name] = "success"
                 elif conclusion in ["failure", "error", "cancelled", "timed_out"] or state in ["failure", "error"]:
@@ -452,7 +452,7 @@ class RequiredChecksValidator(ConditionValidator):
         # Check if all required checks have passed
         failed_checks = []
         missing_checks = []
-        
+
         for required_check in required_checks:
             if required_check not in check_status:
                 missing_checks.append(required_check)
@@ -467,7 +467,7 @@ class RequiredChecksValidator(ConditionValidator):
 
         # Rule is violated if any required checks are missing or failed
         violations_exist = len(failed_checks) > 0 or len(missing_checks) > 0
-        
+
         if violations_exist:
             logger.info(f"RequiredChecksValidator: VIOLATION - Failed: {failed_checks}, Missing: {missing_checks}")
         else:

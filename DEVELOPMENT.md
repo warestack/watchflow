@@ -22,6 +22,7 @@ cd watchflow
 ### 2. Create Virtual Environment
 
 Using uv (recommended):
+
 ```bash
 # Create and activate virtual environment
 uv venv
@@ -34,6 +35,7 @@ uv sync
 ```
 
 Or using pip:
+
 ```bash
 # Create virtual environment
 python -m venv .venv
@@ -121,6 +123,7 @@ Create a GitHub App for development:
    - Status
 
 6. **Generate private key** and encode it:
+
    ```bash
    cat /path/to/private-key.pem | base64 | tr -d '\n'
    ```
@@ -146,6 +149,7 @@ For debugging AI agents:
 1. Create a [LangSmith](https://langsmith.com/) account
 2. Get your API key
 3. Add to environment:
+
    ```bash
    LANGCHAIN_TRACING_V2=true
    LANGCHAIN_API_KEY=your-langsmith-api-key
@@ -194,6 +198,41 @@ uv run ruff format src/
 uv run mypy src/
 ```
 
+### Pre-commit Hooks
+
+This project uses pre-commit hooks to ensure code quality and consistency. The hooks automatically run on every commit and include:
+
+- **Trailing whitespace removal** - Cleans up extra whitespace
+- **End of file fixer** - Ensures files end with newlines
+- **YAML/JSON validation** - Checks syntax
+- **Ruff formatting and linting** - Formats code and sorts imports
+- **Conventional commit validation** - Ensures commit messages follow conventional format
+
+#### Setup Pre-commit Hooks
+
+```bash
+# Install pre-commit hooks (run once after cloning)
+uv run pre-commit install
+
+# Also install commit message validation
+uv run pre-commit install --hook-type commit-msg
+```
+
+#### Using Pre-commit Hooks
+
+```bash
+# Hooks run automatically on commit, but you can run them manually:
+uv run pre-commit run --all-files
+
+# Run on specific files
+uv run pre-commit run --files src/main.py
+
+# Skip hooks for a commit (not recommended)
+git commit --no-verify -m "commit message"
+```
+
+The hooks will prevent commits if any issues are found. Most formatting issues are automatically fixed, so you just need to stage the changes and commit again.
+
 ### Testing
 
 The project includes comprehensive tests that run **without making real API calls** by default:
@@ -213,7 +252,7 @@ pytest tests/integration/
 
 ### Test Structure
 
-```
+```txt
 tests/
 ├── unit/                     # ⚡ Fast unit tests (mocked OpenAI)
 │   └── test_feasibility_agent.py
@@ -235,16 +274,6 @@ pytest tests/integration/ -m integration
 ```
 
 _Note: Real API tests make actual OpenAI calls and will cost money. They're disabled by default in CI/CD._
-
-### Pre-commit Hooks
-
-```bash
-# Install pre-commit hooks
-uv run pre-commit install
-
-# Run manually
-uv run pre-commit run --all-files
-```
 
 ## Testing AI Agents
 
@@ -329,6 +358,7 @@ Test webhook delivery:
 ### GitHub App Permissions
 
 If webhooks aren't being received:
+
 1. Verify webhook URL is accessible
 2. Check GitHub App permissions
 3. Verify webhook secret matches
@@ -336,6 +366,7 @@ If webhooks aren't being received:
 ### AI Agent Issues
 
 If agents aren't working:
+
 1. Verify OpenAI API key
 2. Check LangSmith configuration
 3. Review agent logs for errors
@@ -343,6 +374,7 @@ If agents aren't working:
 ### Development Environment
 
 If dependencies aren't working:
+
 1. Ensure Python 3.12+
 2. Try recreating virtual environment
 3. Check uv/pip installation
@@ -362,6 +394,7 @@ locust -f load_test.py --host=http://localhost:8000
 ### Agent Performance
 
 Monitor agent performance with LangSmith:
+
 - Token usage per request
 - Response times
 - Error rates
