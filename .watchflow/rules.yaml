@@ -6,9 +6,11 @@ rules:
     severity: high
     event_types: ["pull_request", "status"]
     conditions:
-      required_checks:
-        - "Lint code and README files"
-        - "Run pre-commit hooks / Lint code and README files"
+      - type: "required_checks"
+        parameters:
+          required_checks:
+            - "Lint code and README files"
+            - "Run pre-commit hooks / Lint code and README files"
 
   - id: status-check-security
     name: "Security Checks Required"
@@ -17,9 +19,11 @@ rules:
     severity: high
     event_types: ["status"]
     conditions:
-      required_checks:
-        - "security/scan"
-        - "vulnerability-check"
+      - type: "required_checks"
+        parameters:
+          required_checks:
+            - "security/scan"
+            - "vulnerability-check"
 
   - id: status-check-code-quality
     name: "Code Quality Gates"
@@ -28,8 +32,10 @@ rules:
     severity: medium
     event_types: ["status"]
     conditions:
-      required_checks:
-        - "codecov/patch"
+      - type: "required_checks"
+        parameters:
+          required_checks:
+            - "codecov/patch"
         - "codeclimate"
         - "sonarqube"
 
