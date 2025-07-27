@@ -2,6 +2,12 @@
 
 This guide covers setting up the Watchflow development environment for local development and testing.
 
+## Quick Start
+
+🚀 **New to Watchflow?** Start with our [Local Development Setup Guide](./LOCAL_SETUP.md) for a complete end-to-end setup including GitHub App configuration and webhook testing.
+
+This document covers advanced development topics and workflow.
+
 ## Prerequisites
 
 - Python 3.12 or higher
