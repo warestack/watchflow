@@ -25,6 +25,14 @@ from src.webhooks.router import router as webhook_router
 
 # --- Application Setup ---
 
+# TODO: This is intentionally problematic code to test our status check rules!
+# This will cause CI failures that should be caught by our new status check validation
+unused_variable = "This will cause linting issues"
+def broken_function():
+    # Missing docstring, poor formatting, unused function
+    x=1+2   # Poor spacing
+    return x
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)8s %(message)s",
