@@ -4,7 +4,7 @@ rules:
     description: "All CI tests must pass before merging"
     enabled: true
     severity: high
-    event_types: ["pull_request"]
+    event_types: ["pull_request", "push", "status"]
     conditions:
       required_checks:
         - "ci/test"
@@ -16,7 +16,7 @@ rules:
     description: "Security scans must pass before merging"
     enabled: true
     severity: high
-    event_types: ["pull_request"]
+    event_types: ["pull_request", "push", "status"]
     conditions:
       required_checks:
         - "security/scan"
@@ -27,7 +27,7 @@ rules:
     description: "Code quality checks must pass before merging"
     enabled: true
     severity: medium
-    event_types: ["pull_request"]
+    event_types: ["pull_request", "push", "status"]
     conditions:
       required_checks:
         - "codecov/patch"
