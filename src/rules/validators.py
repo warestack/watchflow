@@ -427,9 +427,10 @@ class RequiredChecksValidator(ConditionValidator):
         # Check if this is a pull request event with check data
         checks = event.get("checks", [])
         if not checks:
-            # If no checks available, this might be a different event type
-            logger.debug("RequiredChecksValidator: No checks data available in event")
-            return True
+            # If no checks available but required checks are specified,
+            # this is a violation - required checks are missing
+            logger.debug("RequiredChecksValidator: No checks data available in event - VIOLATION")
+            return False
 
         # Create a mapping of check names to their status
         check_status = {}
