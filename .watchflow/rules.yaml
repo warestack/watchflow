@@ -36,17 +36,19 @@ rules:
         parameters:
           required_checks:
             - "codecov/patch"
-        - "codeclimate"
-        - "sonarqube"
+            - "codeclimate"
+            - "sonarqube"
 
   - id: conventional-commits
     name: "Conventional Commit Format"
     description: "Commit messages must follow conventional commit format"
-    enabled: true
+    enabled: false  # Disabled - no validator implemented yet
     severity: medium
     event_types: ["push"]
     conditions:
-      commit_message_pattern: "^(feat|fix|docs|style|refactor|test|chore)(\\(.+\\))?: .{1,50}"
+      - type: "commit_message_pattern"
+        parameters:
+          commit_message_pattern: "^(feat|fix|docs|style|refactor|test|chore)(\\(.+\\))?: .{1,50}"
 
   - id: pr-description-required
     name: "Pull Request Description Required"
@@ -55,7 +57,9 @@ rules:
     severity: low
     event_types: ["pull_request"]
     conditions:
-      min_description_length: 20
+      - type: "min_description_length"
+        parameters:
+          min_description_length: 20
 
   - id: no-direct-main-push
     name: "No Direct Push to Main"
@@ -64,4 +68,6 @@ rules:
     severity: high
     event_types: ["push"]
     conditions:
-      blocked_branches: ["main", "master"]
+      - type: "protected_branches"
+        parameters:
+          protected_branches: ["main", "master"]
