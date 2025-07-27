@@ -1,4 +1,15 @@
 rules:
+  - id: test-always-fail
+    name: "Test Rule - Always Fail"
+    description: "This rule should always fail to test if rule evaluation is working"
+    enabled: true
+    severity: high
+    event_types: ["pull_request"]
+    conditions:
+      - type: "min_description_length"
+        parameters:
+          min_description_length: 999999  # Impossibly high requirement
+
   - id: status-check-ci-tests
     name: "Require CI Tests"
     description: "All CI tests must pass before merging"

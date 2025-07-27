@@ -420,16 +420,25 @@ class BranchesValidator(ConditionValidator):
 
 class RequiredChecksValidator(ConditionValidator):
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        # Add detailed logging to understand what's happening
+        logger.info(f"RequiredChecksValidator: CALLED with parameters: {parameters}")
+        logger.info(f"RequiredChecksValidator: Event keys available: {list(event.keys())}")
+        
         required_checks = parameters.get("required_checks", [])
+        logger.info(f"RequiredChecksValidator: Required checks: {required_checks}")
+        
         if not required_checks:
+            logger.info("RequiredChecksValidator: No required checks specified - PASSING")
             return True
 
         # Check if this is a pull request event with check data
         checks = event.get("checks", [])
+        logger.info(f"RequiredChecksValidator: Found {len(checks)} checks in event data")
+        
         if not checks:
             # If no checks available but required checks are specified,
             # this is a violation - required checks are missing
-            logger.debug("RequiredChecksValidator: No checks data available in event - VIOLATION")
+            logger.error("RequiredChecksValidator: No checks data available in event - VIOLATION")
             return False
 
         # Create a mapping of check names to their status
