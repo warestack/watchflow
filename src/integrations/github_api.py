@@ -116,9 +116,53 @@ class GitHubClient:
         """
         Fetch the list of checks/statuses for a pull request.
         """
-        logger.info(f"Fetching checks for PR #{pr_number} in {repo_full_name}")
-        # TODO: Implement actual GitHub API call
-        return []
+        try:
+            # First get the PR to get the head SHA
+            pr_data = await self.get_pull_request(repo_full_name, pr_number, installation_id)
+            if not pr_data:
+                logger.warning(f"Could not get PR #{pr_number} in {repo_full_name}")
+                return []
+            
+            head_sha = pr_data.get("head", {}).get("sha")
+            if not head_sha:
+                logger.warning(f"No head SHA found for PR #{pr_number} in {repo_full_name}")
+                return []
+            
+            # Get both check runs and commit statuses
+            check_runs = await self.get_check_runs(repo_full_name, head_sha, installation_id)
+            commit_statuses = await self.get_commit_statuses(repo_full_name, head_sha, installation_id)
+            
+            # Combine and normalize the data
+            all_checks = []
+            
+            # Add check runs
+            for check_run in check_runs:
+                all_checks.append({
+                    "type": "check_run",
+                    "name": check_run.get("name"),
+                    "status": check_run.get("status"),
+                    "conclusion": check_run.get("conclusion"),
+                    "state": check_run.get("conclusion"),  # Map to legacy status API
+                    "context": check_run.get("name"),  # For compatibility
+                })
+            
+            # Add commit statuses
+            for status in commit_statuses:
+                all_checks.append({
+                    "type": "status",
+                    "name": status.get("context"),
+                    "context": status.get("context"),
+                    "state": status.get("state"),
+                    "status": "completed" if status.get("state") in ["success", "failure", "error"] else "in_progress",
+                    "conclusion": "success" if status.get("state") == "success" else "failure" if status.get("state") in ["failure", "error"] else None,
+                })
+            
+            logger.info(f"Retrieved {len(all_checks)} checks/statuses for PR #{pr_number} in {repo_full_name}")
+            return all_checks
+            
+        except Exception as e:
+            logger.error(f"Error getting checks for PR #{pr_number} in {repo_full_name}: {e}")
+            return []
 
     async def get_user_teams(self, repo: str, username: str, installation_id: int) -> list:
         """Fetch the teams a user belongs to in a repo's org."""
@@ -263,6 +307,33 @@ class GitHubClient:
                     return []
         except Exception as e:
             logger.error(f"Error getting check runs for {repo} commit {sha}: {e}")
+            return []
+
+    async def get_commit_statuses(self, repo: str, sha: str, installation_id: int) -> list[dict[str, Any]]:
+        """Get commit statuses for a commit."""
+        try:
+            token = await self.get_installation_access_token(installation_id)
+            if not token:
+                logger.error(f"Failed to get installation token for {installation_id}")
+                return []
+
+            headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+
+            url = f"{config.github.api_base_url}/repos/{repo}/commits/{sha}/statuses"
+
+            session = await self._get_session()
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data if isinstance(data, list) else []
+                else:
+                    error_text = await response.text()
+                    logger.error(
+                        f"Failed to get commit statuses for {repo} commit {sha}. Status: {response.status}, Response: {error_text}"
+                    )
+                    return []
+        except Exception as e:
+            logger.error(f"Error getting commit statuses for {repo} commit {sha}: {e}")
             return []
 
     async def get_pull_request_reviews(self, repo: str, pr_number: int, installation_id: int) -> list[dict[str, Any]]:

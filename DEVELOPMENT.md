@@ -118,6 +118,7 @@ Create a GitHub App for development:
    - Issue comment
    - Pull request
    - Push
+   - Status
 
 6. **Generate private key** and encode it:
    ```bash
@@ -282,6 +283,15 @@ rules:
     event_types: [pull_request]
     parameters:
       test_param: "test_value"
+
+  - id: status-check-required
+    name: Status Check Required
+    description: All PRs must pass required status checks
+    enabled: true
+    severity: high
+    event_types: [pull_request]
+    parameters:
+      required_checks: ["ci/test", "lint"]
 ```
 
 ## Debugging

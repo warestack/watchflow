@@ -424,9 +424,56 @@ class RequiredChecksValidator(ConditionValidator):
         if not required_checks:
             return True
 
-        # This would check if all required checks have passed
-        # For now, return True as placeholder
-        return True
+        # Check if this is a pull request event with check data
+        checks = event.get("checks", [])
+        if not checks:
+            # If no checks available, this might be a different event type
+            logger.debug("RequiredChecksValidator: No checks data available in event")
+            return True
+
+        # Create a mapping of check names to their status
+        check_status = {}
+        for check in checks:
+            name = check.get("name") or check.get("context")
+            if name:
+                # Determine if check passed
+                # For check_runs: conclusion should be "success"
+                # For statuses: state should be "success"
+                conclusion = check.get("conclusion")
+                state = check.get("state")
+                
+                if conclusion == "success" or state == "success":
+                    check_status[name] = "success"
+                elif conclusion in ["failure", "error", "cancelled", "timed_out"] or state in ["failure", "error"]:
+                    check_status[name] = "failure"
+                else:
+                    check_status[name] = "pending"
+
+        # Check if all required checks have passed
+        failed_checks = []
+        missing_checks = []
+        
+        for required_check in required_checks:
+            if required_check not in check_status:
+                missing_checks.append(required_check)
+            elif check_status[required_check] != "success":
+                failed_checks.append(required_check)
+
+        # Log detailed information for debugging
+        logger.debug(f"RequiredChecksValidator: Required checks: {required_checks}")
+        logger.debug(f"RequiredChecksValidator: Available checks: {list(check_status.keys())}")
+        logger.debug(f"RequiredChecksValidator: Failed checks: {failed_checks}")
+        logger.debug(f"RequiredChecksValidator: Missing checks: {missing_checks}")
+
+        # Rule is violated if any required checks are missing or failed
+        violations_exist = len(failed_checks) > 0 or len(missing_checks) > 0
+        
+        if violations_exist:
+            logger.info(f"RequiredChecksValidator: VIOLATION - Failed: {failed_checks}, Missing: {missing_checks}")
+        else:
+            logger.debug("RequiredChecksValidator: All required checks passed")
+
+        return not violations_exist
 
 
 # Registry of all available validators

@@ -9,6 +9,7 @@ class EventType(Enum):
     ISSUE_COMMENT = "issue_comment"
     PULL_REQUEST = "pull_request"
     CHECK_RUN = "check_run"
+    STATUS = "status"
     DEPLOYMENT = "deployment"
     DEPLOYMENT_STATUS = "deployment_status"
     DEPLOYMENT_REVIEW = "deployment_review"

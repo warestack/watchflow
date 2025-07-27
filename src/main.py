@@ -20,6 +20,7 @@ from src.webhooks.handlers.deployment_status import DeploymentStatusEventHandler
 from src.webhooks.handlers.issue_comment import IssueCommentEventHandler
 from src.webhooks.handlers.pull_request import PullRequestEventHandler
 from src.webhooks.handlers.push import PushEventHandler
+from src.webhooks.handlers.status import StatusEventHandler
 from src.webhooks.router import router as webhook_router
 
 # --- Application Setup ---
@@ -46,6 +47,7 @@ async def lifespan(_app: FastAPI):
     pull_request_handler = PullRequestEventHandler()
     push_handler = PushEventHandler()
     check_run_handler = CheckRunEventHandler()
+    status_handler = StatusEventHandler()
     issue_comment_handler = IssueCommentEventHandler()
     deployment_handler = DeploymentEventHandler()
     deployment_status_handler = DeploymentStatusEventHandler()
@@ -55,6 +57,7 @@ async def lifespan(_app: FastAPI):
     dispatcher.register_handler(EventType.PULL_REQUEST, pull_request_handler)
     dispatcher.register_handler(EventType.PUSH, push_handler)
     dispatcher.register_handler(EventType.CHECK_RUN, check_run_handler)
+    dispatcher.register_handler(EventType.STATUS, status_handler)
     dispatcher.register_handler(EventType.ISSUE_COMMENT, issue_comment_handler)
     dispatcher.register_handler(EventType.DEPLOYMENT, deployment_handler)
     dispatcher.register_handler(EventType.DEPLOYMENT_STATUS, deployment_status_handler)

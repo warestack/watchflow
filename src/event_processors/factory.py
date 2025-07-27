@@ -7,6 +7,7 @@ from .deployment_status import DeploymentStatusProcessor
 from .pull_request import PullRequestProcessor
 from .push import PushProcessor
 from .rule_creation import RuleCreationProcessor
+from .status import StatusProcessor
 from .violation_acknowledgment import ViolationAcknowledgmentProcessor
 
 
@@ -17,6 +18,7 @@ class EventProcessorFactory:
         "pull_request": PullRequestProcessor,
         "push": PushProcessor,
         "check_run": CheckRunProcessor,
+        "status": StatusProcessor,
         "deployment_review": DeploymentReviewProcessor,
         "deployment_status": DeploymentStatusProcessor,
         "deployment": DeploymentProcessor,  # Process deployment events for rule checking
