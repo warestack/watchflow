@@ -95,6 +95,15 @@ rules:
     parameters:
       min_approvals: 2
 
+  - id: status-checks-required
+    name: Status Checks Required
+    description: All PRs must pass required CI/CD checks
+    enabled: true
+    severity: high
+    event_types: [pull_request]
+    parameters:
+      required_checks: ["ci/test", "lint"]
+
   - id: no-deploy-weekends
     name: No Weekend Deployments
     description: Prevent deployments on weekends

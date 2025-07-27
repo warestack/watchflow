@@ -70,6 +70,23 @@ rules:
       message: "Deployments are not allowed on weekends"
 ```
 
+### Status Check Required Rule
+
+This rule ensures that pull requests pass required CI/CD checks:
+
+```yaml
+rules:
+  - id: status-check-required
+    name: Status Check Required
+    description: All PRs must pass required status checks
+    enabled: true
+    severity: high
+    event_types: [pull_request]
+    parameters:
+      required_checks: ["ci/test", "lint", "build"]
+      message: "All required status checks must pass before merging"
+```
+
 ### Large PR Rule
 
 This rule helps maintain code quality by flagging large changes:

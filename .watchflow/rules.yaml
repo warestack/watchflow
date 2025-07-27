@@ -1,0 +1,84 @@
+rules:
+  - id: test-always-fail
+    name: "Test Rule - Always Fail"
+    description: "This rule should always fail to test if rule evaluation is working"
+    enabled: true
+    severity: high
+    event_types: ["pull_request"]
+    conditions:
+      - type: "min_description_length"
+        parameters:
+          min_description_length: 999999  # Impossibly high requirement
+
+  - id: status-check-ci-tests
+    name: "Require CI Tests"
+    description: "All CI tests must pass before merging"
+    enabled: true
+    severity: high
+    event_types: ["pull_request", "status"]
+    conditions:
+      - type: "required_checks"
+        parameters:
+          required_checks:
+            - "Lint code and README files"
+            - "Run pre-commit hooks / Lint code and README files"
+
+  - id: status-check-security
+    name: "Security Checks Required"
+    description: "Security scans must pass before merging"
+    enabled: true
+    severity: high
+    event_types: ["status"]
+    conditions:
+      - type: "required_checks"
+        parameters:
+          required_checks:
+            - "security/scan"
+            - "vulnerability-check"
+
+  - id: status-check-code-quality
+    name: "Code Quality Gates"
+    description: "Code quality checks must pass before merging"
+    enabled: true
+    severity: medium
+    event_types: ["status"]
+    conditions:
+      - type: "required_checks"
+        parameters:
+          required_checks:
+            - "codecov/patch"
+            - "codeclimate"
+            - "sonarqube"
+
+  - id: conventional-commits
+    name: "Conventional Commit Format"
+    description: "Commit messages must follow conventional commit format"
+    enabled: false  # Disabled - no validator implemented yet
+    severity: medium
+    event_types: ["push"]
+    conditions:
+      - type: "commit_message_pattern"
+        parameters:
+          commit_message_pattern: "^(feat|fix|docs|style|refactor|test|chore)(\\(.+\\))?: .{1,50}"
+
+  - id: pr-description-required
+    name: "Pull Request Description Required"
+    description: "Pull requests must have a meaningful description"
+    enabled: true
+    severity: low
+    event_types: ["pull_request"]
+    conditions:
+      - type: "min_description_length"
+        parameters:
+          min_description_length: 20
+
+  - id: no-direct-main-push
+    name: "No Direct Push to Main"
+    description: "Prevent direct pushes to main branch - use pull requests"
+    enabled: true
+    severity: high
+    event_types: ["push"]
+    conditions:
+      - type: "protected_branches"
+        parameters:
+          protected_branches: ["main", "master"]
