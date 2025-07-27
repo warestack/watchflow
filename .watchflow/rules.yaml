@@ -1,0 +1,62 @@
+rules:
+  - id: status-check-ci-tests
+    name: "Require CI Tests"
+    description: "All CI tests must pass before merging"
+    enabled: true
+    severity: high
+    event_types: ["pull_request"]
+    conditions:
+      required_checks:
+        - "ci/test"
+        - "build"
+        - "lint"
+
+  - id: status-check-security
+    name: "Security Checks Required"
+    description: "Security scans must pass before merging"
+    enabled: true
+    severity: high
+    event_types: ["pull_request"]
+    conditions:
+      required_checks:
+        - "security/scan"
+        - "vulnerability-check"
+
+  - id: status-check-code-quality
+    name: "Code Quality Gates"
+    description: "Code quality checks must pass before merging"
+    enabled: true
+    severity: medium
+    event_types: ["pull_request"]
+    conditions:
+      required_checks:
+        - "codecov/patch"
+        - "codeclimate"
+        - "sonarqube"
+
+  - id: conventional-commits
+    name: "Conventional Commit Format"
+    description: "Commit messages must follow conventional commit format"
+    enabled: true
+    severity: medium
+    event_types: ["push"]
+    conditions:
+      commit_message_pattern: "^(feat|fix|docs|style|refactor|test|chore)(\\(.+\\))?: .{1,50}"
+
+  - id: pr-description-required
+    name: "Pull Request Description Required"
+    description: "Pull requests must have a meaningful description"
+    enabled: true
+    severity: low
+    event_types: ["pull_request"]
+    conditions:
+      min_description_length: 20
+
+  - id: no-direct-main-push
+    name: "No Direct Push to Main"
+    description: "Prevent direct pushes to main branch - use pull requests"
+    enabled: true
+    severity: high
+    event_types: ["push"]
+    conditions:
+      blocked_branches: ["main", "master"]
