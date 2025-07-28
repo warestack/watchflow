@@ -1,4 +1,4 @@
-name: "Unit and integration tests"
+name: "Unit and Integration Tests"
 
 on:
   push:
@@ -13,8 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version:
-          - "3.12"
+        python-version: ["3.12"]
 
     steps:
       # Checkout code
@@ -28,25 +27,26 @@ jobs:
           version: "latest"
 
       # Set up Python
-      - name: "Set up Python"
-        run: uv python install "${{ matrix.python-version }}"
+      - name: "Set up Python ${{ matrix.python-version }}"
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
 
       # Install dependencies
       - name: "Install dependencies"
         run: uv sync --all-extras
 
-      # Run all tests
+      # Run all tests with coverage
       - name: "Run all tests"
         run: |
-          echo "Running unit tests..."
-          uv run pytest tests/unit/ -v --tb=short
-          echo "Running integration tests (mocked - no real API calls)..."
-          uv run pytest tests/integration/ -v --tb=short
+          echo "Running unit and integration tests with coverage..."
+          uv run pytest tests/unit/ tests/integration/ \
+            --cov=. --cov-report=xml -v --tb=short
 
       # Upload coverage reports
       - name: "Upload coverage reports"
         uses: codecov/codecov-action@v4
-        if: matrix.python-version == "3.12"
+        if: matrix.python-version == '3.12'
         with:
           file: ./coverage.xml
           fail_ci_if_error: false
