@@ -5,6 +5,7 @@ from typing import Any
 
 from src.agents.engine_agent.agent import RuleEngineAgent
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
+from src.rules.github_provider import RulesFileNotFoundError
 from src.tasks.task_queue import Task
 
 logger = logging.getLogger(__name__)
@@ -45,8 +46,25 @@ class PullRequestProcessor(BaseEventProcessor):
             api_calls += 1
 
             # Fetch rules
-            rules = await self.rule_provider.get_rules(task.repo_full_name, task.installation_id)
-            api_calls += 1
+            try:
+                rules = await self.rule_provider.get_rules(task.repo_full_name, task.installation_id)
+                api_calls += 1
+            except RulesFileNotFoundError as e:
+                logger.warning(f"Rules file not found: {e}")
+                # Create a neutral check run for missing rules file with helpful guidance
+                await self._create_check_run(
+                    task,
+                    [],
+                    conclusion="neutral",
+                    error="Rules not configured. Please create `.watchflow/rules.yaml` in your repository.",
+                )
+                return ProcessingResult(
+                    success=True,  # Not a failure, just needs setup
+                    violations=[],
+                    api_calls_made=api_calls,
+                    processing_time_ms=int((time.time() - start_time) * 1000),
+                    error="Rules not configured",
+                )
 
             # Convert rules to the new format expected by the agent
             formatted_rules = self._convert_rules_to_new_format(rules)
@@ -242,7 +260,8 @@ class PullRequestProcessor(BaseEventProcessor):
             # Determine check run status
             if error:
                 status = "completed"
-                conclusion = "failure"
+                # Use provided conclusion or default to failure
+                conclusion = conclusion or "failure"
             elif violations:
                 status = "completed"
                 conclusion = "failure"
@@ -274,11 +293,29 @@ class PullRequestProcessor(BaseEventProcessor):
     def _format_check_run_output(self, violations: list[dict[str, Any]], error: str | None = None) -> dict[str, Any]:
         """Format violations for check run output."""
         if error:
-            return {
-                "title": "Error processing rules",
-                "summary": f"❌ Error: {error}",
-                "text": f"An error occurred while processing rules:\n\n```\n{error}\n```\n\nPlease check the logs for more details.",
-            }
+            # Check if it's a missing rules file error
+            if "rules not configured" in error.lower() or "rules file not found" in error.lower():
+                return {
+                    "title": "Rules not configured",
+                    "summary": "⚙️ Watchflow rules setup required",
+                    "text": (
+                        "**Watchflow rules not configured**\n\n"
+                        "No rules file found in your repository. Watchflow can help enforce governance rules for your team.\n\n"
+                        "**How to set up rules:**\n"
+                        "1. Create a file at `.watchflow/rules.yaml` in your repository root\n"
+                        "2. Add your rules in the following format:\n"
+                        "   ```yaml\n   rules:\n     - id: pr-approval-required\n       name: PR Approval Required\n       description: All pull requests must have at least 2 approvals\n       enabled: true\n       severity: high\n       event_types: [pull_request]\n       parameters:\n         min_approvals: 2\n   ```\n\n"
+                        "**Note:** Rules are currently read from the main branch only.\n\n"
+                        "📖 [Read the documentation for more examples](https://github.com/warestack/watchflow/blob/main/docs/getting-started/configuration.md)\n\n"
+                        "After adding the file, push your changes to re-run validation."
+                    ),
+                }
+            else:
+                return {
+                    "title": "Error processing rules",
+                    "summary": f"❌ Error: {error}",
+                    "text": f"An error occurred while processing rules:\n\n```\n{error}\n```\n\nPlease check the logs for more details.",
+                }
 
         if not violations:
             return {
