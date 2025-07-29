@@ -28,4 +28,4 @@ parsers:
 comment:
   layout: "diff,flags,footer"
   behavior: default
-  require_changes: yes 
+  require_changes: yes
