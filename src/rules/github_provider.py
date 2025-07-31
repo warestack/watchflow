@@ -12,6 +12,12 @@ from src.rules.models import Rule, RuleAction, RuleSeverity
 logger = logging.getLogger(__name__)
 
 
+class RulesFileNotFoundError(Exception):
+    """Raised when the rules file is not found in the repository."""
+
+    pass
+
+
 class GitHubRuleLoader(RuleLoader):
     """
     Loads rules from a GitHub repository's rules yaml file.
@@ -30,11 +36,13 @@ class GitHubRuleLoader(RuleLoader):
             content = await self.github_client.get_file_content(repository, rules_file_path, installation_id)
             if not content:
                 logger.warning(f"No rules.yaml file found in {repository}")
-                return []
+                raise RulesFileNotFoundError(f"Rules file not found: {rules_file_path}")
+
             rules_data = yaml.safe_load(content)
             if not rules_data or "rules" not in rules_data:
                 logger.warning(f"No rules found in {repository}/{rules_file_path}")
                 return []
+
             rules = []
             for rule_data in rules_data["rules"]:
                 try:
@@ -44,8 +52,12 @@ class GitHubRuleLoader(RuleLoader):
                 except Exception as e:
                     logger.error(f"Error parsing rule {rule_data.get('id', 'unknown')}: {e}")
                     continue
+
             logger.info(f"Successfully loaded {len(rules)} rules from {repository}")
             return rules
+        except RulesFileNotFoundError:
+            # Re-raise this specific exception
+            raise
         except Exception as e:
             logger.error(f"Error fetching rules for {repository}: {e}")
             raise
