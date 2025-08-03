@@ -175,7 +175,7 @@ extend-exclude = '''
 profile = "black"
 multi_line_output = 3
 line_length = 88
-known_first_party = ["backend"]
+known_first_party = ["src"]
 
 [tool.mypy]
 python_version = "3.9"
@@ -209,7 +209,7 @@ asyncio_mode = "auto"
 
 
 [tool.coverage.run]
-source = ["backend"]
+source = ["src"]
 omit = [
     "*/tests/*",
     "*/test_*",

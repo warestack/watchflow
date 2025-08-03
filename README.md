@@ -1,5 +1,7 @@
 # Watchflow
 
+[![Works with GitHub](https://img.shields.io/badge/Works%20with-GitHub-1f1f23?style=for-the-badge&logo=github)](https://github.com/warestack/watchflow)
+
 ![Watchflow - Agentic GitHub Guardrails](docs/images/Watchflow%20-%20Agentic%20GitHub%20Guardrails.png)
 
 Replace static protection rules with agentic guardrails. Watchflow ensures consistent quality standards with smarter,
@@ -79,6 +81,8 @@ Get Watchflow up and running in minutes to start enforcing governance rules in y
 **Go to GitHub App Installation**
   - Visit [Watchflow GitHub App](https://github.com/apps/watchflow)
   - Click "Install"
+  - Select the repositories you want to protect
+  - Grant the necessary permissions for webhook access and repository content
 
 ### Step 2: Create Rules Configuration
 
@@ -150,6 +154,29 @@ acknowledgment - security review is mandatory.
 
 **Remains Blocked**: When sensitive files are modified without proper review, the PR remains blocked until security team
 approval - no acknowledgment possible.
+
+## GitHub Integration
+
+Watchflow integrates seamlessly with GitHub through:
+
+- **GitHub App**: Secure, scoped access to your repositories
+- **Webhooks**: Real-time event processing for immediate rule evaluation
+- **Check Runs**: Visual status updates in your GitHub interface
+- **Comments**: Natural interaction through PR and issue comments
+- **Deployment Protection**: Intelligent deployment approval workflows
+
+### Supported GitHub Events
+
+Watchflow processes the following GitHub events:
+- `push` - Code pushes and branch updates
+- `pull_request` - PR creation, updates, and merges
+- `issue_comment` - Comments on issues and PRs
+- `check_run` - CI/CD check run status
+- `deployment` - Deployment creation and updates
+- `deployment_status` - Deployment status changes
+- `deployment_review` - Deployment protection rule reviews
+- `deployment_protection_rule` - Deployment protection rule events
+- `workflow_run` - GitHub Actions workflow runs
 
 ## Documentation
 
