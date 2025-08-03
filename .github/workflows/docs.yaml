@@ -53,7 +53,7 @@ jobs:
 
       # Build documentation
       - name: "Build documentation"
-        run: mkdocs build
+        run: uv run mkdocs build
 
       # Upload artifact
       - name: "Upload artifact"
