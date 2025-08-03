@@ -8,17 +8,20 @@ This directory contains the documentation for Watchflow, built with [MkDocs](htt
 ### Prerequisites
 
 - Python 3.12+
-- pip
+- uv (recommended) or pip
 
 ### Setup
 
 1. **Install dependencies**
    ```bash
-   # Install all dependencies including docs
+   # Install all dependencies including docs (recommended)
    uv sync
 
    # Or install just the docs dependencies
    uv add mkdocs mkdocs-material mkdocs-git-revision-date-localized-plugin mkdocs-minify-plugin pymdown-extensions
+
+   # Alternative: using pip (if uv is not available)
+   pip install -e ".[docs]"
    ```
 
 2. **Start the development server**
