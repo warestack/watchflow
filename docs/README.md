@@ -18,7 +18,7 @@ This directory contains the documentation for Watchflow, built with [MkDocs](htt
    uv sync
 
    # Or install just the docs dependencies
-   uv add mkdocs-material mkdocs-git-revision-date-localized-plugin mkdocs-minify-plugin pymdown-extensions
+   uv add mkdocs mkdocs-material mkdocs-git-revision-date-localized-plugin mkdocs-minify-plugin pymdown-extensions
    ```
 
 2. **Start the development server**
