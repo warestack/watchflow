@@ -208,12 +208,12 @@ class DeploymentScheduler:
             other_violations = []
 
             for violation in violations:
-                rule_name = violation.get("rule", "").lower()
+                rule_description = violation.get("rule_description", "").lower()
                 message = violation.get("message", "").lower()
 
                 # Check if this is a time-based violation
                 if any(
-                    keyword in rule_name + message
+                    keyword in rule_description + message
                     for keyword in [
                         "hour",
                         "day",
@@ -329,13 +329,11 @@ class DeploymentScheduler:
             try:
                 # Convert Rule object to dict format
                 rule_dict = {
-                    "id": rule.id,
-                    "name": rule.name,
                     "description": rule.description,
                     "enabled": rule.enabled,
                     "severity": rule.severity.value if hasattr(rule.severity, "value") else rule.severity,
                     "event_types": [et.value if hasattr(et, "value") else et for et in rule.event_types],
-                    "parameters": {},
+                    "parameters": rule.parameters if hasattr(rule, "parameters") else {},
                 }
 
                 # Extract parameters from conditions (flatten them)

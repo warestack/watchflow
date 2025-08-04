@@ -1,8 +1,10 @@
 """
-Rule Feasibility Agent implementation.
+Rule Feasibility Agent implementation with error handling and retry logic.
 """
 
+import asyncio
 import logging
+import time
 
 from langgraph.graph import END, START, StateGraph
 
@@ -17,7 +19,18 @@ logger = logging.getLogger(__name__)
 class RuleFeasibilityAgent(BaseAgent):
     """
     LangGraph agent for checking if a user's natural language rule is feasible.
+
+    Features:
+    - Retry logic for structured output
+    - Timeout handling
+    - Enhanced error reporting
+    - Performance metrics
     """
+
+    def __init__(self, max_retries: int = 3, timeout: float = 30.0):
+        super().__init__(max_retries=max_retries)
+        self.timeout = timeout
+        logger.info(f"🔧 FeasibilityAgent initialized with max_retries={max_retries}, timeout={timeout}s")
 
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph workflow for rule feasibility checking."""
@@ -46,22 +59,28 @@ class RuleFeasibilityAgent(BaseAgent):
         """
         Check if a rule description is feasible and return YAML or feedback.
         """
+        start_time = time.time()
+
         try:
             logger.info(f"🚀 Starting feasibility analysis for rule: {rule_description[:100]}...")
 
             # Prepare initial state
             initial_state = FeasibilityState(rule_description=rule_description)
 
-            # Run the graph
-            result = await self.graph.ainvoke(initial_state)
+            # Run the graph with timeout
+            result = await self._execute_with_timeout(self.graph.ainvoke(initial_state), timeout=self.timeout)
 
             # Convert dict result back to FeasibilityState if needed
             if isinstance(result, dict):
                 result = FeasibilityState(**result)
 
-            logger.info(f"✅ Feasibility analysis completed: feasible={result.is_feasible}, type={result.rule_type}")
+            execution_time = time.time() - start_time
+            logger.info(f"✅ Feasibility analysis completed in {execution_time:.2f}s")
+            logger.info(
+                f"✅ Results: feasible={result.is_feasible}, type={result.rule_type}, confidence={result.confidence_score}"
+            )
 
-            # Convert to AgentResult
+            # Convert to AgentResult with metadata
             return AgentResult(
                 success=result.is_feasible,
                 message=result.feedback,
@@ -72,8 +91,68 @@ class RuleFeasibilityAgent(BaseAgent):
                     "rule_type": result.rule_type,
                     "analysis_steps": result.analysis_steps,
                 },
+                metadata={
+                    "execution_time_ms": execution_time * 1000,
+                    "retry_count": 0,  # Will be updated by retry logic
+                    "timeout_used": self.timeout,
+                },
+            )
+
+        except TimeoutError:
+            execution_time = time.time() - start_time
+            logger.error(f"❌ Feasibility analysis timed out after {execution_time:.2f}s")
+            return AgentResult(
+                success=False,
+                message=f"Feasibility analysis timed out after {self.timeout}s",
+                data={},
+                metadata={
+                    "execution_time_ms": execution_time * 1000,
+                    "timeout_used": self.timeout,
+                    "error_type": "timeout",
+                },
             )
 
         except Exception as e:
-            logger.error(f"❌ Error in rule feasibility check: {e}")
-            return AgentResult(success=False, message=f"Feasibility check failed: {str(e)}", data={})
+            execution_time = time.time() - start_time
+            logger.error(f"❌ Feasibility analysis failed: {e}")
+            return AgentResult(
+                success=False,
+                message=f"Feasibility analysis failed: {str(e)}",
+                data={},
+                metadata={"execution_time_ms": execution_time * 1000, "error_type": type(e).__name__},
+            )
+
+    async def execute_with_retry(self, rule_description: str) -> AgentResult:
+        """
+        Execute feasibility analysis with automatic retry on failure.
+        """
+        for attempt in range(self.max_retries):
+            try:
+                result = await self.execute(rule_description)
+                if result.success:
+                    result.metadata = result.metadata or {}
+                    result.metadata["retry_count"] = attempt
+                    return result
+                else:
+                    logger.warning(f"⚠️ Feasibility analysis failed on attempt {attempt + 1}")
+                    if attempt == self.max_retries - 1:
+                        return result
+
+                    # Wait before retry
+                    await asyncio.sleep(self.retry_delay * (2**attempt))
+
+            except Exception as e:
+                logger.error(f"❌ Exception on attempt {attempt + 1}: {e}")
+                if attempt == self.max_retries - 1:
+                    return AgentResult(
+                        success=False,
+                        message=f"All retry attempts failed: {str(e)}",
+                        data={},
+                        metadata={"retry_count": attempt + 1, "final_error": str(e)},
+                    )
+
+                await asyncio.sleep(self.retry_delay * (2**attempt))
+
+        return AgentResult(
+            success=False, message="All retry attempts failed", data={}, metadata={"retry_count": self.max_retries}
+        )

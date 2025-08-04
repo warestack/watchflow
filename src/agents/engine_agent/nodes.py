@@ -1,8 +1,8 @@
 """
-LangGraph nodes for the Hybrid Rule Engine Agent.
+LangGraph nodes for the Rule Engine Agent with hybrid validation strategy.
 """
 
-import json
+import asyncio
 import logging
 import time
 from typing import Any
@@ -13,321 +13,325 @@ from langchain_openai import ChatOpenAI
 from src.core.config import config
 from src.rules.validators import VALIDATOR_REGISTRY
 
-from .models import EngineState
-from .prompts import create_llm_evaluation_prompt, create_validator_selection_prompt, get_llm_evaluation_system_prompt
+from .models import (
+    EngineState,
+    HowToFixResponse,
+    LLMEvaluationResponse,
+    RuleDescription,
+    StrategySelectionResponse,
+    ValidationStrategy,
+)
+from .prompts import (
+    create_how_to_fix_prompt,
+    create_llm_evaluation_prompt,
+    create_validation_strategy_prompt,
+    get_llm_evaluation_system_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def _generate_specific_how_to_fix_message(validator_name: str, rule: dict[str, Any], event_data: dict[str, Any]) -> str:
-    """Generate specific 'How to fix' messages based on validator type and rule parameters."""
-
-    parameters = rule.get("parameters", {})
-    rule_name = rule.get("name", "Unknown Rule")
-
-    if validator_name == "required_labels":
-        required_labels = parameters.get("required_labels", [])
-        if required_labels:
-            if len(required_labels) == 1:
-                return f'Add the "{required_labels[0]}" label'
-            else:
-                labels_str = (
-                    ", ".join([f'"{label}"' for label in required_labels[:-1]]) + f' and "{required_labels[-1]}"'
-                )
-                return f"Add the {labels_str} labels"
-        else:
-            return f"Review and address the requirements for rule '{rule_name}'"
-
-    elif validator_name == "min_approvals":
-        min_approvals = parameters.get("min_approvals", 1)
-        if min_approvals == 1:
-            return "Get approval from a reviewer"
-        else:
-            return f"Get approval from {min_approvals} reviewers"
-
-    elif validator_name == "title_pattern":
-        pattern = parameters.get("pattern", "")
-        if pattern:
-            return f"Update the PR title to match the pattern: `{pattern}`"
-        else:
-            return f"Review and address the requirements for rule '{rule_name}'"
-
-    elif validator_name == "min_description_length":
-        min_length = parameters.get("min_length", 10)
-        return f"Add more details to the PR description (minimum {min_length} characters)"
-
-    elif validator_name == "max_file_size_mb":
-        max_size = parameters.get("max_size_mb", 1)
-        return f"Reduce file size to under {max_size}MB"
-
-    elif validator_name == "branches":
-        allowed_branches = parameters.get("branches", [])
-        if allowed_branches:
-            if len(allowed_branches) == 1:
-                return f'Change the target branch to "{allowed_branches[0]}"'
-            else:
-                branches_str = (
-                    ", ".join([f'"{branch}"' for branch in allowed_branches[:-1]]) + f' or "{allowed_branches[-1]}"'
-                )
-                return f"Change the target branch to {branches_str}"
-        else:
-            return f"Review and address the requirements for rule '{rule_name}'"
-
-    elif validator_name == "is_weekend":
-        return "Wait until a weekday to merge this PR"
-
-    elif validator_name == "allowed_hours":
-        allowed_hours = parameters.get("allowed_hours", [])
-        if allowed_hours:
-            hours_str = ", ".join([f"{hour}:00" for hour in allowed_hours])
-            return f"Wait until one of the allowed hours: {hours_str}"
-        else:
-            return f"Review and address the requirements for rule '{rule_name}'"
-
-    elif validator_name == "no-secrets":
-        return "Remove any secrets, API keys, or sensitive information from the code"
-
-    elif validator_name == "file-size-limit":
-        max_size = parameters.get("max_size", 1000000)
-        return f"Reduce file size to under {max_size} bytes"
-
-    elif validator_name == "file-type-restrictions":
-        allowed_types = parameters.get("allowed_types", [])
-        if allowed_types:
-            types_str = ", ".join([f"`.{ext}`" for ext in allowed_types])
-            return f"Only include files with these extensions: {types_str}"
-        else:
-            return f"Review and address the requirements for rule '{rule_name}'"
-
-    else:
-        # Generic fallback for unknown validators
-        return f"Review and address the requirements for rule '{rule_name}'"
-
-
-# --- Main evaluation logic ---
-async def smart_rule_evaluation(state: EngineState) -> EngineState:
-    import asyncio
-
+async def analyze_rule_descriptions(state: EngineState) -> EngineState:
+    """
+    Analyze rule descriptions and parameters to understand rule requirements.
+    """
     start_time = time.time()
-    violations = []
-    analysis_steps = []
 
     try:
-        logger.info(f"🔧 Smart evaluation starting for {len(state.rules)} rules against {state.event_type} event")
+        logger.info(f"🔍 Analyzing {len(state.rule_descriptions)} rule descriptions")
 
-        # --- Step 0: Pre-filter rules by event type ---
+        # Filter rules applicable to this event type
         applicable_rules = []
-        for rule in state.rules:
-            rule_event_types = rule.get("event_types", [])
-            if state.event_type in rule_event_types:
-                applicable_rules.append(rule)
-                logger.info(f"🔧 Rule '{rule.get('name')}' is applicable to {state.event_type} events")
+        for rule_desc in state.rule_descriptions:
+            if state.event_type in rule_desc.event_types:
+                applicable_rules.append(rule_desc)
+                logger.info(f"🔍 Rule '{rule_desc.description[:50]}...' is applicable to {state.event_type}")
             else:
                 logger.info(
-                    f"🔧 Rule '{rule.get('name')}' is NOT applicable to {state.event_type} events (expects: {rule_event_types})"
+                    f"🔍 Rule '{rule_desc.description[:50]}...' is NOT applicable (expects: {rule_desc.event_types})"
                 )
 
-        logger.info(f"🔧 Found {len(applicable_rules)} applicable rules out of {len(state.rules)} total rules")
+        state.rule_descriptions = applicable_rules
+        state.analysis_steps.append(f"Found {len(applicable_rules)} applicable rules out of {len(state.rules)} total")
 
-        if not applicable_rules:
-            logger.info("🔧 No applicable rules found for this event type")
-            state.violations = []
-            state.analysis_steps = ["No applicable rules found for this event type"]
-            state.evaluation_context = {
-                "total_rules": len(state.rules),
-                "applicable_rules": 0,
-                "rules_evaluated": 0,
-                "violations_found": 0,
-                "evaluation_strategy": "none",
-                "evaluation_time_ms": (time.time() - start_time) * 1000,
-            }
-            return state
+        analysis_time = (time.time() - start_time) * 1000
+        logger.info(f"🔍 Rule analysis completed in {analysis_time:.2f}ms")
 
+    except Exception as e:
+        logger.error(f"❌ Error in rule analysis: {e}")
+        state.analysis_steps.append(f"Error in rule analysis: {str(e)}")
+
+    return state
+
+
+async def select_validation_strategy(state: EngineState) -> EngineState:
+    """
+    Use LLM to select the best validation strategy for each rule based on available validators.
+    """
+    start_time = time.time()
+
+    try:
+        logger.info(f"🎯 Selecting validation strategies for {len(state.rule_descriptions)} rules using LLM")
+
+        # Use LLM to analyze rules and select validation strategies
         llm = ChatOpenAI(api_key=config.ai.api_key, model=config.ai.model, max_tokens=2000, temperature=0.1)
 
-        # --- Step 1: Ask LLM to select validator for applicable rules only ---
-        validator_list = list(VALIDATOR_REGISTRY.keys())
-        selection_prompt = create_validator_selection_prompt(applicable_rules, state.event_type, validator_list)
-        messages = [
-            SystemMessage(content=selection_prompt),
-            HumanMessage(content="Select the best validator for each applicable rule."),
-        ]
-        logger.info("🔧 Using LLM to select validators for applicable rules...")
-        llm_response = await llm.ainvoke(messages)
-        try:
-            content = llm_response.content.strip()
-            if content.startswith("```json"):
-                content = content[7:]
-            if content.startswith("```"):
-                content = content[3:]
-            if content.endswith("```"):
-                content = content[:-3]
-            validator_selections = json.loads(content.strip())
-        except Exception as e:
-            logger.error(f"🔧 Failed to parse validator selection: {e}")
-            # fallback: all applicable rules use llm_reasoning
-            validator_selections = [
-                {"rule_id": rule.get("id"), "validator_name": "llm_reasoning"} for rule in applicable_rules
+        for rule_desc in state.rule_descriptions:
+            # Create prompt for strategy selection
+            strategy_prompt = create_validation_strategy_prompt(rule_desc, state.available_validators)
+            messages = [
+                SystemMessage(content=strategy_prompt),
+                HumanMessage(content="Select the best validation strategy for this rule."),
             ]
 
-        # --- Step 2: Evaluate applicable rules using selected validators ---
+            try:
+                # Use structured output for reliable parsing
+                structured_llm = llm.with_structured_output(StrategySelectionResponse)
+                strategy_result = await structured_llm.ainvoke(messages)
+
+                rule_desc.validation_strategy = strategy_result.strategy
+                rule_desc.validator_name = strategy_result.validator_name
+
+                logger.info(f"🎯 Rule '{rule_desc.description[:50]}...' using {rule_desc.validation_strategy} strategy")
+                if rule_desc.validator_name:
+                    logger.info(f"🎯 Selected validator: {rule_desc.validator_name}")
+
+            except Exception as e:
+                logger.warning(f"⚠️ LLM strategy selection failed for rule '{rule_desc.description[:50]}...': {e}")
+                rule_desc.validation_strategy = ValidationStrategy.HYBRID
+                rule_desc.validator_name = None
+
+        strategy_time = (time.time() - start_time) * 1000
+        logger.info(f"🎯 Strategy selection completed in {strategy_time:.2f}ms")
+
+    except Exception as e:
+        logger.error(f"❌ Error in validation strategy selection: {e}")
+        state.analysis_steps.append(f"Error in strategy selection: {str(e)}")
+
+    return state
+
+
+async def execute_validator_evaluation(state: EngineState) -> EngineState:
+    """
+    Execute fast validator evaluations for rules that can use validators.
+    """
+    start_time = time.time()
+
+    try:
+        validator_rules = [
+            rd for rd in state.rule_descriptions if rd.validation_strategy == ValidationStrategy.VALIDATOR
+        ]
+        logger.info(f"⚡ Executing {len(validator_rules)} validator evaluations")
+
+        if not validator_rules:
+            logger.info("⚡ No validator rules to evaluate")
+            return state
+
+        # Execute validators concurrently
         validator_tasks = []
-        llm_tasks = []
-        for sel in validator_selections:
-            rule_id = sel["rule_id"]
-            validator_name = sel["validator_name"]
-            rule = next((r for r in applicable_rules if r.get("id") == rule_id), None)
-            if not rule:
-                logger.warning(f"🔧 Rule {rule_id} not found in applicable rules, skipping")
-                continue
+        for rule_desc in validator_rules:
+            if rule_desc.validator_name and rule_desc.validator_name in VALIDATOR_REGISTRY:
+                task = _execute_single_validator(rule_desc, state.event_data)
+                validator_tasks.append(task)
 
-            if validator_name in VALIDATOR_REGISTRY:
-                validator_tasks.append(
-                    _evaluate_with_validator(rule, validator_name, state.event_data, violations, analysis_steps)
-                )
-            else:
-                llm_tasks.append(
-                    _evaluate_with_llm(rule, state.event_data, state.event_type, violations, analysis_steps, llm)
-                )
-
-        # --- Step 3: Run all validator tasks in parallel ---
         if validator_tasks:
-            logger.info(f"🔧 Running {len(validator_tasks)} validator evaluations in parallel")
-            await asyncio.gather(*validator_tasks, return_exceptions=True)
+            results = await asyncio.gather(*validator_tasks, return_exceptions=True)
 
-        # --- Step 4: Run all LLM tasks in parallel (batch) ---
+            # Process results
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    logger.error(f"❌ Validator failed for rule '{validator_rules[i].description[:50]}...': {result}")
+                    # Fallback to LLM if validator fails
+                    validator_rules[i].validation_strategy = ValidationStrategy.LLM_REASONING
+                else:
+                    if result.get("is_violated", False):
+                        state.violations.append(result.get("violation", {}))
+                        state.analysis_steps.append(f"⚡ Validator violation: {validator_rules[i].description[:50]}...")
+                    else:
+                        state.analysis_steps.append(f"⚡ Validator passed: {validator_rules[i].description[:50]}...")
+
+                    # Track validator usage
+                    validator_name = validator_rules[i].validator_name
+                    if validator_name:
+                        state.validator_usage[validator_name] = state.validator_usage.get(validator_name, 0) + 1
+
+        validator_time = (time.time() - start_time) * 1000
+        logger.info(f"⚡ Validator evaluation completed in {validator_time:.2f}ms")
+
+    except Exception as e:
+        logger.error(f"❌ Error in validator evaluation: {e}")
+        state.analysis_steps.append(f"Error in validator evaluation: {str(e)}")
+
+    return state
+
+
+async def execute_llm_fallback(state: EngineState) -> EngineState:
+    """
+    Execute LLM reasoning for complex rules or as fallback for validator failures.
+    """
+    start_time = time.time()
+
+    try:
+        llm_rules = [
+            rd
+            for rd in state.rule_descriptions
+            if rd.validation_strategy in [ValidationStrategy.LLM_REASONING, ValidationStrategy.HYBRID]
+        ]
+        logger.info(f"🧠 Executing {len(llm_rules)} LLM evaluations")
+
+        if not llm_rules:
+            logger.info("🧠 No LLM rules to evaluate")
+            return state
+
+        # Execute LLM evaluations concurrently (with rate limiting)
+        llm = ChatOpenAI(api_key=config.ai.api_key, model=config.ai.model, max_tokens=2000, temperature=0.1)
+
+        llm_tasks = []
+        for rule_desc in llm_rules:
+            task = _execute_single_llm_evaluation(rule_desc, state.event_data, state.event_type, llm)
+            llm_tasks.append(task)
+
         if llm_tasks:
-            logger.info(f"🔧 Running {len(llm_tasks)} LLM evaluations in parallel")
-            await asyncio.gather(*llm_tasks, return_exceptions=True)
+            # Execute in batches to avoid overwhelming the LLM
+            batch_size = 3
+            for i in range(0, len(llm_tasks), batch_size):
+                batch = llm_tasks[i : i + batch_size]
+                results = await asyncio.gather(*batch, return_exceptions=True)
 
-        # --- Step 5: Finalize state ---
-        state.violations = violations
-        state.analysis_steps = analysis_steps
-        state.evaluation_context = {
-            "total_rules": len(state.rules),
-            "applicable_rules": len(applicable_rules),
-            "rules_evaluated": len(validator_selections),
-            "violations_found": len(violations),
-            "evaluation_strategy": "llm+validator",
-            "evaluation_time_ms": (time.time() - start_time) * 1000,
-        }
+                # Process batch results
+                for j, result in enumerate(results):
+                    rule_desc = llm_rules[i + j]
+                    if isinstance(result, Exception):
+                        logger.error(f"❌ LLM evaluation failed for rule '{rule_desc.description[:50]}...': {result}")
+                        state.analysis_steps.append(f"🧠 LLM failed: {rule_desc.description[:50]}...")
+                    else:
+                        if result.get("is_violated", False):
+                            state.violations.append(result.get("violation", {}))
+                            state.analysis_steps.append(f"🧠 LLM violation: {rule_desc.description[:50]}...")
+                        else:
+                            state.analysis_steps.append(f"🧠 LLM passed: {rule_desc.description[:50]}...")
 
-        logger.info(
-            f"🔧 Smart evaluation completed: {len(violations)} violations found in {state.evaluation_context['evaluation_time_ms']:.2f}ms"
-        )
+                # Small delay between batches
+                if i + batch_size < len(llm_tasks):
+                    await asyncio.sleep(0.5)
 
-        return state
+        # Track LLM usage
+        state.llm_usage = len(llm_rules)
+
+        llm_time = (time.time() - start_time) * 1000
+        logger.info(f"🧠 LLM evaluation completed in {llm_time:.2f}ms")
 
     except Exception as e:
-        logger.error(f"🔧 Error in smart rule evaluation: {e}")
-        state.violations = []
-        state.analysis_steps = [f"Error: {str(e)}"]
-        state.evaluation_context = {"error": str(e), "evaluation_time_ms": (time.time() - start_time) * 1000}
-        return state
+        logger.error(f"❌ Error in LLM evaluation: {e}")
+        state.analysis_steps.append(f"Error in LLM evaluation: {str(e)}")
+
+    return state
 
 
-# --- 3. Update _evaluate_with_validator to use async validate ---
-async def _evaluate_with_validator(
-    rule: dict[str, Any],
-    validator_name: str,
-    event_data: dict[str, Any],
-    violations: list[dict[str, Any]],
-    analysis_steps: list[str],
-) -> dict[str, Any]:
+async def _execute_single_validator(rule_desc: RuleDescription, event_data: dict[str, Any]) -> dict[str, Any]:
+    """Execute a single validator evaluation."""
+    start_time = time.time()
+
     try:
-        validator = VALIDATOR_REGISTRY[validator_name]
-        parameters = rule.get("parameters", {})
-        is_valid = await validator.validate(parameters, event_data)
+        validator = VALIDATOR_REGISTRY[rule_desc.validator_name]
+        is_valid = await validator.validate(rule_desc.parameters, event_data)
         is_violated = not is_valid
-        message = (
-            f"Rule '{rule.get('name')}' validation failed"
-            if is_violated
-            else f"Rule '{rule.get('name')}' validation passed"
-        )
-        details = {
-            "validator_used": validator_name,
-            "parameters": parameters,
-            "validation_result": "failed" if is_violated else "passed",
-        }
+
+        execution_time = (time.time() - start_time) * 1000
+
         if is_violated:
+            # Generate dynamic "how to fix" message using LLM
+            how_to_fix = await _generate_dynamic_how_to_fix(rule_desc, event_data, validator.name)
+
             violation = {
-                "rule_id": rule.get("id"),
-                "rule_name": rule.get("name"),
-                "severity": rule.get("severity", "medium"),
-                "message": message,
-                "details": details,
-                "how_to_fix": _generate_specific_how_to_fix_message(validator_name, rule, event_data),
+                "rule_description": rule_desc.description,
+                "severity": rule_desc.severity,
+                "message": f"Rule validation failed: {rule_desc.description}",
+                "details": {
+                    "validator_used": rule_desc.validator_name,
+                    "parameters": rule_desc.parameters,
+                    "validation_result": "failed",
+                },
+                "how_to_fix": how_to_fix,
                 "docs_url": "",
+                "validation_strategy": ValidationStrategy.VALIDATOR,
+                "execution_time_ms": execution_time,
             }
-            violations.append(violation)
-            analysis_steps.append(f"  - ❌ Rule violated: {rule.get('name')} (validator)")
+            return {"is_violated": True, "violation": violation}
         else:
-            analysis_steps.append(f"  - ✅ Rule passed: {rule.get('name')} (validator)")
-        return {"is_violated": is_violated, "message": message, "details": details}
+            return {"is_violated": False, "execution_time_ms": execution_time}
+
     except Exception as e:
-        return {"is_violated": False, "message": f"Validator error: {str(e)}", "details": {"error": str(e)}}
+        execution_time = (time.time() - start_time) * 1000
+        logger.error(f"❌ Validator error for rule '{rule_desc.description[:50]}...': {e}")
+        return {"is_violated": False, "error": str(e), "execution_time_ms": execution_time}
 
 
-async def _evaluate_with_llm(
-    rule: dict[str, Any],
-    event_data: dict[str, Any],
-    event_type: str,
-    violations: list[dict[str, Any]],
-    analysis_steps: list[str],
-    llm: ChatOpenAI,
+async def _execute_single_llm_evaluation(
+    rule_desc: RuleDescription, event_data: dict[str, Any], event_type: str, llm: ChatOpenAI
 ) -> dict[str, Any]:
-    """Evaluate a rule using LLM reasoning for complex/custom rules."""
-    try:
-        # Create prompt for LLM evaluation using the prompts module
-        evaluation_prompt = create_llm_evaluation_prompt(rule, event_data, event_type)
+    """Execute a single LLM evaluation."""
+    start_time = time.time()
 
+    try:
+        # Create evaluation prompt
+        evaluation_prompt = create_llm_evaluation_prompt(rule_desc, event_data, event_type)
         messages = [SystemMessage(content=get_llm_evaluation_system_prompt()), HumanMessage(content=evaluation_prompt)]
 
-        logger.info(f"🔧 Using LLM reasoning for rule: {rule.get('name')}")
-        llm_response = await llm.ainvoke(messages)
+        # Use structured output for reliable parsing
+        structured_llm = llm.with_structured_output(LLMEvaluationResponse)
+        evaluation_result = await structured_llm.ainvoke(messages)
 
-        try:
-            # Clean the response - remove markdown code blocks if present
-            content = llm_response.content.strip()
-            if content.startswith("```json"):
-                content = content[7:]  # Remove ```json
-            if content.startswith("```"):
-                content = content[3:]  # Remove ```
-            if content.endswith("```"):
-                content = content[:-3]  # Remove trailing ```
+        execution_time = (time.time() - start_time) * 1000
 
-            evaluation_result = json.loads(content.strip())
-            is_violated = evaluation_result.get("is_violated", False)
-            message = evaluation_result.get("message", "Rule violation detected")
-            details = evaluation_result.get("details", {})
-            how_to_fix = evaluation_result.get("how_to_fix", "")
-
-            if is_violated:
-                violation = {
-                    "rule_id": rule.get("id"),
-                    "rule_name": rule.get("name"),
-                    "severity": rule.get("severity", "medium"),
-                    "message": message,
-                    "details": details,
-                    "how_to_fix": how_to_fix,
-                    "docs_url": "",
-                }
-                violations.append(violation)
-                logger.info(f"🔧 Rule violation detected: {rule.get('name')} (LLM reasoning)")
-                analysis_steps.append(f"  - ❌ Rule violated: {rule.get('name')} (LLM reasoning)")
-            else:
-                logger.info(f"🔧 Rule passed: {rule.get('name')} (LLM reasoning)")
-                analysis_steps.append(f"  - ✅ Rule passed: {rule.get('name')} (LLM reasoning)")
-
-            return {"is_violated": is_violated, "message": message, "details": details, "how_to_fix": how_to_fix}
-
-        except json.JSONDecodeError as e:
-            logger.error(f"🔧 Failed to parse LLM evaluation response: {e}")
-            return {"is_violated": False, "message": f"LLM parsing error: {str(e)}", "details": {"error": str(e)}}
+        if evaluation_result.is_violated:
+            violation = {
+                "rule_description": rule_desc.description,
+                "severity": rule_desc.severity,
+                "message": evaluation_result.message,
+                "details": evaluation_result.details,
+                "how_to_fix": evaluation_result.how_to_fix or "",
+                "docs_url": "",
+                "validation_strategy": ValidationStrategy.LLM_REASONING,
+                "execution_time_ms": execution_time,
+            }
+            return {"is_violated": True, "violation": violation}
+        else:
+            return {"is_violated": False, "execution_time_ms": execution_time}
 
     except Exception as e:
-        logger.error(f"🔧 Error in LLM evaluation: {e}")
-        return {"is_violated": False, "message": f"LLM evaluation error: {str(e)}", "details": {"error": str(e)}}
+        execution_time = (time.time() - start_time) * 1000
+        logger.error(f"❌ LLM evaluation error for rule '{rule_desc.description[:50]}...': {e}")
+        return {"is_violated": False, "error": str(e), "execution_time_ms": execution_time}
+
+
+async def _generate_dynamic_how_to_fix(
+    rule_desc: RuleDescription, event_data: dict[str, Any], validator_name: str
+) -> str:
+    """Generate dynamic 'how to fix' message using LLM."""
+
+    try:
+        llm = ChatOpenAI(api_key=config.ai.api_key, model=config.ai.model, max_tokens=1000, temperature=0.1)
+
+        # Create prompt for how to fix generation
+        how_to_fix_prompt = create_how_to_fix_prompt(rule_desc, event_data, validator_name)
+        messages = [
+            SystemMessage(
+                content="You are an expert at providing actionable guidance for fixing GitHub rule violations."
+            ),
+            HumanMessage(content=how_to_fix_prompt),
+        ]
+
+        # Use structured output for reliable parsing
+        structured_llm = llm.with_structured_output(HowToFixResponse)
+        how_to_fix_result = await structured_llm.ainvoke(messages)
+
+        return how_to_fix_result.how_to_fix
+
+    except Exception as e:
+        logger.error(f"❌ Error generating how to fix message: {e}")
+        # Fallback to generic message
+        return f"Review and address the requirements for rule: {rule_desc.description}"
 
 
 async def validate_violations(state: EngineState) -> EngineState:

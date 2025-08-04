@@ -106,8 +106,6 @@ class PushProcessor(BaseEventProcessor):
         for rule in rules:
             # Convert Rule object to dict format
             rule_dict = {
-                "id": rule.id,
-                "name": rule.name,
                 "description": rule.description,
                 "enabled": rule.enabled,
                 "severity": rule.severity.value if hasattr(rule.severity, "value") else rule.severity,
@@ -218,8 +216,8 @@ class PushProcessor(BaseEventProcessor):
                 text += f"## {severity_emoji} {severity.title()} Severity\n\n"
 
                 for violation in severity_groups[severity]:
-                    text += f"### {violation.get('rule', 'Unknown Rule')}\n"
-                    text += f"{violation.get('message', 'Unknown issue')}\n"
+                    text += f"### {violation.get('rule_description', 'Unknown Rule')}\n"
+                    text += f"Rule validation failed with severity: **{violation.get('severity', 'medium')}**\n"
                     if violation.get("suggestion"):
                         text += f"*How to fix: {violation.get('suggestion')}*\n"
                     text += "\n"

@@ -7,8 +7,15 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-class ConditionValidator(ABC):
+class Condition(ABC):
     """Abstract base class for all condition validators."""
+
+    # Class attributes for validator descriptions
+    name: str = ""
+    description: str = ""
+    parameter_patterns: list[str] = []
+    event_types: list[str] = []
+    examples: list[dict[str, Any]] = []
 
     @abstractmethod
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
@@ -24,20 +31,36 @@ class ConditionValidator(ABC):
         """
         pass
 
+    def get_description(self) -> dict[str, Any]:
+        """Get validator description for dynamic strategy selection."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "parameter_patterns": self.parameter_patterns,
+            "event_types": self.event_types,
+            "examples": self.examples,
+        }
 
-class AuthorTeamValidator(ConditionValidator):
+
+class AuthorTeamCondition(Condition):
     """Validates if the event author is a member of a specific team."""
+
+    name = "author_team_is"
+    description = "Validates if the event author is a member of a specific team"
+    parameter_patterns = ["team"]
+    event_types = ["pull_request", "push", "deployment"]
+    examples = [{"team": "devops"}, {"team": "codeowners"}]
 
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         team_name = parameters.get("team")
         if not team_name:
-            logger.warning("AuthorTeamValidator: No team specified in parameters")
+            logger.warning("AuthorTeamCondition: No team specified in parameters")
             return False
 
         # Get author from event
         author_login = event.get("sender", {}).get("login", "")
         if not author_login:
-            logger.warning("AuthorTeamValidator: No sender login found in event")
+            logger.warning("AuthorTeamCondition: No sender login found in event")
             return False
 
         # Placeholder logic - replace with actual GitHub API call
@@ -52,13 +75,22 @@ class AuthorTeamValidator(ConditionValidator):
         return author_login in team_memberships.get(team_name, [])
 
 
-class FilePatternValidator(ConditionValidator):
+class FilePatternCondition(Condition):
     """Validates if files in the event match or don't match a pattern."""
+
+    name = "files_match_pattern"
+    description = "Validates if files in the event match or don't match a pattern"
+    parameter_patterns = ["pattern", "condition_type"]
+    event_types = ["pull_request", "push"]
+    examples = [
+        {"pattern": "*.py", "condition_type": "files_match_pattern"},
+        {"pattern": "*.md", "condition_type": "files_not_match_pattern"},
+    ]
 
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         pattern = parameters.get("pattern")
         if not pattern:
-            logger.warning("FilePatternValidator: No pattern specified in parameters")
+            logger.warning("FilePatternCondition: No pattern specified in parameters")
             return False
 
         # Get the list of changed files from the event
@@ -103,8 +135,14 @@ class FilePatternValidator(ConditionValidator):
         return f"^{regex}$"
 
 
-class NewContributorValidator(ConditionValidator):
+class NewContributorCondition(Condition):
     """Validates if the event author is a new contributor."""
+
+    name = "author_is_new_contributor"
+    description = "Validates if the event author is a new contributor"
+    parameter_patterns = []
+    event_types = ["pull_request", "push"]
+    examples = [{}]
 
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         author_login = event.get("sender", {}).get("login", "")
@@ -118,8 +156,14 @@ class NewContributorValidator(ConditionValidator):
         return author_login in new_contributors
 
 
-class ApprovalCountValidator(ConditionValidator):
+class ApprovalCountCondition(Condition):
     """Validates if the PR has the required number of approvals."""
+
+    name = "has_min_approvals"
+    description = "Validates if the PR has the required number of approvals"
+    parameter_patterns = ["min_approvals"]
+    event_types = ["pull_request"]
+    examples = [{"min_approvals": 1}, {"min_approvals": 2}]
 
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         # Remove unused variable assignment
@@ -129,8 +173,14 @@ class ApprovalCountValidator(ConditionValidator):
         return True
 
 
-class WeekendValidator(ConditionValidator):
+class WeekendCondition(Condition):
     """Validates if the current time is during a weekend."""
+
+    name = "is_weekend"
+    description = "Validates if the current time is during a weekend"
+    parameter_patterns = []
+    event_types = ["deployment", "pull_request"]
+    examples = [{}]
 
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         current_time = datetime.now()
@@ -140,8 +190,14 @@ class WeekendValidator(ConditionValidator):
         return not is_weekend
 
 
-class WorkflowDurationValidator(ConditionValidator):
+class WorkflowDurationCondition(Condition):
     """Validates if a workflow run exceeded a time threshold."""
+
+    name = "workflow_duration_exceeds"
+    description = "Validates if a workflow run exceeded a time threshold"
+    parameter_patterns = ["minutes"]
+    event_types = ["workflow_run"]
+    examples = [{"minutes": 3}, {"minutes": 5}]
 
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         # max_minutes = parameters.get("minutes", 3)
@@ -150,7 +206,15 @@ class WorkflowDurationValidator(ConditionValidator):
         return False  # Placeholder
 
 
-class MinApprovalsValidator(ConditionValidator):
+class MinApprovalsCondition(Condition):
+    """Validates if the PR has the minimum number of approvals."""
+
+    name = "min_approvals"
+    description = "Validates if the PR has the minimum number of approvals"
+    parameter_patterns = ["min_approvals"]
+    event_types = ["pull_request"]
+    examples = [{"min_approvals": 1}, {"min_approvals": 2}]
+
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         min_approvals = parameters.get("min_approvals", 1)
 
@@ -163,12 +227,20 @@ class MinApprovalsValidator(ConditionValidator):
             if review.get("state") == "APPROVED":
                 approved_count += 1
 
-        logger.debug(f"MinApprovalsValidator: PR has {approved_count} approvals, requires {min_approvals}")
+        logger.debug(f"MinApprovalsCondition: PR has {approved_count} approvals, requires {min_approvals}")
 
         return approved_count >= min_approvals
 
 
-class DaysValidator(ConditionValidator):
+class DaysCondition(Condition):
+    """Validates if the PR was merged on restricted days."""
+
+    name = "days"
+    description = "Validates if the PR was merged on restricted days"
+    parameter_patterns = ["days"]
+    event_types = ["pull_request"]
+    examples = [{"days": ["Friday", "Saturday"]}, {"days": ["Monday"]}]
+
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         days = parameters.get("days", [])
         if not days:
@@ -193,17 +265,25 @@ class DaysValidator(ConditionValidator):
             is_restricted = weekday in days
 
             logger.debug(
-                f"DaysValidator: PR merged on {weekday}, restricted days: {days}, is_restricted: {is_restricted}"
+                f"DaysCondition: PR merged on {weekday}, restricted days: {days}, is_restricted: {is_restricted}"
             )
 
             return not is_restricted  # Return True if NOT restricted (no violation)
 
         except Exception as e:
-            logger.error(f"DaysValidator: Error parsing merged_at timestamp '{merged_at}': {e}")
+            logger.error(f"DaysCondition: Error parsing merged_at timestamp '{merged_at}': {e}")
             return True  # No violation if we can't parse the date
 
 
-class TitlePatternValidator(ConditionValidator):
+class TitlePatternCondition(Condition):
+    """Validates if the PR title matches a specific pattern."""
+
+    name = "title_pattern"
+    description = "Validates if the PR title matches a specific pattern"
+    parameter_patterns = ["title_pattern"]
+    event_types = ["pull_request"]
+    examples = [{"title_pattern": "^feat|^fix|^docs"}, {"title_pattern": "^JIRA-\\d+"}]
+
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         pattern = parameters.get("title_pattern")
         if not pattern:
@@ -221,14 +301,22 @@ class TitlePatternValidator(ConditionValidator):
         # Test the pattern
         try:
             matches = bool(re.match(pattern, title))
-            logger.debug(f"TitlePatternValidator: Title '{title}' matches pattern '{pattern}': {matches}")
+            logger.debug(f"TitlePatternCondition: Title '{title}' matches pattern '{pattern}': {matches}")
             return matches
         except re.error as e:
-            logger.error(f"TitlePatternValidator: Invalid regex pattern '{pattern}': {e}")
+            logger.error(f"TitlePatternCondition: Invalid regex pattern '{pattern}': {e}")
             return True  # No violation if pattern is invalid
 
 
-class MinDescriptionLengthValidator(ConditionValidator):
+class MinDescriptionLengthCondition(Condition):
+    """Validates if the PR description meets minimum length requirements."""
+
+    name = "min_description_length"
+    description = "Validates if the PR description meets minimum length requirements"
+    parameter_patterns = ["min_description_length"]
+    event_types = ["pull_request"]
+    examples = [{"min_description_length": 50}, {"min_description_length": 100}]
+
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         min_length = parameters.get("min_description_length", 1)
 
@@ -245,13 +333,21 @@ class MinDescriptionLengthValidator(ConditionValidator):
         is_valid = description_length >= min_length
 
         logger.debug(
-            f"MinDescriptionLengthValidator: Description length {description_length}, requires {min_length}: {is_valid}"
+            f"MinDescriptionLengthCondition: Description length {description_length}, requires {min_length}: {is_valid}"
         )
 
         return is_valid
 
 
-class RequiredLabelsValidator(ConditionValidator):
+class RequiredLabelsCondition(Condition):
+    """Validates if the PR has all required labels."""
+
+    name = "required_labels"
+    description = "Validates if the PR has all required labels"
+    parameter_patterns = ["required_labels"]
+    event_types = ["pull_request"]
+    examples = [{"required_labels": ["security", "review"]}, {"required_labels": ["bug", "feature"]}]
+
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         required_labels = parameters.get("required_labels", [])
         if not required_labels:
@@ -270,20 +366,28 @@ class RequiredLabelsValidator(ConditionValidator):
         is_valid = len(missing_labels) == 0
 
         logger.debug(
-            f"RequiredLabelsValidator: PR has labels {pr_labels}, requires {required_labels}, missing {missing_labels}: {is_valid}"
+            f"RequiredLabelsCondition: PR has labels {pr_labels}, requires {required_labels}, missing {missing_labels}: {is_valid}"
         )
 
         return is_valid
 
 
-class MaxFileSizeValidator(ConditionValidator):
+class MaxFileSizeCondition(Condition):
+    """Validates if files don't exceed maximum size limits."""
+
+    name = "max_file_size_mb"
+    description = "Validates if files don't exceed maximum size limits"
+    parameter_patterns = ["max_file_size_mb"]
+    event_types = ["pull_request", "push"]
+    examples = [{"max_file_size_mb": 10}, {"max_file_size_mb": 1}]
+
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         max_size_mb = parameters.get("max_file_size_mb", 100)
         files = event.get("files", [])
 
         # If no files data is available, we can't evaluate this rule
         if not files:
-            logger.debug("MaxFileSizeValidator: No files data available, skipping validation")
+            logger.debug("MaxFileSizeCondition: No files data available, skipping validation")
             return True  # No violation if we can't check
 
         # Check each file's size
@@ -295,20 +399,28 @@ class MaxFileSizeValidator(ConditionValidator):
                 filename = file.get("filename", "unknown")
                 oversized_files.append(f"{filename} ({size_mb:.2f}MB)")
                 logger.debug(
-                    f"MaxFileSizeValidator: File {filename} exceeds size limit: {size_mb:.2f}MB > {max_size_mb}MB"
+                    f"MaxFileSizeCondition: File {filename} exceeds size limit: {size_mb:.2f}MB > {max_size_mb}MB"
                 )
 
         is_valid = len(oversized_files) == 0
 
         if is_valid:
-            logger.debug(f"MaxFileSizeValidator: All {len(files)} files are within size limit of {max_size_mb}MB")
+            logger.debug(f"MaxFileSizeCondition: All {len(files)} files are within size limit of {max_size_mb}MB")
         else:
-            logger.debug(f"MaxFileSizeValidator: {len(oversized_files)} files exceed size limit: {oversized_files}")
+            logger.debug(f"MaxFileSizeCondition: {len(oversized_files)} files exceed size limit: {oversized_files}")
 
         return is_valid
 
 
-class PatternValidator(ConditionValidator):
+class PatternCondition(Condition):
+    """Generic pattern validator for various fields."""
+
+    name = "pattern"
+    description = "Generic pattern validator for various fields"
+    parameter_patterns = ["pattern"]
+    event_types = ["pull_request", "push"]
+    examples = [{"pattern": "^feat|^fix"}, {"pattern": "^JIRA-\\d+"}]
+
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         pattern = parameters.get("pattern", "")
         if not pattern:
@@ -325,14 +437,22 @@ class PatternValidator(ConditionValidator):
 
         try:
             matches = bool(re.match(pattern, title))
-            logger.debug(f"PatternValidator: Title '{title}' matches pattern '{pattern}': {matches}")
+            logger.debug(f"PatternCondition: Title '{title}' matches pattern '{pattern}': {matches}")
             return matches
         except re.error as e:
-            logger.error(f"PatternValidator: Invalid regex pattern '{pattern}': {e}")
+            logger.error(f"PatternCondition: Invalid regex pattern '{pattern}': {e}")
             return True  # No violation if pattern is invalid
 
 
-class AllowForcePushValidator(ConditionValidator):
+class AllowForcePushCondition(Condition):
+    """Validates if force pushes are allowed."""
+
+    name = "allow_force_push"
+    description = "Validates if force pushes are allowed"
+    parameter_patterns = ["allow_force_push"]
+    event_types = ["push"]
+    examples = [{"allow_force_push": False}, {"allow_force_push": True}]
+
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         # allow_force_push = parameters.get("allow_force_push", False)
 
@@ -341,7 +461,15 @@ class AllowForcePushValidator(ConditionValidator):
         return True
 
 
-class ProtectedBranchesValidator(ConditionValidator):
+class ProtectedBranchesCondition(Condition):
+    """Validates if the PR targets protected branches."""
+
+    name = "protected_branches"
+    description = "Validates if the PR targets protected branches"
+    parameter_patterns = ["protected_branches"]
+    event_types = ["pull_request"]
+    examples = [{"protected_branches": ["main", "develop"]}, {"protected_branches": ["master"]}]
+
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         protected_branches = parameters.get("protected_branches", [])
         if not protected_branches:
@@ -358,13 +486,21 @@ class ProtectedBranchesValidator(ConditionValidator):
         is_protected = base_branch in protected_branches
 
         logger.debug(
-            f"ProtectedBranchesValidator: Base branch '{base_branch}' in protected list {protected_branches}: {is_protected}"
+            f"ProtectedBranchesCondition: Base branch '{base_branch}' in protected list {protected_branches}: {is_protected}"
         )
 
         return not is_protected  # Return True if NOT protected (no violation)
 
 
-class EnvironmentsValidator(ConditionValidator):
+class EnvironmentsCondition(Condition):
+    """Validates deployment environments."""
+
+    name = "environments"
+    description = "Validates deployment environments"
+    parameter_patterns = ["environments"]
+    event_types = ["deployment"]
+    examples = [{"environments": ["staging", "production"]}, {"environments": ["dev"]}]
+
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         environments = parameters.get("environments", [])
         if not environments:
@@ -375,7 +511,15 @@ class EnvironmentsValidator(ConditionValidator):
         return True
 
 
-class RequiredTeamsValidator(ConditionValidator):
+class RequiredTeamsCondition(Condition):
+    """Validates if the user is a member of required teams."""
+
+    name = "required_teams"
+    description = "Validates if the user is a member of required teams"
+    parameter_patterns = ["required_teams"]
+    event_types = ["pull_request", "push"]
+    examples = [{"required_teams": ["devops", "security"]}, {"required_teams": ["codeowners"]}]
+
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         required_teams = parameters.get("required_teams", [])
         if not required_teams:
@@ -386,19 +530,52 @@ class RequiredTeamsValidator(ConditionValidator):
         return True
 
 
-class AllowedHoursValidator(ConditionValidator):
+class AllowedHoursCondition(Condition):
+    """Validates if the current time is within allowed hours."""
+
+    name = "allowed_hours"
+    description = "Validates if the current time is within allowed hours"
+    parameter_patterns = ["allowed_hours", "timezone"]
+    event_types = ["deployment", "pull_request"]
+    examples = [
+        {"allowed_hours": [9, 10, 11, 14, 15, 16], "timezone": "Europe/Athens"},
+        {"allowed_hours": [8, 9, 10, 11, 12, 13, 14, 15, 16, 17], "timezone": "UTC"},
+    ]
+
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         allowed_hours = parameters.get("allowed_hours", [])
         if not allowed_hours:
             return True
 
-        current_time = datetime.now()
+        # Get timezone from parameters, default to UTC
+        timezone_str = parameters.get("timezone", "UTC")
+        try:
+            import pytz
+
+            tz = pytz.timezone(timezone_str)
+            current_time = datetime.now(tz)
+        except (ImportError, pytz.exceptions.UnknownTimeZoneError):
+            # Fallback to UTC if pytz is not available or timezone is invalid
+            logger.warning(f"Invalid timezone '{timezone_str}', using UTC")
+            current_time = datetime.now()
+
         current_hour = current_time.hour
 
+        logger.debug(
+            f"AllowedHoursCondition: Current hour {current_hour} in timezone {timezone_str}, allowed hours: {allowed_hours}"
+        )
         return current_hour in allowed_hours
 
 
-class BranchesValidator(ConditionValidator):
+class BranchesCondition(Condition):
+    """Validates if the PR targets allowed branches."""
+
+    name = "branches"
+    description = "Validates if the PR targets allowed branches"
+    parameter_patterns = ["branches"]
+    event_types = ["pull_request"]
+    examples = [{"branches": ["main", "develop"]}, {"branches": ["master"]}]
+
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         branches = parameters.get("branches", [])
         if not branches:
@@ -413,12 +590,20 @@ class BranchesValidator(ConditionValidator):
 
         is_allowed = base_branch in branches
 
-        logger.debug(f"BranchesValidator: Base branch '{base_branch}' in allowed branches {branches}: {is_allowed}")
+        logger.debug(f"BranchesCondition: Base branch '{base_branch}' in allowed branches {branches}: {is_allowed}")
 
         return is_allowed
 
 
-class RequiredChecksValidator(ConditionValidator):
+class RequiredChecksCondition(Condition):
+    """Validates if all required checks have passed."""
+
+    name = "required_checks"
+    description = "Validates if all required checks have passed"
+    parameter_patterns = ["required_checks"]
+    event_types = ["pull_request"]
+    examples = [{"required_checks": ["ci/cd", "security-scan"]}, {"required_checks": ["lint", "test"]}]
+
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         required_checks = parameters.get("required_checks", [])
         if not required_checks:
@@ -431,25 +616,30 @@ class RequiredChecksValidator(ConditionValidator):
 
 # Registry of all available validators
 VALIDATOR_REGISTRY = {
-    "author_team_is": AuthorTeamValidator(),
-    "files_match_pattern": FilePatternValidator(),
-    "files_not_match_pattern": FilePatternValidator(),
-    "author_is_new_contributor": NewContributorValidator(),
-    "has_min_approvals": ApprovalCountValidator(),
-    "is_weekend": WeekendValidator(),
-    "workflow_duration_exceeds": WorkflowDurationValidator(),
-    "min_approvals": MinApprovalsValidator(),
-    "days": DaysValidator(),
-    "title_pattern": TitlePatternValidator(),
-    "min_description_length": MinDescriptionLengthValidator(),
-    "required_labels": RequiredLabelsValidator(),
-    "max_file_size_mb": MaxFileSizeValidator(),
-    "pattern": PatternValidator(),
-    "allow_force_push": AllowForcePushValidator(),
-    "protected_branches": ProtectedBranchesValidator(),
-    "environments": EnvironmentsValidator(),
-    "required_teams": RequiredTeamsValidator(),
-    "allowed_hours": AllowedHoursValidator(),
-    "branches": BranchesValidator(),
-    "required_checks": RequiredChecksValidator(),
+    "author_team_is": AuthorTeamCondition(),
+    "files_match_pattern": FilePatternCondition(),
+    "files_not_match_pattern": FilePatternCondition(),
+    "author_is_new_contributor": NewContributorCondition(),
+    "has_min_approvals": ApprovalCountCondition(),
+    "is_weekend": WeekendCondition(),
+    "workflow_duration_exceeds": WorkflowDurationCondition(),
+    "min_approvals": MinApprovalsCondition(),
+    "days": DaysCondition(),
+    "title_pattern": TitlePatternCondition(),
+    "min_description_length": MinDescriptionLengthCondition(),
+    "required_labels": RequiredLabelsCondition(),
+    "max_file_size_mb": MaxFileSizeCondition(),
+    "pattern": PatternCondition(),
+    "allow_force_push": AllowForcePushCondition(),
+    "protected_branches": ProtectedBranchesCondition(),
+    "environments": EnvironmentsCondition(),
+    "required_teams": RequiredTeamsCondition(),
+    "allowed_hours": AllowedHoursCondition(),
+    "branches": BranchesCondition(),
+    "required_checks": RequiredChecksCondition(),
 }
+
+
+def get_validator_descriptions() -> list[dict[str, Any]]:
+    """Get descriptions for all available validators."""
+    return [validator.get_description() for validator in VALIDATOR_REGISTRY.values()]

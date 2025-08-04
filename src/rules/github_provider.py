@@ -50,7 +50,8 @@ class GitHubRuleLoader(RuleLoader):
                     if rule:
                         rules.append(rule)
                 except Exception as e:
-                    logger.error(f"Error parsing rule {rule_data.get('id', 'unknown')}: {e}")
+                    rule_description = rule_data.get("description", "unknown")
+                    logger.error(f"Error parsing rule {rule_description}: {e}")
                     continue
 
             logger.info(f"Successfully loaded {len(rules)} rules from {repository}")
@@ -63,6 +64,10 @@ class GitHubRuleLoader(RuleLoader):
             raise
 
     def _parse_rule(self, rule_data: dict[str, Any]) -> Rule:
+        # Validate required fields
+        if "description" not in rule_data:
+            raise ValueError("Rule must have 'description' field")
+
         event_types = []
         if "event_types" in rule_data:
             for event_type_str in rule_data["event_types"]:
@@ -71,17 +76,18 @@ class GitHubRuleLoader(RuleLoader):
                     event_types.append(event_type)
                 except ValueError:
                     logger.warning(f"Unknown event type: {event_type_str}")
+
         # No mapping: just pass parameters as-is
         parameters = rule_data.get("parameters", {})
+
         # Actions are optional and not mapped
         actions = []
         if "actions" in rule_data:
             for action_data in rule_data["actions"]:
                 action = RuleAction(type=action_data["type"], parameters=action_data.get("parameters", {}))
                 actions.append(action)
+
         rule = Rule(
-            id=rule_data["id"],
-            name=rule_data["name"],
             description=rule_data["description"],
             enabled=rule_data.get("enabled", True),
             severity=RuleSeverity(rule_data.get("severity", "medium")),

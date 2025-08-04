@@ -34,12 +34,10 @@ class RuleAction(BaseModel):
 class Rule(BaseModel):
     """Represents a rule that can be evaluated against repository events."""
 
-    id: str
-    name: str
-    description: str
+    description: str = Field(description="Primary identifier and description of the rule")
     enabled: bool = True
     severity: RuleSeverity = RuleSeverity.MEDIUM
-    event_types: list[EventType] = Field(default_factory=list)  # Changed from list[str] to list[EventType]
+    event_types: list[EventType] = Field(default_factory=list)
     conditions: list[RuleCondition] = Field(default_factory=list)
     actions: list[RuleAction] = Field(default_factory=list)
     parameters: dict[str, Any] = Field(default_factory=dict)  # Store parameters as-is from YAML

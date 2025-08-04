@@ -83,30 +83,35 @@ class TaskQueue:
                     "check_run_status": check_run.get("status"),
                 }
             )
+        elif event_type == "issue_comment":
+            # For issue comments (including acknowledgments), include the comment content
+            # to allow multiple acknowledgments with different reasons
+            comment = payload.get("comment", {})
+            event_data.update(
+                {
+                    "issue_number": payload.get("issue", {}).get("number"),
+                    "comment_id": comment.get("id"),
+                    "comment_body": comment.get("body"),  # Include comment body to differentiate acknowledgments
+                    "comment_created_at": comment.get("created_at"),
+                }
+            )
 
         # Create hash from the event data
         event_json = json.dumps(event_data, sort_keys=True)
-        return hashlib.md5(event_json.encode()).hexdigest()
+        event_hash = hashlib.md5(event_json.encode()).hexdigest()
+
+        # Debug logging for issue_comment events
+        if event_type == "issue_comment":
+            logger.info(f"🔍 Event hash debug for {event_type}:")
+            logger.info(f"    Comment ID: {event_data.get('comment_id')}")
+            logger.info(f"    Comment body: {event_data.get('comment_body', '')[:50]}...")
+            logger.info(f"    Comment created at: {event_data.get('comment_created_at')}")
+            logger.info(f"    Event hash: {event_hash}")
+
+        return event_hash
 
     async def enqueue(self, event_type: str, repo_full_name: str, installation_id: int, payload: dict[str, Any]) -> str:
-        """Enqueue a new task for background processing with deduplication."""
-        # Create event hash for deduplication
-        event_hash = self._create_event_hash(event_type, repo_full_name, payload)
-
-        # Check if we've already processed this event recently
-        if event_hash in self.event_hashes:
-            existing_task_id = self.event_hashes[event_hash]
-            existing_task = self.tasks.get(existing_task_id)
-
-            if existing_task and existing_task.status in [TaskStatus.PENDING, TaskStatus.RUNNING]:
-                logger.info(f"Duplicate event detected, skipping: {event_hash}")
-                return existing_task_id
-            elif existing_task and existing_task.status == TaskStatus.COMPLETED:
-                # If the task was completed recently, we can still skip it
-                # to avoid duplicate processing
-                logger.info(f"Event already processed recently, skipping: {event_hash}")
-                return existing_task_id
-
+        """Enqueue a new task for background processing."""
         task_id = f"{event_type}_{repo_full_name}_{datetime.now().timestamp()}"
 
         task = Task(
@@ -117,11 +122,10 @@ class TaskQueue:
             payload=payload,
             status=TaskStatus.PENDING,
             created_at=datetime.now(),
-            event_hash=event_hash,
+            event_hash=None,  # No deduplication for now
         )
 
         self.tasks[task_id] = task
-        self.event_hashes[event_hash] = task_id
 
         logger.info(f"Enqueued task {task_id} for {repo_full_name}")
 

@@ -101,10 +101,31 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                 rules=formatted_rules,
             )
 
-            violations = analysis_result.data.get("violations", [])
+            # Extract violations from AgentResult - same pattern as acknowledgment processor
+            violations = []
+            if analysis_result.data and "evaluation_result" in analysis_result.data:
+                eval_result = analysis_result.data["evaluation_result"]
+                if hasattr(eval_result, "violations"):
+                    # Convert RuleViolation objects to dictionaries
+                    for violation in eval_result.violations:
+                        violation_dict = {
+                            "rule_description": violation.rule_description,
+                            "severity": violation.severity,
+                            "message": violation.message,
+                            "details": violation.details,
+                            "how_to_fix": violation.how_to_fix,
+                            "docs_url": violation.docs_url,
+                            "validation_strategy": violation.validation_strategy.value
+                            if hasattr(violation.validation_strategy, "value")
+                            else violation.validation_strategy,
+                            "execution_time_ms": violation.execution_time_ms,
+                        }
+                        violations.append(violation_dict)
+
             logger.info("🔍 Analysis completed:")
             logger.info(f"    Violations found: {len(violations)}")
-            logger.info(f"    API calls made: {analysis_result.data.get('api_calls', 0)}")
+            for violation in violations:
+                logger.info(f"    • {violation.get('message', 'Unknown violation')}")
 
             if not violations:
                 if deployment_callback_url and environment:
@@ -159,7 +180,9 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
     @staticmethod
     def _check_time_based_violations(violations: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [
-            v for v in violations if any(k in v.get("rule_id", "").lower() for k in ["hours", "weekend", "time", "day"])
+            v
+            for v in violations
+            if any(k in v.get("rule_description", "").lower() for k in ["hours", "weekend", "time", "day"])
         ]
 
     async def _approve_deployment(self, callback_url: str, environment: str, comment: str, installation_id: int):
@@ -202,9 +225,8 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
     def _convert_rules_to_new_format(self, rules: list[Any]) -> list[dict[str, Any]]:
         formatted_rules = []
         for rule in rules:
+            # Convert Rule object to dict format
             rule_dict = {
-                "id": rule.id,
-                "name": rule.name,
                 "description": rule.description,
                 "enabled": rule.enabled,
                 "severity": rule.severity.value if hasattr(rule.severity, "value") else rule.severity,
@@ -220,18 +242,16 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
 
     @staticmethod
     def _format_violations_comment(violations):
-        lines = ["🚫 **Deployment Blocked - Rule Violations Detected**\n"]
+        text = "🚫 **Deployment Blocked - Rule Violations Detected**\n"
         for v in violations:
             emoji = "❌" if v.get("severity", "high") in ("critical", "high") else "⚠️"
-            rule_name = v.get("rule_name", v.get("rule", v.get("id", "Unknown")))
-            lines.append(
-                f"{emoji} **{rule_name}**\n"
-                f"**Severity:** {v.get('severity', 'high').capitalize()}\n"
-                f"**Issue:** {v.get('message', '')}\n"
-                f"**Solution:** {v.get('how_to_fix', 'See documentation.')}\n"
-            )
-        lines.append("\n---\n*This review was performed automatically by Watchflow.*")
-        return "\n".join(lines)
+            rule_description = v.get("rule_description", v.get("rule", v.get("description", "Unknown")))
+            text += f"{emoji} **{rule_description}**\n"
+            text += f"**Severity:** {v.get('severity', 'high').capitalize()}\n"
+            text += f"**Issue:** {v.get('message', '')}\n"
+            text += f"**Solution:** {v.get('how_to_fix', 'See documentation.')}\n"
+        text += "\n---\n*This review was performed automatically by Watchflow.*"
+        return text
 
     async def prepare_webhook_data(self, task: Task) -> dict[str, Any]:
         return task.payload

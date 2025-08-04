@@ -85,8 +85,6 @@ class CheckRunProcessor(BaseEventProcessor):
         for rule in rules:
             # Convert Rule object to dict format
             rule_dict = {
-                "id": rule.id,
-                "name": rule.name,
                 "description": rule.description,
                 "enabled": rule.enabled,
                 "severity": rule.severity.value if hasattr(rule.severity, "value") else rule.severity,

@@ -107,25 +107,25 @@ class PullRequestProcessor(BaseEventProcessor):
 
             # Apply previous acknowledgments to filter violations
             acknowledgable_violations = []
+            require_acknowledgment_violations = []
 
-            # Apply previous acknowledgments to filter violations
-            if previous_acknowledgments and violations:
-                violations_requiring_fixes = []
+            # Check for previous acknowledgments
+            for violation in violations:
+                rule_description = violation.get("rule_description", "")
+                if rule_description in previous_acknowledgments:
+                    # This violation was previously acknowledged
+                    logger.info(f" Violation for rule '{rule_description}' was previously acknowledged")
+                    acknowledgable_violations.append(violation)
+                else:
+                    # This violation requires acknowledgment
+                    require_acknowledgment_violations.append(violation)
 
-                for violation in violations:
-                    rule_id = violation.get("rule_id", "")
-                    if rule_id in previous_acknowledgments:
-                        acknowledgable_violations.append(violation)
-                        logger.info(f" Violation for rule '{rule_id}' was previously acknowledged")
-                    else:
-                        violations_requiring_fixes.append(violation)
+            logger.info(
+                f"📊 Violation breakdown: {len(acknowledgable_violations)} acknowledged, {len(require_acknowledgment_violations)} requiring fixes"
+            )
 
-                logger.info(
-                    f"📊 Violation breakdown: {len(acknowledgable_violations)} acknowledged, {len(violations_requiring_fixes)} requiring fixes"
-                )
-
-                # Use violations requiring fixes for final result
-                violations = violations_requiring_fixes
+            # Use violations requiring fixes for final result
+            violations = require_acknowledgment_violations
 
             # Create check run based on whether we have acknowledgments
             if previous_acknowledgments and original_violations:
@@ -156,9 +156,10 @@ class PullRequestProcessor(BaseEventProcessor):
 
             if violations:
                 logger.warning("🚨 VIOLATION SUMMARY:")
+                # Format violations for logging
                 for i, violation in enumerate(violations, 1):
-                    logger.warning(
-                        f"   {i}. {violation.get('rule_name', 'Unknown')} ({violation.get('severity', 'medium')})"
+                    logger.info(
+                        f"   {i}. {violation.get('rule_description', 'Unknown')} ({violation.get('severity', 'medium')})"
                     )
                     logger.warning(f"      {violation.get('message', '')}")
             else:
@@ -227,8 +228,6 @@ class PullRequestProcessor(BaseEventProcessor):
         for rule in rules:
             # Convert Rule object to dict format
             rule_dict = {
-                "id": rule.id,
-                "name": rule.name,
                 "description": rule.description,
                 "enabled": rule.enabled,
                 "severity": rule.severity.value if hasattr(rule.severity, "value") else rule.severity,
@@ -350,9 +349,8 @@ class PullRequestProcessor(BaseEventProcessor):
                 text += f"## {severity_emoji} {severity.title()} Severity\n\n"
 
                 for violation in severity_groups[severity]:
-                    text += f"### {violation.get('rule_name', 'Unknown Rule')}\n"
-                    text += f"**Severity:** {violation.get('severity', 'medium')}\n"
-                    text += f"**Issue:** {violation.get('message', 'Unknown issue')}\n"
+                    text += f"### {violation.get('rule_description', 'Unknown Rule')}\n"
+                    text += f"Rule validation failed with severity: **{violation.get('severity', 'medium')}**\n"
                     if violation.get("how_to_fix"):
                         text += f"**How to fix:** {violation.get('how_to_fix')}\n"
                     text += "\n"
@@ -465,9 +463,8 @@ class PullRequestProcessor(BaseEventProcessor):
                 comment += f"### {severity_emoji} {severity.title()} Severity\n\n"
 
                 for violation in severity_groups[severity]:
-                    comment += f"**{violation.get('rule_name', 'Unknown Rule')}**\n"
-                    comment += f"*{violation.get('severity', 'medium')} severity*\n"
-                    comment += f"{violation.get('message', 'Unknown issue')}\n"
+                    comment += f"**{violation.get('rule_description', 'Unknown Rule')}**\n"
+                    comment += f"Rule validation failed with severity: **{violation.get('severity', 'medium')}**\n"
                     if violation.get("how_to_fix"):
                         comment += f"**How to fix:** {violation.get('how_to_fix')}\n"
                     comment += "\n"
@@ -505,7 +502,7 @@ class PullRequestProcessor(BaseEventProcessor):
                         rule_id = violation.get("rule_id")
                         if rule_id:
                             acknowledgments[rule_id] = {
-                                "rule_name": violation.get("rule_name", ""),
+                                "rule_description": violation.get("rule_description", ""),
                                 "reason": violation.get("reason", ""),
                                 "commenter": commenter,
                                 "created_at": created_at,
@@ -557,11 +554,16 @@ class PullRequestProcessor(BaseEventProcessor):
 
                 # Map violation text to rule IDs
                 rule_id = self._map_violation_text_to_rule_id(violation_text)
-                rule_name = self._map_violation_text_to_rule_name(violation_text)
+                rule_description = self._map_violation_text_to_rule_description(violation_text)
 
                 if rule_id:
                     violations.append(
-                        {"rule_id": rule_id, "rule_name": rule_name, "message": violation_text, "reason": reason}
+                        {
+                            "rule_id": rule_id,
+                            "rule_description": rule_description,
+                            "message": violation_text,
+                            "reason": reason,
+                        }
                     )
 
         return violations
@@ -585,21 +587,21 @@ class PullRequestProcessor(BaseEventProcessor):
         return ""
 
     @staticmethod
-    def _map_violation_text_to_rule_name(violation_text: str) -> str:
-        """Map violation text to rule name."""
+    def _map_violation_text_to_rule_description(violation_text: str) -> str:
+        """Map violation text to rule description."""
         mapping = {
-            "Pull request does not have the minimum required": "Minimum PR Approvals Required",
-            "Pull request is missing required label": "Required Labels",
-            "Pull request title does not match the required pattern": "PR Title Pattern",
-            "Pull request description is too short": "PR Description Required",
-            "Individual files cannot exceed": "File Size Limit",
-            "Force pushes are not allowed": "No Force Push",
-            "Direct pushes to main/master branches": "Protected Branch Push",
+            "Pull request does not have the minimum required": "Pull requests require at least 2 approvals",
+            "Pull request is missing required label": "Pull requests must have security and review labels",
+            "Pull request title does not match the required pattern": "PR titles must follow conventional commit format",
+            "Pull request description is too short": "Pull requests must have descriptions with at least 50 characters",
+            "Individual files cannot exceed": "Files must not exceed 10MB",
+            "Force pushes are not allowed": "Force pushes are not allowed",
+            "Direct pushes to main/master branches": "Direct pushes to main branch are not allowed",
         }
 
-        for key, rule_name in mapping.items():
+        for key, rule_description in mapping.items():
             if key in violation_text:
-                return rule_name
+                return rule_description
 
         return "Unknown Rule"
 
@@ -683,14 +685,14 @@ Please address the remaining violations or acknowledge them with a valid reason.
         lines = []
         for violation in acknowledgable_violations:
             rule_id = violation.get("rule_id", "")
-            rule_name = violation.get("rule_name", "")
+            rule_description = violation.get("rule_description", "")
             message = violation.get("message", "")
 
             acknowledgment_info = acknowledgments.get(rule_id, {})
             reason = acknowledgment_info.get("reason", "No reason provided")
             commenter = acknowledgment_info.get("commenter", "Unknown")
 
-            lines.append(f"• **{rule_name}** - {message}")
+            lines.append(f"• **{rule_description}** - {message}")
             lines.append(f"  _Acknowledged by {commenter}: {reason}_")
 
         return "\n".join(lines)
@@ -702,8 +704,8 @@ Please address the remaining violations or acknowledge them with a valid reason.
 
         lines = []
         for violation in violations:
-            rule_name = violation.get("rule_name", "")
+            rule_description = violation.get("rule_description", "")
             message = violation.get("message", "")
-            lines.append(f"• **{rule_name}** - {message}")
+            lines.append(f"• **{rule_description}** - {message}")
 
         return "\n".join(lines)

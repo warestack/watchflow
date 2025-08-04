@@ -148,10 +148,29 @@ class IssueCommentEventHandler(EventHandler):
     def _extract_acknowledgment_reason(self, comment_body: str) -> str | None:
         """Extract the quoted reason from an acknowledgment command, or None if not present."""
         comment_body = comment_body.strip()
-        pattern = r'@watchflow\s+(acknowledge|ack)\s+"([^"]+)"'
-        match = re.search(pattern, comment_body, re.IGNORECASE | re.DOTALL)
-        if match:
-            return match.group(2).strip()
+
+        logger.info(f"🔍 Extracting acknowledgment reason from: '{comment_body}'")
+
+        # Try different patterns for flexibility
+        patterns = [
+            r'@watchflow\s+(acknowledge|ack)\s+"([^"]+)"',  # Double quotes
+            r"@watchflow\s+(acknowledge|ack)\s+'([^']+)'",  # Single quotes
+            r"@watchflow\s+(acknowledge|ack)\s+([^\n\r]+)",  # No quotes, until end of line
+        ]
+
+        for i, pattern in enumerate(patterns):
+            match = re.search(pattern, comment_body, re.IGNORECASE | re.DOTALL)
+            if match:
+                # For patterns with quotes, group 2 contains the reason
+                # For pattern without quotes, group 2 contains the reason
+                reason = match.group(2).strip()
+                logger.info(f"✅ Pattern {i + 1} matched! Reason: '{reason}'")
+                if reason:  # Make sure we got a non-empty reason
+                    return reason
+            else:
+                logger.info(f"❌ Pattern {i + 1} did not match")
+
+        logger.info("❌ No patterns matched for acknowledgment reason")
         return None
 
     def _extract_evaluate_rule(self, comment_body: str) -> str | None:

@@ -1,153 +1,213 @@
 """
-Prompts for the Rule Engine Agent.
+Prompts for the Rule Engine Agent with hybrid validation strategy.
 """
 
-import json
-from typing import Any
+from .models import RuleDescription, ValidatorDescription
 
 
-def create_rule_filtering_prompt(event_type: str, rules: list[dict[str, Any]], available_validators: list[str]) -> str:
-    """Create a prompt for LLM rule filtering and strategy selection."""
+def create_rule_analysis_prompt(rule_descriptions: list[RuleDescription], event_type: str) -> str:
+    """Create a prompt for analyzing rule descriptions and parameters."""
 
-    system_prompt = f"""
-You are a rule evaluation expert. Your job is to analyze rules and decide the best evaluation strategy.
-
-AVAILABLE VALIDATORS (fast, deterministic):
-{available_validators}
-
-EVENT TYPE: {event_type}
-
-For each rule, you must decide:
-1. Is this rule applicable to the event type?
-2. Should I use a validator (fast) or LLM reasoning (flexible)?
-
-EVALUATION STRATEGY:
-- Use VALIDATORS for: Standard checks like PR approvals, file size limits, title patterns, label requirements
-- Use LLM REASONING for: Complex business logic, custom rules, security policies, compliance requirements
-
-RESPONSE FORMAT (JSON):
-{{
-    "applicable_rules": [
-        {{
-            "rule_id": "rule-id",
-            "rule_name": "Rule Name",
-            "evaluation_strategy": "validator" | "llm_reasoning",
-            "validator_name": "validator_name" (if strategy is "validator"),
-            "reasoning": "why this strategy was chosen"
-        }}
-    ]
-}}
-
-RULES TO ANALYZE:
+    rules_text = ""
+    for i, rule in enumerate(rule_descriptions, 1):
+        rules_text += f"""
+Rule {i}: {rule.description}
+- Parameters: {rule.parameters}
+- Event Types: {rule.event_types}
+- Severity: {rule.severity}
 """
 
-    # Add rules to the prompt
-    for rule in rules:
-        system_prompt += f"""
-- ID: {rule.get("id", "unknown")}
-- Name: {rule.get("name", "Unknown")}
-- Description: {rule.get("description", "No description")}
-- Parameters: {rule.get("parameters", {})}
-- Event Types: {rule.get("event_types", [])}
+    return f"""
+You are analyzing rule descriptions and parameters for a GitHub event.
+
+Event Type: {event_type}
+
+Rules to analyze:
+{rules_text}
+
+Please analyze each rule and determine:
+1. Whether the rule is applicable to this event type
+2. What validation strategy would be most appropriate (validator vs LLM reasoning)
+3. Any potential issues or ambiguities in the rule description or parameters
+
+Focus on the rule descriptions and parameters to understand the intent and requirements.
 """
 
-    return system_prompt
 
+def create_validation_strategy_prompt(
+    rule_desc: RuleDescription, available_validators: list[ValidatorDescription]
+) -> str:
+    """Create a prompt for selecting validation strategy based on rule description and parameters."""
 
-def create_llm_evaluation_prompt(rule: dict[str, Any], event_data: dict[str, Any], event_type: str) -> str:
-    """Create a prompt for LLM rule evaluation."""
-
-    # Format parameters for better readability
-    parameters_str = json.dumps(rule.get("parameters", {}), indent=2)
-
-    evaluation_prompt = f"""
-You are evaluating a rule against a GitHub event using intelligent reasoning.
-
-RULE:
-- ID: {rule.get("id", "unknown")}
-- Name: {rule.get("name", "Unknown")}
-- Description: {rule.get("description", "No description")}
-- Parameters: {parameters_str}
-- Severity: {rule.get("severity", "medium")}
-
-EVENT TYPE: {event_type}
-
-EVENT DATA:
-{json.dumps(event_data, indent=2)}
-
-TASK: Determine if this rule is violated by the event.
-
-EVALUATION APPROACH:
-1. Understand the rule's purpose from its description
-2. Analyze the event data in context of the rule's requirements
-3. **Carefully consider the rule's parameters** - these define the specific thresholds, patterns, or conditions
-4. Consider the rule's severity level
-5. Make a reasoned judgment about compliance
-
-PARAMETER ANALYSIS:
-The rule parameters define specific requirements. For example:
-- min_approvals: 2 → Requires at least 2 approvals
-- max_file_size: 1000000 → Files cannot exceed 1MB
-- required_labels: ["security", "review"] → Must have these labels
-- title_pattern: "^feat|^fix|^docs" → Title must match this pattern
-
-RESPONSE FORMAT (JSON):
-{{
-    "is_violated": true/false,
-    "message": "Clear explanation of the violation or why it passed",
-    "details": {{
-        "parameter_check": "How parameters were evaluated",
-        "thresholds_checked": "Specific thresholds/conditions verified",
-        "other_key": "other_value"
-    }},
-    "how_to_fix": "Specific steps to fix the violation",
-    "reasoning": "Your detailed reasoning process including parameter analysis",
-    "confidence": 0.0-1.0
-}}
-
-Respond with ONLY the JSON, no other text.
+    # Format available validators
+    validators_text = ""
+    for validator in available_validators:
+        validators_text += f"""
+- {validator.name}: {validator.description}
+  Parameter patterns: {validator.parameter_patterns}
+  Event types: {validator.event_types}
+  Examples: {validator.examples}
 """
 
-    return evaluation_prompt
+    return f"""
+You are selecting the best validation strategy for a rule based on its description and parameters.
+
+Rule Information:
+- Description: {rule_desc.description}
+- Parameters: {rule_desc.parameters}
+- Event Types: {rule_desc.event_types}
+- Severity: {rule_desc.severity}
+
+Available Validators:
+{validators_text}
+
+Validation Strategies:
+1. VALIDATOR: Use a fast, deterministic validator for common rule patterns
+2. LLM_REASONING: Use LLM for complex, custom, or ambiguous rules
+3. HYBRID: Try validator first, fallback to LLM if needed
+
+Consider:
+- Rule complexity and specificity
+- Whether parameters match available validator patterns
+- Whether the rule requires contextual understanding
+- Performance implications (validators are faster and cheaper)
+
+Select the best strategy based on the rule description and parameters.
+"""
+
+
+def create_llm_evaluation_prompt(rule_desc: RuleDescription, event_data: dict, event_type: str) -> str:
+    """Create a prompt for LLM evaluation of a rule based on its description and parameters."""
+
+    # Extract relevant event data for context
+    event_context = _extract_event_context(event_data, event_type)
+
+    return f"""
+You are evaluating whether a GitHub event violates a rule based on the rule's description and parameters.
+
+Rule Information:
+- Description: {rule_desc.description}
+- Parameters: {rule_desc.parameters}
+- Event Types: {rule_desc.event_types}
+- Severity: {rule_desc.severity}
+
+Event Information:
+- Type: {event_type}
+- Context: {event_context}
+
+Evaluation Task:
+Analyze whether this event violates the rule based on the rule's description and parameters.
+
+Consider:
+1. The rule's intent as described in its description
+2. The specific parameters and their requirements
+3. The event context and whether it meets the rule's criteria
+4. Any edge cases or ambiguities in the rule description
+
+Focus on the rule description and parameters to make your determination.
+"""
+
+
+def create_how_to_fix_prompt(rule_desc: RuleDescription, event_data: dict, validator_name: str) -> str:
+    """Create a prompt for generating dynamic 'how to fix' messages."""
+
+    # Extract relevant event data for context
+    event_context = _extract_event_context(event_data, "pull_request")  # Most common case
+
+    return f"""
+You are generating specific, actionable instructions for fixing a GitHub rule violation.
+
+Rule Information:
+- Description: {rule_desc.description}
+- Parameters: {rule_desc.parameters}
+- Severity: {rule_desc.severity}
+- Validator Used: {validator_name}
+
+Event Context:
+{event_context}
+
+Task:
+Generate specific, actionable instructions for fixing this violation. Consider:
+
+1. **Specificity**: Provide exact steps or commands when possible
+2. **Context**: Use the actual event data to provide relevant guidance
+3. **Actionability**: Give concrete steps that can be followed immediately
+4. **Clarity**: Make instructions clear and easy to understand
+5. **GitHub-specific**: Use GitHub terminology and workflows
+
+Examples of good instructions:
+- "Add the 'security' and 'review' labels to this pull request"
+- "Update the PR title to match the pattern: '^feat|^fix|^docs'"
+- "Add more details to the PR description (minimum 50 characters)"
+- "Change the target branch from 'feature' to 'main' or 'develop'"
+- "Wait until a weekday to merge this pull request"
+
+Focus on providing the most helpful and specific guidance based on the rule description, parameters, and current event context.
+"""
 
 
 def get_llm_evaluation_system_prompt() -> str:
     """Get the system prompt for LLM rule evaluation."""
-    return """You are a rule evaluation expert with deep understanding of software development practices, security requirements, and compliance standards.
 
-Your role is to:
-1. Analyze rule descriptions to understand their purpose and importance
-2. Carefully evaluate rule parameters to understand specific requirements
-3. Compare event data against the rule's parameters and thresholds
-4. Make reasoned judgments about compliance
-5. Provide clear explanations and actionable feedback
+    return """
+You are an expert at evaluating GitHub events against governance rules.
 
-You should be thorough in your parameter analysis and provide specific details about how each parameter was evaluated."""
+Your task is to determine whether a GitHub event violates a rule based on the rule's description and parameters.
+
+Key Principles:
+1. Focus on the rule's description and parameters to understand the intent
+2. Consider the specific context of the GitHub event
+3. Be precise and objective in your evaluation
+4. Provide clear reasoning for your decision
+5. Give actionable feedback when violations are found
+
+Evaluation Guidelines:
+- If the rule description is clear and the event clearly violates it: mark as violated
+- If the rule parameters are met and the event complies: mark as passed
+- If there's ambiguity in the rule description: use reasonable interpretation
+- If the event type doesn't match the rule's event types: mark as passed (not applicable)
+
+Always respond with valid structured output as specified in the prompt.
+"""
 
 
-def create_validator_selection_prompt(rules: list[dict[str, Any]], event_type: str, validator_list: list[str]) -> str:
-    """Create a prompt for LLM validator selection."""
+def _extract_event_context(event_data: dict, event_type: str) -> str:
+    """Extract relevant context from event data for evaluation."""
 
-    prompt = (
-        f"You are an expert at mapping rules to validators for GitHub events.\n"
-        f"Current event type: {event_type}\n"
-        f"For each rule below, select the best validator from this list: {validator_list}, "
-        f"or respond with 'llm_reasoning' if none are suitable.\n"
-        f"IMPORTANT: Only evaluate rules that are applicable to {event_type} events.\n"
-        f"Respond as a JSON list: "
-        f'[{{"rule_id": ..., "validator_name": ...}}, ...]\n\n'
-        f"Rules:\n"
-    )
+    context_parts = []
 
-    for rule in rules:
-        # Include the rule's event_types in the prompt for better context
-        rule_event_types = rule.get("event_types", [])
-        prompt += (
-            f"- id: {rule.get('id')}\n"
-            f"  name: {rule.get('name')}\n"
-            f"  description: {rule.get('description')}\n"
-            f"  event_types: {rule_event_types}\n"
-            f"  parameters: {rule.get('parameters')}\n"
+    if event_type == "pull_request":
+        pr = event_data.get("pull_request", {})
+        context_parts.extend(
+            [
+                f"Title: {pr.get('title', 'N/A')}",
+                f"Description: {pr.get('body', 'N/A')[:200]}...",
+                f"Labels: {[label.get('name') for label in pr.get('labels', [])]}",
+                f"Review Status: {pr.get('state', 'N/A')}",
+                f"Review Count: {pr.get('requested_reviewers', [])}",
+            ]
         )
 
-    return prompt
+    elif event_type == "push":
+        context_parts.extend(
+            [
+                f"Branch: {event_data.get('ref', 'N/A')}",
+                f"Commits: {len(event_data.get('commits', []))}",
+            ]
+        )
+
+    elif event_type == "deployment":
+        deployment = event_data.get("deployment", {})
+        context_parts.extend(
+            [
+                f"Environment: {deployment.get('environment', 'N/A')}",
+                f"Ref: {deployment.get('ref', 'N/A')}",
+            ]
+        )
+
+    # Add common fields
+    repo = event_data.get("repository", {})
+    if repo:
+        context_parts.append(f"Repository: {repo.get('full_name', 'N/A')}")
+
+    return "; ".join(context_parts) if context_parts else "Limited context available"

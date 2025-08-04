@@ -8,7 +8,7 @@ from src.rules.models import Rule
 
 logger = logging.getLogger(__name__)
 
-DOCS_URL = "https://github.com/warestack/watchflow/docs/getting-started/configuration.md"
+DOCS_URL = "https://github.com/warestack/watchflow/blob/main/docs/getting-started/configuration.md"
 
 
 async def validate_rules_yaml_from_repo(repo_full_name: str, installation_id: int, pr_number: int):
