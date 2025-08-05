@@ -1,13 +1,13 @@
-from .base import BaseEventProcessor
-from .check_run import CheckRunProcessor
-from .deployment import DeploymentProcessor
-from .deployment_protection_rule import DeploymentProtectionRuleProcessor
-from .deployment_review import DeploymentReviewProcessor
-from .deployment_status import DeploymentStatusProcessor
-from .pull_request import PullRequestProcessor
-from .push import PushProcessor
-from .rule_creation import RuleCreationProcessor
-from .violation_acknowledgment import ViolationAcknowledgmentProcessor
+from src.event_processors.base import BaseEventProcessor
+from src.event_processors.check_run import CheckRunProcessor
+from src.event_processors.deployment import DeploymentProcessor
+from src.event_processors.deployment_protection_rule import DeploymentProtectionRuleProcessor
+from src.event_processors.deployment_review import DeploymentReviewProcessor
+from src.event_processors.deployment_status import DeploymentStatusProcessor
+from src.event_processors.pull_request import PullRequestProcessor
+from src.event_processors.push import PushProcessor
+from src.event_processors.rule_creation import RuleCreationProcessor
+from src.event_processors.violation_acknowledgment import ViolationAcknowledgmentProcessor
 
 
 class EventProcessorFactory:

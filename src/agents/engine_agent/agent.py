@@ -11,9 +11,7 @@ from typing import Any
 from langgraph.graph import END, START, StateGraph
 
 from src.agents.base import AgentResult, BaseAgent
-from src.rules.validators import get_validator_descriptions
-
-from .models import (
+from src.agents.engine_agent.models import (
     EngineState,
     RuleDescription,
     RuleEvaluationResult,
@@ -21,13 +19,14 @@ from .models import (
     ValidationStrategy,
     ValidatorDescription,
 )
-from .nodes import (
+from src.agents.engine_agent.nodes import (
     analyze_rule_descriptions,
     execute_llm_fallback,
     execute_validator_evaluation,
     select_validation_strategy,
     validate_violations,
 )
+from src.rules.validators import get_validator_descriptions
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +111,7 @@ class RuleEngineAgent(BaseAgent):
             logger.info(f"🔧 Rule Engine evaluation completed in {execution_time:.2f}s")
 
             # Extract violations from result
-            violations = result.get("violations", []) if hasattr(result, "get") else []
+            violations = result.violations if hasattr(result, "violations") else []
 
             logger.info(f"🔧 Rule Engine extracted {len(violations)} violations")
 
@@ -140,8 +139,8 @@ class RuleEngineAgent(BaseAgent):
                 rules_triggered=len(rule_violations),
                 total_rules=len(rules),
                 evaluation_time_ms=execution_time * 1000,
-                validator_usage=result.get("validator_usage", {}),
-                llm_usage=result.get("llm_usage", 0),
+                validator_usage=result.validator_usage if hasattr(result, "validator_usage") else {},
+                llm_usage=result.llm_usage if hasattr(result, "llm_usage") else 0,
             )
 
             logger.info("🔧 Rule Engine evaluation completed successfully")

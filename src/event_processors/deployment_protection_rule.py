@@ -93,6 +93,8 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                 "organization": payload.get("organization", {}),
                 "event_id": payload.get("event_id"),
                 "timestamp": payload.get("timestamp"),
+                "installation": {"id": task.installation_id},
+                "github_client": self.github_client,  # Pass GitHub client for validators
             }
 
             analysis_result = await self.engine_agent.execute(

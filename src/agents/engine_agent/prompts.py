@@ -2,7 +2,7 @@
 Prompts for the Rule Engine Agent with hybrid validation strategy.
 """
 
-from .models import RuleDescription, ValidatorDescription
+from src.agents.engine_agent.models import RuleDescription, ValidatorDescription
 
 
 def create_rule_analysis_prompt(rule_descriptions: list[RuleDescription], event_type: str) -> str:

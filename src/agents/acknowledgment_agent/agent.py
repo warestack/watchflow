@@ -8,9 +8,8 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph
 
+from src.agents.acknowledgment_agent.prompts import create_evaluation_prompt, get_system_prompt
 from src.agents.base import AgentResult, BaseAgent
-
-from .prompts import create_evaluation_prompt, get_system_prompt
 
 logger = logging.getLogger(__name__)
 

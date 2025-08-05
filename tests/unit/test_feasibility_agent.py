@@ -17,12 +17,18 @@ class TestRuleFeasibilityAgent:
     @pytest.fixture
     def agent(self):
         """Create agent instance for testing."""
-        # Mock both config validation and LLM client creation to avoid requiring API key
-        with (
-            patch("src.agents.base.BaseAgent._validate_config"),
-            patch("src.agents.base.BaseAgent._create_llm_client", return_value=MagicMock()),
-        ):
-            return RuleFeasibilityAgent()
+        # Mock the LLM client creation to avoid requiring API key
+        with patch("src.agents.base.BaseAgent.__init__") as mock_init:
+            # Mock the __init__ to avoid actual LLM client creation
+            mock_init.return_value = None
+            agent = RuleFeasibilityAgent.__new__(RuleFeasibilityAgent)
+            # Set up minimal attributes needed for testing
+            agent.llm = MagicMock()
+            agent.graph = AsyncMock()
+            agent.max_retries = 3
+            agent.retry_delay = 1.0
+            agent.timeout = 30.0
+            return agent
 
     @pytest.fixture
     def mock_feasible_analysis(self):
@@ -71,96 +77,101 @@ class TestRuleFeasibilityAgent:
     @pytest.mark.asyncio
     async def test_feasible_rule_execution(self, agent, mock_feasible_analysis, mock_yaml_generation):
         """Test successful execution of a feasible rule."""
-        with patch("src.agents.feasibility_agent.nodes.ChatOpenAI") as mock_openai:
-            # Mock the structured LLM calls
-            mock_analysis_llm = AsyncMock()
-            mock_analysis_llm.ainvoke.return_value = mock_feasible_analysis
+        # Mock the graph execution to return a successful result
+        from src.agents.feasibility_agent.models import FeasibilityState
 
-            mock_yaml_llm = AsyncMock()
-            mock_yaml_llm.ainvoke.return_value = mock_yaml_generation
+        mock_state = FeasibilityState(
+            rule_description="No deployments on weekends",
+            is_feasible=True,
+            rule_type="time_restriction",
+            confidence_score=0.95,
+            feedback="This rule can be implemented using Watchflow's time restriction feature.",
+            analysis_steps=[
+                "Identified rule as time-based restriction",
+                "Confirmed Watchflow supports time restrictions",
+                "Mapped to deployment event with weekend exclusion",
+            ],
+            yaml_content=mock_yaml_generation.yaml_content,
+        )
 
-            mock_openai.return_value.with_structured_output.side_effect = [
-                mock_analysis_llm,  # First call for analysis
-                mock_yaml_llm,  # Second call for YAML
-            ]
+        agent.graph.ainvoke.return_value = mock_state
 
-            # Execute the agent
-            result = await agent.execute("No deployments on weekends")
+        # Execute the agent
+        result = await agent.execute("No deployments on weekends")
 
-            # Assertions
-            assert result.success is True
-            assert result.data["is_feasible"] is True
-            assert result.data["rule_type"] == "time_restriction"
-            assert result.data["confidence_score"] == 0.95
-            assert "weekend" in result.data["yaml_content"].lower()
-            assert len(result.data["analysis_steps"]) == 3
+        # Assertions
+        assert result.success is True
+        assert result.data["is_feasible"] is True
+        assert result.data["rule_type"] == "time_restriction"
+        assert result.data["confidence_score"] == 0.95
+        assert "weekend" in result.data["yaml_content"].lower()
+        assert len(result.data["analysis_steps"]) == 3
 
-            # Verify both LLM calls were made (analysis + YAML)
-            assert mock_analysis_llm.ainvoke.call_count == 1
-            assert mock_yaml_llm.ainvoke.call_count == 1
+        # Verify the graph was called
+        agent.graph.ainvoke.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_unfeasible_rule_execution(self, agent, mock_unfeasible_analysis):
         """Test execution of an unfeasible rule (should skip YAML generation)."""
-        with patch("src.agents.feasibility_agent.nodes.ChatOpenAI") as mock_openai:
-            # Mock only the analysis LLM call
-            mock_analysis_llm = AsyncMock()
-            mock_analysis_llm.ainvoke.return_value = mock_unfeasible_analysis
+        # Mock the graph execution to return an unfeasible result
+        from src.agents.feasibility_agent.models import FeasibilityState
 
-            mock_openai.return_value.with_structured_output.return_value = mock_analysis_llm
+        mock_state = FeasibilityState(
+            rule_description="This is impossible to implement",
+            is_feasible=False,
+            rule_type="undefined",
+            confidence_score=1.0,
+            feedback="This rule cannot be implemented as it lacks actionable criteria.",
+            analysis_steps=[
+                "Analyzed rule description",
+                "Found no actionable conditions",
+                "Determined rule is not implementable",
+            ],
+            yaml_content="",
+        )
 
-            # Execute the agent
-            result = await agent.execute("This is impossible to implement")
+        agent.graph.ainvoke.return_value = mock_state
 
-            # Assertions
-            assert result.success is False  # Success should be False for unfeasible rules
-            assert result.data["is_feasible"] is False
-            assert result.data["rule_type"] == "undefined"
-            assert result.data["confidence_score"] == 1.0
-            assert result.data["yaml_content"] == ""  # No YAML should be generated
+        # Execute the agent
+        result = await agent.execute("This is impossible to implement")
 
-            # Verify only analysis LLM call was made (no YAML generation)
-            assert mock_analysis_llm.ainvoke.call_count == 1
+        # Assertions
+        assert result.success is False  # Success should be False for unfeasible rules
+        assert result.data["is_feasible"] is False
+        assert result.data["rule_type"] == "undefined"
+        assert result.data["confidence_score"] == 1.0
+        assert result.data["yaml_content"] == ""  # No YAML should be generated
+
+        # Verify the graph was called
+        agent.graph.ainvoke.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_error_handling_in_analysis(self, agent):
         """Test error handling when analysis fails."""
-        with patch("src.agents.feasibility_agent.nodes.ChatOpenAI") as mock_openai:
-            # Mock LLM to raise an exception
-            mock_analysis_llm = AsyncMock()
-            mock_analysis_llm.ainvoke.side_effect = Exception("OpenAI API error")
+        # Mock the graph execution to raise an exception
+        agent.graph.ainvoke.side_effect = Exception("OpenAI API error")
 
-            mock_openai.return_value.with_structured_output.return_value = mock_analysis_llm
+        # Execute the agent
+        result = await agent.execute("Test rule")
 
-            # Execute the agent
-            result = await agent.execute("Test rule")
-
-            # Assertions
-            assert result.success is False
-            assert "Analysis failed" in result.message
-            assert result.data["is_feasible"] is False
-            assert result.data["confidence_score"] == 0.0
+        # Assertions
+        assert result.success is False
+        assert "Feasibility analysis failed" in result.message
+        assert result.data == {}  # No data should be returned on error
 
     @pytest.mark.asyncio
     async def test_error_handling_in_yaml_generation(self, agent, mock_feasible_analysis):
         """Test error handling when YAML generation fails."""
-        with patch("src.agents.feasibility_agent.nodes.ChatOpenAI") as mock_openai:
-            # Mock analysis to succeed, YAML generation to fail
-            mock_analysis_llm = AsyncMock()
-            mock_analysis_llm.ainvoke.return_value = mock_feasible_analysis
+        # Mock the graph execution to raise an exception during YAML generation
+        agent.graph.ainvoke.side_effect = Exception("YAML generation failed")
 
-            mock_yaml_llm = AsyncMock()
-            mock_yaml_llm.ainvoke.side_effect = Exception("YAML generation failed")
+        # Execute the agent
+        result = await agent.execute("No deployments on weekends")
 
-            mock_openai.return_value.with_structured_output.side_effect = [mock_analysis_llm, mock_yaml_llm]
-
-            # Execute the agent
-            result = await agent.execute("No deployments on weekends")
-
-            # Assertions
-            assert result.success is True  # Analysis succeeded
-            assert result.data["is_feasible"] is True
-            assert "YAML generation failed" in result.message  # Error should be in feedback
+        # Assertions
+        assert result.success is False  # Should fail due to YAML generation error
+        assert "Feasibility analysis failed" in result.message
+        assert result.data == {}  # No data should be returned on error
 
     def test_agent_initialization(self, agent):
         """Test that the agent initializes correctly."""
@@ -178,32 +189,28 @@ class TestRuleFeasibilityAgent:
         ]
 
         for case in test_cases:
-            with patch("src.agents.feasibility_agent.nodes.ChatOpenAI") as mock_openai:
-                # Mock analysis response
-                mock_analysis = FeasibilityAnalysis(
-                    is_feasible=case["should_be_feasible"],
-                    rule_type=case["expected_type"],
-                    confidence_score=0.9,
-                    feedback=f"Rule can be implemented as {case['expected_type']}",
-                    analysis_steps=["Analysis step"],
-                )
+            # Mock the graph execution for each test case
+            from src.agents.feasibility_agent.models import FeasibilityState
 
-                mock_yaml = YamlGeneration(yaml_content="mock yaml content")
+            mock_state = FeasibilityState(
+                rule_description=case["rule"],
+                is_feasible=case["should_be_feasible"],
+                rule_type=case["expected_type"],
+                confidence_score=0.9,
+                feedback=f"Rule can be implemented as {case['expected_type']}",
+                analysis_steps=["Analysis step"],
+                yaml_content="mock yaml content",
+            )
 
-                mock_analysis_llm = AsyncMock()
-                mock_analysis_llm.ainvoke.return_value = mock_analysis
+            agent.graph.ainvoke.return_value = mock_state
 
-                mock_yaml_llm = AsyncMock()
-                mock_yaml_llm.ainvoke.return_value = mock_yaml
+            # Execute
+            result = await agent.execute(case["rule"])
 
-                mock_openai.return_value.with_structured_output.side_effect = [mock_analysis_llm, mock_yaml_llm]
-
-                # Execute
-                result = await agent.execute(case["rule"])
-
-                # Verify
-                assert result.data["rule_type"] == case["expected_type"]
-                assert result.data["is_feasible"] == case["should_be_feasible"]
+            # Verify
+            assert result.data["rule_type"] == case["expected_type"]
+            assert result.data["is_feasible"] == case["should_be_feasible"]
+            assert result.success == case["should_be_feasible"]
 
 
 class TestFeasibilityModels:

@@ -6,10 +6,9 @@ import logging
 
 from langchain_openai import ChatOpenAI
 
+from src.agents.feasibility_agent.models import FeasibilityAnalysis, FeasibilityState, YamlGeneration
+from src.agents.feasibility_agent.prompts import RULE_FEASIBILITY_PROMPT, YAML_GENERATION_PROMPT
 from src.core.config import config
-
-from .models import FeasibilityAnalysis, FeasibilityState, YamlGeneration
-from .prompts import RULE_FEASIBILITY_PROMPT, YAML_GENERATION_PROMPT
 
 logger = logging.getLogger(__name__)
 

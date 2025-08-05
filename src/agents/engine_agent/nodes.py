@@ -10,10 +10,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-from src.core.config import config
-from src.rules.validators import VALIDATOR_REGISTRY
-
-from .models import (
+from src.agents.engine_agent.models import (
     EngineState,
     HowToFixResponse,
     LLMEvaluationResponse,
@@ -21,12 +18,14 @@ from .models import (
     StrategySelectionResponse,
     ValidationStrategy,
 )
-from .prompts import (
+from src.agents.engine_agent.prompts import (
     create_how_to_fix_prompt,
     create_llm_evaluation_prompt,
     create_validation_strategy_prompt,
     get_llm_evaluation_system_prompt,
 )
+from src.core.config import config
+from src.rules.validators import VALIDATOR_REGISTRY
 
 logger = logging.getLogger(__name__)
 

@@ -26,11 +26,7 @@ class TestRulesAPIIntegration:
         """Test successful rule evaluation through the complete stack (mocked OpenAI)."""
         # Mock OpenAI unless real API testing is explicitly enabled
         if not os.getenv("INTEGRATION_TEST_REAL_API", "false").lower() == "true":
-            with (
-                patch("src.agents.base.BaseAgent._validate_config"),
-                patch("src.agents.base.BaseAgent._create_llm_client"),
-                patch("src.agents.feasibility_agent.agent.RuleFeasibilityAgent.execute") as mock_execute,
-            ):
+            with patch("src.agents.feasibility_agent.agent.RuleFeasibilityAgent.execute") as mock_execute:
                 # Mock the agent result directly
                 mock_result = AgentResult(
                     success=True,
@@ -71,11 +67,7 @@ class TestRulesAPIIntegration:
         """Test unfeasible rule evaluation through the complete stack (mocked OpenAI)."""
         # Mock OpenAI unless real API testing is explicitly enabled
         if not os.getenv("INTEGRATION_TEST_REAL_API", "false").lower() == "true":
-            with (
-                patch("src.agents.base.BaseAgent._validate_config"),
-                patch("src.agents.base.BaseAgent._create_llm_client"),
-                patch("src.agents.feasibility_agent.agent.RuleFeasibilityAgent.execute") as mock_execute,
-            ):
+            with patch("src.agents.feasibility_agent.agent.RuleFeasibilityAgent.execute") as mock_execute:
                 # Mock the agent result directly
                 mock_result = AgentResult(
                     success=False,

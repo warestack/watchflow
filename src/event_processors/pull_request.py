@@ -199,6 +199,8 @@ class PullRequestProcessor(BaseEventProcessor):
             "organization": task.payload.get("organization", {}),
             "event_id": task.payload.get("event_id"),
             "timestamp": task.payload.get("timestamp"),
+            "installation": {"id": task.installation_id},
+            "github_client": self.github_client,  # Pass GitHub client for validators
         }
 
         # Enrich with API data if PR number is available

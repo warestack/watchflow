@@ -5,9 +5,14 @@ This module provides an agent that uses LLM reasoning to evaluate rule violation
 based on rule descriptions and context, rather than relying on hardcoded rule names.
 """
 
-from .agent import AcknowledgmentAgent
-from .models import AcknowledgedViolation, AcknowledgmentContext, AcknowledgmentEvaluation, RequiredFix
-from .prompts import create_evaluation_prompt, get_system_prompt
+from src.agents.acknowledgment_agent.agent import AcknowledgmentAgent
+from src.agents.acknowledgment_agent.models import (
+    AcknowledgedViolation,
+    AcknowledgmentContext,
+    AcknowledgmentEvaluation,
+    RequiredFix,
+)
+from src.agents.acknowledgment_agent.prompts import create_evaluation_prompt, get_system_prompt
 
 __all__ = [
     "AcknowledgmentAgent",

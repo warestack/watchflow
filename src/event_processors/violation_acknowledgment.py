@@ -128,6 +128,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
                 "reviews": pr_reviews,
                 "repository": {"full_name": repo},
                 "installation": {"id": installation_id},
+                "github_client": self.github_client,  # Pass GitHub client for validators
             }
 
             # Run rule analysis to get ALL violations (not just current ones)

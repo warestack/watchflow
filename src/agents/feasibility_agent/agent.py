@@ -9,9 +9,8 @@ import time
 from langgraph.graph import END, START, StateGraph
 
 from src.agents.base import AgentResult, BaseAgent
-
-from .models import FeasibilityState
-from .nodes import analyze_rule_feasibility, generate_yaml_config
+from src.agents.feasibility_agent.models import FeasibilityState
+from src.agents.feasibility_agent.nodes import analyze_rule_feasibility, generate_yaml_config
 
 logger = logging.getLogger(__name__)
 
