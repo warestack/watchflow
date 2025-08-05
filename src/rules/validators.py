@@ -614,6 +614,129 @@ class RequiredChecksCondition(Condition):
         return True
 
 
+class CodeOwnersCondition(Condition):
+    """Validates if changes to files require review from code owners."""
+
+    name = "code_owners"
+    description = "Validates if changes to files require review from code owners"
+    parameter_patterns = ["critical_owners"]
+    event_types = ["pull_request"]
+    examples = [
+        {"critical_owners": ["admin", "maintainers"]},
+        {"critical_owners": ["security-team", "devops"]},
+        {},  # No critical_owners means any file with owners is critical
+    ]
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        # Get the list of changed files from the event
+        changed_files = self._get_changed_files(event)
+        if not changed_files:
+            logger.debug("CodeOwnersCondition: No files to check")
+            return True
+
+        # Check if any of the changed files require code owner review
+        from src.integrations.codeowners import is_critical_file
+
+        # Get critical owners from rule parameters or use default behavior
+        critical_owners = parameters.get("critical_owners")
+
+        requires_code_owner_review = any(
+            is_critical_file(file_path, critical_owners=critical_owners) for file_path in changed_files
+        )
+
+        logger.debug(
+            f"CodeOwnersCondition: Files {changed_files} require code owner review: {requires_code_owner_review}"
+        )
+        return not requires_code_owner_review  # Return True if NO code owner review needed
+
+    def _get_changed_files(self, event: dict[str, Any]) -> list[str]:
+        """Extract changed files from the event."""
+        files = event.get("files", [])
+        if files:
+            return [file.get("filename", "") for file in files if file.get("filename")]
+
+        # Fallback: try to get from pull request details
+        pull_request = event.get("pull_request_details", {})
+        if pull_request:
+            # This would need to be populated by the event processor
+            return pull_request.get("changed_files", [])
+
+        return []
+
+
+class PastContributorApprovalCondition(Condition):
+    """Validates if new contributors have approval from past contributors."""
+
+    name = "past_contributor_approval"
+    description = "Validates if new contributors have approval from past contributors"
+    parameter_patterns = ["min_past_contributors"]
+    event_types = ["pull_request"]
+    examples = [{"min_past_contributors": 1}, {"min_past_contributors": 2}]
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        min_past_contributors = parameters.get("min_past_contributors", 1)
+
+        # Get the PR author
+        pull_request = event.get("pull_request_details", {})
+        author_login = pull_request.get("user", {}).get("login", "")
+
+        if not author_login:
+            logger.warning("PastContributorApprovalCondition: No author found")
+            return False
+
+        # Get repository and installation info from event
+        repo = event.get("repository", {}).get("full_name", "")
+        installation_id = event.get("installation", {}).get("id")
+
+        if not repo or not installation_id:
+            logger.warning("PastContributorApprovalCondition: Missing repo or installation_id")
+            return False
+
+        # Get GitHub client from event (passed by event processor)
+        github_client = event.get("github_client")
+        if not github_client:
+            logger.warning("PastContributorApprovalCondition: No GitHub client available")
+            return False
+
+        # Check if author is a new contributor using the contributor analyzer
+        from src.integrations.contributors import is_new_contributor
+
+        is_author_new = await is_new_contributor(author_login, repo, github_client, installation_id)
+
+        if not is_author_new:
+            logger.debug(f"PastContributorApprovalCondition: {author_login} is not a new contributor")
+            return True
+
+        # Get PR reviews
+        reviews = event.get("reviews", [])
+        if not reviews:
+            logger.debug(f"PastContributorApprovalCondition: No reviews found for new contributor {author_login}")
+            return False
+
+        # Count approvals from past contributors
+        past_contributor_approvals = 0
+        for review in reviews:
+            reviewer_login = review.get("user", {}).get("login", "")
+            if review.get("state") == "APPROVED" and reviewer_login != author_login:
+                # Check if reviewer is a past contributor
+                is_reviewer_new = await is_new_contributor(reviewer_login, repo, github_client, installation_id)
+                if not is_reviewer_new:
+                    past_contributor_approvals += 1
+
+        is_valid = past_contributor_approvals >= min_past_contributors
+        logger.debug(
+            f"PastContributorApprovalCondition: {author_login} has {past_contributor_approvals} past contributor approvals, needs {min_past_contributors}: {is_valid}"
+        )
+        return is_valid
+
+    def _is_new_contributor(self, username: str) -> bool:
+        """Check if a user is a new contributor."""
+        # This method is called from the validate method which has access to the event
+        # The actual check is done in the validate method using the contributor analyzer
+        # This is a fallback method that defaults to True (new contributor)
+        return True
+
+
 # Registry of all available validators
 VALIDATOR_REGISTRY = {
     "author_team_is": AuthorTeamCondition(),
@@ -637,6 +760,8 @@ VALIDATOR_REGISTRY = {
     "allowed_hours": AllowedHoursCondition(),
     "branches": BranchesCondition(),
     "required_checks": RequiredChecksCondition(),
+    "code_owners": CodeOwnersCondition(),
+    "past_contributor_approval": PastContributorApprovalCondition(),
 }
 
 

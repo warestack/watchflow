@@ -100,25 +100,33 @@ class GitHubClient:
         """
         Fetch the list of files changed in a pull request.
         """
-        logger.info(f"Fetching files for PR #{pr_number} in {repo_full_name}")
-        # TODO: Implement actual GitHub API call
-        return []
+        return await self.get_pull_request_files(repo_full_name, pr_number, installation_id)
 
     async def get_pr_reviews(self, repo_full_name: str, pr_number: int, installation_id: int) -> list[dict[str, Any]]:
         """
         Fetch the list of reviews for a pull request.
         """
-        logger.info(f"Fetching reviews for PR #{pr_number} in {repo_full_name}")
-        # TODO: Implement actual GitHub API call
-        return []
+        return await self.get_pull_request_reviews(repo_full_name, pr_number, installation_id)
 
     async def get_pr_checks(self, repo_full_name: str, pr_number: int, installation_id: int) -> list[dict[str, Any]]:
         """
         Fetch the list of checks/statuses for a pull request.
         """
-        logger.info(f"Fetching checks for PR #{pr_number} in {repo_full_name}")
-        # TODO: Implement actual GitHub API call
-        return []
+        try:
+            # First get the PR to get the head SHA
+            pr_data = await self.get_pull_request(repo_full_name, pr_number, installation_id)
+            if not pr_data:
+                return []
+
+            head_sha = pr_data.get("head", {}).get("sha")
+            if not head_sha:
+                return []
+
+            # Then get check runs for that SHA
+            return await self.get_check_runs(repo_full_name, head_sha, installation_id)
+        except Exception as e:
+            logger.error(f"Error getting checks for PR #{pr_number} in {repo_full_name}: {e}")
+            return []
 
     async def get_user_teams(self, repo: str, username: str, installation_id: int) -> list:
         """Fetch the teams a user belongs to in a repo's org."""
@@ -542,6 +550,122 @@ class GitHubClient:
         except Exception as e:
             logger.error(f"Error updating deployment status: {e}")
             return None
+
+    async def get_repository_contributors(self, repo: str, installation_id: int) -> list[dict[str, Any]]:
+        """
+        Fetches repository contributors with their contribution counts.
+        """
+        token = await self.get_installation_access_token(installation_id)
+        if not token:
+            return []
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        url = f"{config.github.api_base_url}/repos/{repo}/contributors"
+
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as response:
+            if response.status == 200:
+                contributors = await response.json()
+                logger.info(f"Successfully fetched {len(contributors)} contributors for {repo}.")
+                return contributors
+            else:
+                error_text = await response.text()
+                logger.error(
+                    f"Failed to get contributors for {repo}. Status: {response.status}, Response: {error_text}"
+                )
+                return []
+
+    async def get_user_commits(
+        self, repo: str, username: str, installation_id: int, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        """
+        Fetches commits by a specific user in the repository.
+        """
+        token = await self.get_installation_access_token(installation_id)
+        if not token:
+            return []
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        url = f"{config.github.api_base_url}/repos/{repo}/commits?author={username}&per_page={min(limit, 100)}"
+
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as response:
+            if response.status == 200:
+                commits = await response.json()
+                logger.info(f"Successfully fetched {len(commits)} commits by {username} in {repo}.")
+                return commits
+            else:
+                error_text = await response.text()
+                logger.error(
+                    f"Failed to get commits by {username} in {repo}. Status: {response.status}, Response: {error_text}"
+                )
+                return []
+
+    async def get_user_pull_requests(
+        self, repo: str, username: str, installation_id: int, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        """
+        Fetches pull requests by a specific user in the repository.
+        """
+        token = await self.get_installation_access_token(installation_id)
+        if not token:
+            return []
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        url = f"{config.github.api_base_url}/repos/{repo}/pulls?state=all&creator={username}&per_page={min(limit, 100)}"
+
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as response:
+            if response.status == 200:
+                pull_requests = await response.json()
+                logger.info(f"Successfully fetched {len(pull_requests)} PRs by {username} in {repo}.")
+                return pull_requests
+            else:
+                error_text = await response.text()
+                logger.error(
+                    f"Failed to get PRs by {username} in {repo}. Status: {response.status}, Response: {error_text}"
+                )
+                return []
+
+    async def get_user_issues(
+        self, repo: str, username: str, installation_id: int, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        """
+        Fetches issues by a specific user in the repository.
+        """
+        token = await self.get_installation_access_token(installation_id)
+        if not token:
+            return []
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        url = (
+            f"{config.github.api_base_url}/repos/{repo}/issues?state=all&creator={username}&per_page={min(limit, 100)}"
+        )
+
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as response:
+            if response.status == 200:
+                issues = await response.json()
+                logger.info(f"Successfully fetched {len(issues)} issues by {username} in {repo}.")
+                return issues
+            else:
+                error_text = await response.text()
+                logger.error(
+                    f"Failed to get issues by {username} in {repo}. Status: {response.status}, Response: {error_text}"
+                )
+                return []
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Initializes and returns the aiohttp session."""
