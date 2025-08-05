@@ -5,7 +5,7 @@ Set INTEGRATION_TEST_REAL_API=true to make real OpenAI calls.
 """
 
 import os
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,8 +26,12 @@ class TestRulesAPIIntegration:
         """Test successful rule evaluation through the complete stack (mocked OpenAI)."""
         # Mock OpenAI unless real API testing is explicitly enabled
         if not os.getenv("INTEGRATION_TEST_REAL_API", "false").lower() == "true":
-            with patch("src.agents.feasibility_agent.agent.RuleFeasibilityAgent.execute") as mock_execute:
-                # Mock the agent result directly
+            with patch("src.agents.feasibility_agent.agent.RuleFeasibilityAgent") as mock_agent_class:
+                # Mock the agent instance
+                mock_agent = MagicMock()
+                mock_agent_class.return_value = mock_agent
+
+                # Mock the execute method
                 mock_result = AgentResult(
                     success=True,
                     message="Rule is feasible and can be implemented.",
@@ -46,7 +50,7 @@ class TestRulesAPIIntegration:
                         "analysis_steps": ["Analyzed rule feasibility", "Generated YAML configuration"],
                     },
                 )
-                mock_execute.return_value = mock_result
+                mock_agent.execute.return_value = mock_result
 
                 response = client.post("/api/v1/rules/evaluate", json={"rule_text": "No deployments on weekends"})
         else:
@@ -67,8 +71,12 @@ class TestRulesAPIIntegration:
         """Test unfeasible rule evaluation through the complete stack (mocked OpenAI)."""
         # Mock OpenAI unless real API testing is explicitly enabled
         if not os.getenv("INTEGRATION_TEST_REAL_API", "false").lower() == "true":
-            with patch("src.agents.feasibility_agent.agent.RuleFeasibilityAgent.execute") as mock_execute:
-                # Mock the agent result directly
+            with patch("src.agents.feasibility_agent.agent.RuleFeasibilityAgent") as mock_agent_class:
+                # Mock the agent instance
+                mock_agent = MagicMock()
+                mock_agent_class.return_value = mock_agent
+
+                # Mock the execute method
                 mock_result = AgentResult(
                     success=False,
                     message="Rule is not feasible.",
@@ -80,7 +88,7 @@ class TestRulesAPIIntegration:
                         "analysis_steps": ["Analyzed rule feasibility", "Determined rule is not implementable"],
                     },
                 )
-                mock_execute.return_value = mock_result
+                mock_agent.execute.return_value = mock_result
 
                 response = client.post(
                     "/api/v1/rules/evaluate", json={"rule_text": "This rule is completely impossible to implement"}
