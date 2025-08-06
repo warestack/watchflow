@@ -26,8 +26,6 @@ rules:
     enabled: true
     severity: "high"
     event_types: ["pull_request"]
-    parameters:
-      # This will be handled by the code_owners validator
 
   - description: "No direct pushes to main branch - all changes must go through PRs"
     enabled: true
