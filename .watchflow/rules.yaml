@@ -8,5 +8,3 @@ rules:
     parameters:
       min_approvals: 2
       message: "Pull requests require at least 2 approvals"
-
-
