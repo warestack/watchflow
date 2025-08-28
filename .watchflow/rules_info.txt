@@ -1,0 +1,30 @@
+op in that chat
+
+  - id: pr-creation-title-rule
+    name: PR Title date Required
+    description: Selected PR Title must have date included in that
+    enabled: true
+    serverity: high
+    event_types: [pull_request]
+    actions:
+      - type: comment
+        message: "This is a title without date mentioned. PR TItle must with date."
+
+  - id: push-comment-rule
+    name: Push Comment Rule
+    description: in commit message date is required.
+    enabled: true
+    serverity: high
+    event_types: [push]
+    actions:
+      - type: comment
+        message: "their must be date in the commit message"
+
+  - id: commit-message-date
+    name: Commit message must include date
+    description: "Every commit message in a push must include a date in format YYYY-MM-DD."
+    enabled: true
+    severity: high
+    event_types: [push]
+    parameters:
+      date_regex: "\\b\\d{4}-\\d{2}-\\d{2}\\b"
