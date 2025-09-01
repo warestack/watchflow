@@ -8,3 +8,35 @@ rules:
     parameters:
       min_approvals: 2
       message: "Pull requests require at least 2 approvals"
+
+  - id: push-author-team-required
+    name: Push Author Must Be In DevOps Team
+    description: Require the user who pushed to be a member of the devops team
+    enabled: true
+    severity: high
+    event_types: [push]
+    parameters:
+      team: devops
+      org: kp45
+
+  - id: force-push-prevention
+    name: Force Push Prevention
+    description: Prevent force pushes to protected branches
+    enabled: true
+    severity: critical
+    event_types: [push]
+    parameters:
+      allow_force_push: false
+      protected_branches: [main, development, force-demo]
+      detect_non_ff: false
+      message: "Force pushes are not allowed to protected branches"
+
+  - id: commit-count-limit
+    name: Commit Count Limit
+    description: Limit number of commits per push
+    enabled: true
+    severity: medium
+    event_types: [push]
+    parameters:
+      max_commits: 10
+      message: "Too many commits in a single push"

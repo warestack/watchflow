@@ -43,12 +43,17 @@ class PushProcessor(BaseEventProcessor):
                 "head_commit": payload.get("head_commit", {}),
                 "before": payload.get("before"),
                 "after": payload.get("after"),
+                "forced": payload.get("forced", False),
             },
+            # Provide sender for validators that expect GitHub's standard field
+            "sender": payload.get("sender", {}) or {"login": payload.get("pusher", {}).get("name")},
             "triggering_user": {"login": payload.get("pusher", {}).get("name")},
             "repository": payload.get("repository", {}),
             "organization": payload.get("organization", {}),
             "event_id": payload.get("event_id"),
             "timestamp": payload.get("timestamp"),
+            # Provide installation for validators needing API calls
+            "installation": {"id": task.installation_id},
         }
 
         # Get rules for the repository
@@ -68,7 +73,14 @@ class PushProcessor(BaseEventProcessor):
         # Run agentic analysis using the instance
         result = await self.engine_agent.execute(event_type="push", event_data=event_data, rules=formatted_rules)
 
-        violations = result.data.get("violations", [])
+        # Extract violations from evaluation_result
+        violations: list[dict[str, Any]] = []
+        try:
+            eval_result = result.data.get("evaluation_result") if result and result.data else None
+            if eval_result and hasattr(eval_result, "violations"):
+                violations = [v.__dict__ if hasattr(v, "__dict__") else v for v in eval_result.violations]
+        except Exception as e:
+            logger.error(f"Error extracting violations from engine result: {e}")
 
         processing_time = int((time.time() - start_time) * 1000)
 
@@ -88,7 +100,8 @@ class PushProcessor(BaseEventProcessor):
         if violations:
             logger.warning("🚨 VIOLATION SUMMARY:")
             for i, violation in enumerate(violations, 1):
-                logger.warning(f"   {i}. {violation.get('rule', 'Unknown')} ({violation.get('severity', 'medium')})")
+                rule_name = violation.get("rule", violation.get("rule_description", "Unknown"))
+                logger.warning(f"   {i}. {rule_name} ({violation.get('severity', 'medium')})")
                 logger.warning(f"      {violation.get('message', '')}")
         else:
             logger.info("✅ All rules passed - no violations detected!")
@@ -124,6 +137,8 @@ class PushProcessor(BaseEventProcessor):
 
     async def prepare_webhook_data(self, task: Task) -> dict[str, Any]:
         """Prepare data from webhook payload."""
+
+        logger.info(f"forced: {task.payload['forced']}")
         return {
             "event_type": "push",
             "repo_full_name": task.repo_full_name,
