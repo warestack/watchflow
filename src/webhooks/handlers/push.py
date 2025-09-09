@@ -15,13 +15,6 @@ class PushEventHandler(EventHandler):
 
     async def handle(self, event: WebhookEvent):
         """Handle push events by enqueuing them for background processing."""
-        try:
-            forced_flag = event.payload.get("forced", None)
-            ref_value = event.payload.get("ref", "")
-            logger.info(f"Push handler: forced={forced_flag}, ref={ref_value}")
-        except Exception:
-            pass
-
         logger.info(f"🔄 Enqueuing push event for {event.repo_full_name}")
 
         task_id = await task_queue.enqueue(

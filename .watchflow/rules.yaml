@@ -1,42 +1,35 @@
 rules:
-  - id: pr-approval-required
-    name: PR Approval Required
-    description: All pull requests must have at least 2 approvals
+  # Essential Open Source Rules
+  - description: "Pull requests must have descriptive titles following conventional commit format"
     enabled: true
-    severity: high
-    event_types: [pull_request]
+    severity: "medium"
+    event_types: ["pull_request"]
     parameters:
-      min_approvals: 2
-      message: "Pull requests require at least 2 approvals"
+      title_pattern: "^feat|^fix|^docs|^style|^refactor|^test|^chore|^perf|^ci|^build|^revert"
 
-  - id: push-author-team-required
-    name: Push Author Must Be In DevOps Team
-    description: Require the user who pushed to be a member of the devops team
+  - description: "New contributors require approval from at least one past contributor"
     enabled: true
-    severity: high
-    event_types: [push]
+    severity: "medium"
+    event_types: ["pull_request"]
     parameters:
-      team: devops
-      org: kp45
+      min_past_contributors: 1
 
-  - id: force-push-prevention
-    name: Force Push Prevention
-    description: Prevent force pushes to protected branches
+  - description: "Code changes must include corresponding tests"
     enabled: true
-    severity: critical
-    event_types: [push]
+    severity: "medium"
+    event_types: ["pull_request"]
+    parameters:
+      pattern: "tests/.*\\.py$|test_.*\\.py$"
+      condition_type: "files_match_pattern"
+
+  - description: "Changes to critical files require review from code owners"
+    enabled: true
+    severity: "high"
+    event_types: ["pull_request"]
+
+  - description: "No direct pushes to main branch - all changes must go through PRs"
+    enabled: true
+    severity: "critical"
+    event_types: ["push"]
     parameters:
       allow_force_push: false
-      protected_branches: [main, development, force-demo]
-      detect_non_ff: false
-      message: "Force pushes are not allowed to protected branches"
-
-  - id: commit-count-limit
-    name: Commit Count Limit
-    description: Limit number of commits per push
-    enabled: true
-    severity: medium
-    event_types: [push]
-    parameters:
-      max_commits: 10
-      message: "Too many commits in a single push"

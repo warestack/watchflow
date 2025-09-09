@@ -52,73 +52,52 @@ class AuthorTeamCondition(Condition):
     examples = [{"team": "devops"}, {"team": "codeowners"}]
 
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
-        """Validate membership using GitHub API via installation token.
-
-        Parameters expected:
-        - team: team slug (required), e.g., "devops"
-        - org: organization login (optional). If omitted, inferred from repo owner
-        """
         team_name = parameters.get("team")
         if not team_name:
             logger.warning("AuthorTeamCondition: No team specified in parameters")
             return False
 
+        # Get author from event
         author_login = event.get("sender", {}).get("login", "")
         if not author_login:
             logger.warning("AuthorTeamCondition: No sender login found in event")
             return False
 
-        # Get repo/org context and installation id
-        repository = event.get("repository", {})
-        repo_full_name = repository.get("full_name", "")
-        installation_id = event.get("installation", {}).get("id")
-        if not installation_id and event.get("event_type") == "push":
-            # PushProcessor passes installation_id only in Task; engine event may not have it.
-            # Best-effort: try reading from repository owner but we need installation_id for token.
-            logger.warning("AuthorTeamCondition: Missing installation_id; cannot query GitHub API. Allowing.")
-            return True
+        # Placeholder logic - replace with actual GitHub API call
+        logger.debug(f"Checking if {author_login} is in team {team_name}")
 
-        # Infer org
-        org_login = parameters.get("org") or (repo_full_name.split("/")[0] if repo_full_name else None)
-        if not org_login:
-            logger.warning("AuthorTeamCondition: Unable to infer org from repository context")
-            return True
+        # For testing purposes, let's assume certain users are in certain teams
+        team_memberships = {
+            "devops": ["devops-user", "admin-user"],
+            "codeowners": ["senior-dev", "tech-lead"],
+        }
 
-        try:
-            from src.integrations.github_api import github_client
+        return author_login in team_memberships.get(team_name, [])
 
-            # GitHub API: GET /orgs/{org}/teams/{team_slug}/memberships/{username}
-            token = await github_client.get_installation_access_token(int(installation_id))
-            if not token:
-                logger.warning("AuthorTeamCondition: Could not obtain installation token")
-                return True
 
-            import httpx
+class CommitCountLimitCondition(Condition):
+    """Validates that a push does not exceed a maximum number of commits."""
 
-            url = f"https://api.github.com/orgs/{org_login}/teams/{team_name}/memberships/{author_login}"
-            headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, headers=headers)
-                if resp.status_code == 200:
-                    state = resp.json().get("state")
-                    is_active = state == "active"
-                    logger.debug(
-                        f"AuthorTeamCondition: membership lookup user={author_login} team={team_name} state={state}"
-                    )
-                    return is_active
-                elif resp.status_code == 404:
-                    logger.debug(f"AuthorTeamCondition: user={author_login} is not a member of team={team_name} (404)")
-                    return False
-                else:
-                    logger.warning(
-                        f"AuthorTeamCondition: Team membership lookup failed {resp.status_code}: {resp.text}"
-                    )
-                    # On API error, do not block
-                    return True
-        except Exception as e:
-            logger.error(f"AuthorTeamCondition: Error checking team membership: {e}")
-            # Fail-open to avoid blocking pushes due to infra issues
-            return True
+    name = "commit_count_limit"
+    description = "Validates that a push does not exceed a maximum number of commits"
+    parameter_patterns = ["max_commits"]
+    event_types = ["push"]
+    examples = [{"max_commits": 5}, {"max_commits": 2}]
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        max_commits = int(parameters.get("max_commits", 2))
+        push_data = event.get("push", {})
+        commits = push_data.get("commits", [])
+
+        commit_count = len(commits)
+        logger.debug(f"CommitCountLimitCondition: found {commit_count} commits, max allowed={max_commits}")
+
+        if commit_count > max_commits:
+            logger.debug("CommitCountLimitCondition: VIOLATION - too many commits in push")
+            return False
+
+        logger.debug("CommitCountLimitCondition: PASS - within commit limit")
+        return True
 
 
 class FilePatternCondition(Condition):
@@ -490,157 +469,54 @@ class PatternCondition(Condition):
             return True  # No violation if pattern is invalid
 
 
-class CommitCountLimitCondition(Condition):
-    """Validates that a push does not exceed a maximum number of commits."""
-
-    name = "commit_count_limit"
-    description = "Validates that a push does not exceed a maximum number of commits"
-    parameter_patterns = ["max_commits"]
-    event_types = ["push"]
-    examples = [{"max_commits": 5}, {"max_commits": 10}]
-
-    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
-        min_length = int(parameters.get("max_commits", 10))  # Using max_commits as min_length for now
-
-        push_data = event.get("push", {})
-        commits = push_data.get("commits", [])
-
-        if not commits:
-            logger.debug("CommitCountLimitCondition: No commits found")
-            return True
-
-        # Check each commit message length
-        for i, commit in enumerate(commits):
-            message = commit.get("message", "")
-            message_length = len(message.strip())
-
-            print("#########################################################", message_length, min_length)
-            logger.debug(
-                f"CommitCountLimitCondition: commit {i + 1} message length={message_length}, min_length={min_length}"
-            )
-
-            if message_length < min_length:
-                logger.debug(
-                    f"CommitCountLimitCondition: VIOLATION - commit {i + 1} message too short: '{message[:50]}...'"
-                )
-                return False
-
-        logger.debug(f"CommitCountLimitCondition: PASS - all {len(commits)} commits meet minimum length")
-        return True
-
-
 class AllowForcePushCondition(Condition):
-    """Validates if force pushes are allowed on specific branches."""
+    """Validates if force pushes are allowed."""
 
     name = "allow_force_push"
-    description = "Validates if force pushes are allowed on specific branches"
-    parameter_patterns = ["allow_force_push", "protected_branches"]
+    description = "Validates if force pushes are allowed"
+    parameter_patterns = ["allow_force_push"]
     event_types = ["push"]
-    examples = [
-        {"allow_force_push": False, "protected_branches": ["main", "development", "force-demo"]},
-        {"allow_force_push": False},
-        {"allow_force_push": False, "protected_branches": ["main", "development", "master", "force-demo"]},
-    ]
+    examples = [{"allow_force_push": False}, {"allow_force_push": True}]
 
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
-        print("#########################################################", parameters)
-        """
-        Validate force push restrictions.
-
-        Parameters:
-        - allow_force_push: bool (default False) - whether force pushes are allowed
-        - protected_branches: list[str] (optional) - branches where force push is restricted
-        """
-        allow_force_push = parameters.get("allow_force_push", False)
-        protected_branches = parameters.get("protected_branches", [])
-        detect_non_ff = parameters.get("detect_non_ff", True)
-
-        # Get push data
         push_data = event.get("push", {})
         if not push_data:
-            logger.debug("AllowForcePushCondition: No push data found in event")
             return True  # No violation if we can't check
 
-        # Check if this is a force push (webhook flag)
+        allow_force_push = parameters.get("allow_force_push", False)
+        if allow_force_push:
+            return True  # No violation if force pushes are allowed
+
         is_force_push = bool(push_data.get("forced", False))
         if not is_force_push:
-            # If configured to NOT detect non-FF, allow immediately
-            if not detect_non_ff:
-                return True
+            return True  # No violation if not a force push
 
-            # Fallback: detect non-fast-forward by comparing before..after with GitHub compare API
-            before = push_data.get("before")
-            after = push_data.get("after")
-            created = bool(push_data.get("created", False))
-            deleted = bool(push_data.get("deleted", False))
-
-            # Only attempt compare if we have both SHAs and it's not a create/delete
-            if before and after and not created and not deleted:
-                repository = event.get("repository", {})
-                repo_full_name = repository.get("full_name", "")
-                installation_id = event.get("installation", {}).get("id")
-                try:
-                    from src.integrations.github_api import github_client
-
-                    token = (
-                        await github_client.get_installation_access_token(int(installation_id))
-                        if installation_id
-                        else None
-                    )
-                    if token and repo_full_name:
-                        import httpx
-
-                        url = f"https://api.github.com/repos/{repo_full_name}/compare/{before}...{after}"
-                        headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
-                        async with httpx.AsyncClient() as client:
-                            resp = await client.get(url, headers=headers)
-                            if resp.status_code == 200:
-                                status = resp.json().get("status")  # ahead | behind | identical | diverged
-                                # Fast-forward cases: ahead/identical → not force; others imply non-FF
-                                if status not in ("ahead", "identical"):
-                                    is_force_push = True
-                                    logger.debug(
-                                        f"AllowForcePushCondition: Non-FF detected via compare API (status={status})"
-                                    )
-                            else:
-                                logger.debug(
-                                    f"AllowForcePushCondition: Compare API failed {resp.status_code}: {resp.text[:200]}"
-                                )
-                except Exception as e:
-                    logger.debug(f"AllowForcePushCondition: Compare API error: {e}")
-
-        if not is_force_push:
-            return True  # Not a force push, so no violation
-
-        # If force pushes are globally allowed, allow it
-        if allow_force_push:
-            logger.debug("AllowForcePushCondition: Force pushes are globally allowed")
-            return True
-
-        # Get the target branch
         ref = push_data.get("ref")
         if not ref:
             logger.debug("AllowForcePushCondition: No ref found in push data")
             return True  # No violation if we can't determine branch
 
+        is_force_push = bool(push_data.get("forced", False))
+        if not is_force_push:
+            return True
+
         # Extract branch name from ref (e.g., "refs/heads/main" -> "main")
         branch_name = ref.replace("refs/heads/", "") if ref.startswith("refs/heads/") else ref
 
-        # If no protected branches specified, block all force pushes
+        protected_branches = parameters.get("protected_branches", [])
         if not protected_branches:
             logger.debug(
-                f"AllowForcePushCondition: Force push to {branch_name} blocked (no protected branches specified)"
+                f"AllowForcePushCondition: Force push to {branch_name} allowed (no protected branches specified so we select all branches as protected)"
             )
-            return False
+            return False  # No protected branches means all branches are protected
 
-        # Check if this branch is protected
         is_protected_branch = branch_name in protected_branches
         if is_protected_branch:
             logger.debug(f"AllowForcePushCondition: Force push to protected branch {branch_name} blocked")
-            return False
+            return False  # Violation
         else:
             logger.debug(f"AllowForcePushCondition: Force push to unprotected branch {branch_name} allowed")
-            return True
+            return True  # return True (no violation) as placeholder
 
 
 class ProtectedBranchesCondition(Condition):

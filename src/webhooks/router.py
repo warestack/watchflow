@@ -59,15 +59,6 @@ async def github_webhook_endpoint(
     payload = await request.json()
     event_name = request.headers.get("X-GitHub-Event")
 
-    # Log raw forced flag early for push events
-    try:
-        if event_name and event_name.split(".")[0] == "push":
-            forced_flag = payload.get("forced", None)
-            ref_value = payload.get("ref", "")
-            logger.info(f"Webhook push received: forced={forced_flag}, ref={ref_value}")
-    except Exception:
-        pass
-
     try:
         event = _create_event_from_request(event_name, payload)
         result = await dispatcher_instance.dispatch(event)
