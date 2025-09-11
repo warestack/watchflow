@@ -1,0 +1,16 @@
+secrets_management:
+  providers:
+    - aws_secrets_manager
+    - github_secrets
+    - vault
+  
+  encryption:
+    algorithm: "AES-256-GCM"
+    key_rotation_interval: "30d"
+    
+  environment_separation:
+    development:
+      allowed_secret_types: ["test_tokens", "dev_apis"]
+    production:
+      required_approval: true
+      audit_all_access: true
