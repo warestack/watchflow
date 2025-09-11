@@ -33,3 +33,17 @@ rules:
     event_types: ["push"]
     parameters:
       allow_force_push: false
+
+# Enhanced validation schema for .watchflow/rules.yaml
+validation:
+  input_sanitization:
+    enabled: true
+    max_comment_length: 1000
+    allowed_characters: "alphanumeric, basic punctuation"
+    blocked_patterns: ["<script>", "javascript:", "data:"]
+  
+  rule_validation:
+    enabled: true
+    max_rules_per_repo: 50
+    max_rule_complexity: 100
+    required_fields: ["id", "name", "description", "enabled"]
