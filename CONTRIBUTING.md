@@ -1,308 +1,231 @@
 # Contributing to Watchflow
 
-Thank you for your interest in contributing to Watchflow! This document provides guidelines for contributing to the
-project.
+Welcome to Watchflow! We're building the future of agentic DevOps governance. This guide will help you contribute
+effectively to our advanced multi-agent system.
 
-## Types of Contributions
+## 🎯 Our Vision
 
-We welcome various types of contributions:
+Watchflow implements cutting-edge agentic AI techniques for DevOps governance, combining:
+- **Advanced Multi-Agent Systems** with sophisticated coordination patterns
+- **Hybrid Intelligence** (static rules + LLM reasoning)
+- **Context-Aware Decision Making** with temporal and spatial awareness
+- **Regression Prevention** to avoid duplicate violations
+- **Enterprise-Grade Policy Coverage** based on real-world research
 
-- **Feature Development**: New AI agents, rule validators, or event processors
-- **Bug Fixes**: Resolving issues in existing functionality
-- **Documentation**: Improving guides, API docs, or code comments
-- **Testing**: Adding tests or improving test coverage
-- **Performance**: Optimizing agent performance or API response times
-- **Security**: Security improvements or vulnerability fixes
+## Architecture Overview
 
-## Development Setup
+### Design Patterns We Use
+- **Agent Pattern**: Each agent has specific responsibilities and interfaces
+- **Strategy Pattern**: Dynamic validation strategy selection
+- **Observer Pattern**: Event-driven agent coordination
+- **Command Pattern**: Action execution with undo capabilities
+- **Factory Pattern**: Dynamic agent and validator creation
+- **Decorator Pattern**: Cross-cutting concerns (logging, metrics, retry)
+- **State Machine Pattern**: Agent lifecycle management
 
-Before contributing, ensure you have the development environment set up:
+## Getting Started
 
-1. Follow the [Development Guide](DEVELOPMENT.md)
-2. Set up GitHub App credentials
-3. Configure LangSmith for AI agent debugging
-4. Install pre-commit hooks
+### Prerequisites
+- Python 3.12+
+- OpenAI API key
+- LangSmith account (for tracing)
+- GitHub App setup
 
-## Contribution Workflow
-
-### 1. Fork and Clone
-
+### Development Setup
 ```bash
-# Fork the repository on GitHub
-# Clone your fork
-git clone https://github.com/your-username/watchflow.git
+# Clone and setup
+git clone https://github.com/warestack/watchflow.git
 cd watchflow
+uv sync
 
-# Add upstream remote
-git remote add upstream https://github.com/watchflow/watchflow.git
-```
+# Environment setup
+cp .env.example .env
+# Add your API keys to .env
 
-### 2. Create Feature Branch
-
-```bash
-# Create and switch to feature branch
-git checkout -b feature/your-feature-name
-
-# Or for bug fixes
-git checkout -b fix/your-bug-description
-```
-
-### 3. Make Changes
-
-Follow these guidelines when making changes:
-
-#### Code Style
-
-- Use Python 3.12+ features
-- Follow PEP 8 with 120 character line length
-- Use type hints for all function parameters and return values
-- Add docstrings for all public functions and classes
-
-#### AI Agent Development
-
-When working on AI agents:
-
-1. **Use LangSmith**: Configure LangSmith for debugging and iteration
-2. **Test Prompts**: Validate prompts with various inputs
-3. **Monitor Performance**: Track token usage and response times
-4. **Add Tests**: Include unit tests for agent logic
-
-#### Rule System Development
-
-When working on rules:
-
-1. **Validator Development**: Create fast validators for common checks
-2. **Parameter Validation**: Ensure rule parameters are properly validated
-3. **Event Type Support**: Verify event type compatibility
-4. **Documentation**: Update rule documentation and examples
-
-### 4. Testing
-
-Run the test suite before submitting:
-
-```bash
-# Run all tests
+# Run tests
 uv run pytest
 
-# Run with coverage
-uv run pytest --cov=src --cov-report=html
-
-# Run specific test categories
-uv run pytest tests/test_agents/
-uv run pytest tests/test_rules/
-uv run pytest tests/test_webhooks/
+# Start development server
+uv run python -m src.main
 ```
 
-### 5. Code Quality
+## Advanced Techniques We're Implementing
 
-Ensure code quality standards:
+### 1. Sophisticated Agent Coordination
+- **Hierarchical Agent Orchestration**: Supervisor agents coordinate specialized sub-agents
+- **Conflict Resolution**: Multi-agent decision synthesis with confidence scoring
+- **Dynamic Agent Composition**: Runtime agent creation based on context
+- **Agent Communication Protocols**: Message passing with typed interfaces
 
-```bash
-# Format code
-uv run black src/
-uv run isort src/
+### 2. Advanced LLM Integration
+- **Chain-of-Thought Reasoning**: Step-by-step decision making
+- **ReAct Pattern**: Reasoning + Acting in agent workflows
+- **Few-Shot Learning**: Dynamic prompt examples based on context
+- **Structured Output Validation**: Pydantic models with retry logic
+- **Prompt Injection Mitigation**: Security-first prompt engineering
 
-# Lint code
-uv run ruff check src/
-uv run ruff format src/
+### 3. Context-Aware Intelligence
+- **Temporal Context**: Historical decision patterns and outcomes
+- **Spatial Context**: Repository, team, and organizational context
+- **Developer Context**: Experience level, contribution patterns, team dynamics
+- **Business Context**: Project phase, compliance requirements, risk profiles
 
-# Type checking
-uv run mypy src/
-
-# Run pre-commit hooks
-uv run pre-commit run --all-files
-```
-
-### 6. Commit and Push
-
-```bash
-# Stage changes
-git add .
-
-# Commit with descriptive message
-git commit -m "feat: add new rule validator for file size checks
-
-- Add FileSizeValidator class
-- Support max_file_size parameter
-- Add comprehensive tests
-- Update documentation"
-
-# Push to your fork
-git push origin feature/your-feature-name
-```
-
-### 7. Create Pull Request
-
-1. Go to your fork on GitHub
-2. Click "New Pull Request"
-3. Select your feature branch
-4. Fill out the PR template
-5. Request review from maintainers
-
-## Pull Request Guidelines
-
-### PR Template
-
-Use the provided PR template and include:
-
-- **Description**: Clear description of changes
-- **Type**: Feature, bug fix, documentation, etc.
-- **Testing**: How you tested the changes
-- **Breaking Changes**: Any breaking changes
-- **Screenshots**: For UI changes
-
-### Review Process
-
-1. **Automated Checks**: Ensure all CI checks pass
-2. **Code Review**: Address reviewer feedback
-3. **Testing**: Verify functionality works as expected
-4. **Documentation**: Update relevant documentation
+### 4. Regression Prevention System
+- **Violation Deduplication**: Avoid sending same violations repeatedly
+- **State Tracking**: Track violation resolution status across events
+- **Smart Notifications**: Context-aware escalation and reminder systems
+- **Learning from Feedback**: Adapt based on developer responses
 
 ## Development Guidelines
 
-### AI Agent Development
+### Code Quality Standards
+- **Type Hints**: All functions must have complete type annotations
+- **Async/Await**: Use async patterns throughout for performance
+- **Error Handling**: Comprehensive error handling with structured logging
+- **Testing**: Unit tests, integration tests, and agent behavior tests
+- **Documentation**: Docstrings with examples and type information
 
-When developing AI agents:
-
-1. **Inherit from BaseAgent**: Use the base agent class for consistency
-2. **LangGraph Integration**: Use LangGraph for complex workflows
-3. **Error Handling**: Implement robust error handling
-4. **Logging**: Add comprehensive logging for debugging
-5. **Testing**: Create unit tests for agent logic
-
-Example agent structure:
-
+### Agent Development
 ```python
-from src.agents.base import BaseAgent, AgentResult
-from langgraph.graph import StateGraph
+class AdvancedAgent(BaseAgent):
+    """Example of advanced agent implementation."""
 
-class MyAgent(BaseAgent):
-    def _build_graph(self) -> StateGraph:
-        # Build LangGraph workflow
-        pass
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.context_store = ContextStore()
+        self.learning_engine = LearningEngine()
+        self.regression_preventer = RegressionPreventer()
 
     async def execute(self, **kwargs) -> AgentResult:
-        # Execute agent logic
-        pass
+        """Execute with advanced techniques."""
+        # 1. Context enrichment
+        context = await self.context_store.enrich(kwargs)
+
+        # 2. Regression check
+        if await self.regression_preventer.is_duplicate(context):
+            return AgentResult(success=True, message="Duplicate violation prevented")
+
+        # 3. Advanced reasoning
+        result = await self._advanced_reasoning(context)
+
+        # 4. Learning update
+        await self.learning_engine.update(result, context)
+
+        return result
 ```
 
-### Rule Validator Development
-
-When creating rule validators:
-
-1. **Async Interface**: Implement async validate method
-2. **Parameter Validation**: Validate input parameters
-3. **Performance**: Optimize for speed
-4. **Error Handling**: Handle edge cases gracefully
-
-Example validator:
-
+### Design Pattern Examples
 ```python
-from src.rules.validators import BaseValidator
-
-class MyValidator(BaseValidator):
-    async def validate(self, parameters: dict, event_data: dict) -> bool:
-        # Implement validation logic
+# Strategy Pattern for validation
+class ValidationStrategy(ABC):
+    @abstractmethod
+    async def validate(self, context: ValidationContext) -> ValidationResult:
         pass
+
+class LLMValidationStrategy(ValidationStrategy):
+    async def validate(self, context: ValidationContext) -> ValidationResult:
+        # Advanced LLM reasoning with CoT
+        pass
+
+# Observer Pattern for agent coordination
+class AgentCoordinator:
+    def __init__(self):
+        self.observers: List[AgentObserver] = []
+
+    def notify_agents(self, event: AgentEvent):
+        for observer in self.observers:
+            asyncio.create_task(observer.handle_event(event))
 ```
 
-### Event Processor Development
+## Contribution Areas
 
-When developing event processors:
+### High-Priority Issues
+1. **Advanced Agent Coordination** - Implement sophisticated multi-agent orchestration
+2. **Regression Prevention System** - Build violation deduplication and state tracking
+3. **Context-Aware Intelligence** - Enhance context enrichment and decision making
+4. **Learning Agent Implementation** - Add feedback-based policy adaptation
+5. **Enterprise Policy Coverage** - Implement 70+ real-world enterprise policies
 
-1. **Inherit from BaseEventProcessor**: Use the base class
-2. **Async Processing**: Implement async process method
-3. **Error Handling**: Handle processing errors gracefully
-4. **Logging**: Add detailed logging
+### Advanced Features
+- **Agent Specialization**: Domain-specific agents (security, compliance, performance)
+- **Cross-Platform Support**: Extend beyond GitHub to GitLab, Azure DevOps
+- **Advanced Analytics**: Decision quality metrics and performance optimization
+- **Custom Agent Development**: Framework for users to create custom agents
 
-Example processor:
+## Testing Strategy
 
+### Agent Testing
 ```python
-from src.event_processors.base import BaseEventProcessor, ProcessingResult
-
-class MyProcessor(BaseEventProcessor):
-    async def process(self, task: Task) -> ProcessingResult:
-        # Implement processing logic
-        pass
+@pytest.mark.asyncio
+async def test_agent_coordination():
+    """Test sophisticated agent coordination."""
+    coordinator = AgentCoordinator()
+    result = await coordinator.coordinate_agents(
+        task="complex_policy_evaluation",
+        context=test_context
+    )
+    assert result.confidence > 0.8
+    assert len(result.agent_decisions) > 0
 ```
 
-## Testing Guidelines
+### Integration Testing
+- **End-to-End Workflows**: Complete agent orchestration scenarios
+- **Performance Testing**: Latency and throughput under load
+- **Regression Testing**: Ensure new features don't break existing functionality
 
-### Unit Tests
+## 📚 Resources
 
-- Test individual functions and classes
-- Mock external dependencies
-- Test edge cases and error conditions
-- Aim for high test coverage
+### Academic Foundation
+- Our thesis: "Watchflow: Agentic DevOps Governance"
+- Multi-Agent Systems literature
+- LLM reasoning techniques (CoT, ReAct, etc.)
+- DevOps governance best practices
 
-### Integration Tests
+### Technical Resources
+- [LangGraph Documentation](https://langchain-ai.github.io/langgraph/)
+- [OpenAI API Best Practices](https://platform.openai.com/docs/guides/production-best-practices)
+- [Pydantic Documentation](https://docs.pydantic.dev/)
+- [FastAPI Documentation](https://fastapi.tiangolo.com/)
 
-- Test component interactions
-- Test API endpoints
-- Test webhook processing
-- Test AI agent workflows
+## Community
 
-### AI Agent Testing
+- **Discussions**: Use GitHub Discussions for architecture questions
+- **Issues**: Report bugs and request features
+- **Pull Requests**: Submit improvements and new features
+- **Discord**: Join our community for real-time collaboration
 
-- Test agent logic with various inputs
-- Mock LLM responses for consistent testing
-- Test error handling and edge cases
-- Validate agent outputs
+## Pull Request Process
 
-## Documentation
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
+3. **Implement** with tests and documentation
+4. **Run** tests (`uv run pytest`)
+5. **Commit** changes (`git commit -m 'Add amazing feature'`)
+6. **Push** to branch (`git push origin feature/amazing-feature`)
+7. **Open** a Pull Request
 
-### Code Documentation
-
-- Add docstrings to all public functions and classes
-- Include type hints for better IDE support
-- Document complex algorithms and business logic
-- Add inline comments for non-obvious code
-
-### API Documentation
-
-- Update OpenAPI specifications
-- Add example requests and responses
-- Document error codes and messages
-- Keep documentation in sync with code changes
-
-## Performance Considerations
-
-### AI Agent Performance
-
-- Monitor token usage and costs
-- Optimize prompts for efficiency
-- Use caching where appropriate
-- Implement rate limiting
-
-### API Performance
-
-- Optimize database queries
-- Use async processing for long-running tasks
-- Implement proper connection pooling
-- Monitor response times
-
-## Security Guidelines
-
-- Never commit sensitive data (API keys, secrets)
-- Validate all input data
-- Use parameterized queries
-- Follow security best practices
-- Report security issues privately
-
-## Getting Help
-
-- **Issues**: Create GitHub issues for bugs or feature requests
-- **Discussions**: Use GitHub Discussions for questions
-- **Documentation**: Check existing documentation first
-- **Code Review**: Ask questions during code review
+### PR Requirements
+- [ ] All tests pass
+- [ ] Type hints added
+- [ ] Documentation updated
+- [ ] No regression in performance
+- [ ] Agent behavior tests included
 
 ## Recognition
 
 Contributors will be recognized in:
-
-- GitHub contributors list
+- README contributors section
 - Release notes
-- Project documentation
-- Community acknowledgments
+- Academic papers (where applicable)
+- Community highlights
+
+## Questions?
+
+- **Architecture**: Open a discussion
+- **Implementation**: Ask in issues
+- **Research**: Contact maintainers
+- **Community**: Join Discord
+
+---
 
 Thank you for contributing to Watchflow!

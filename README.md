@@ -7,7 +7,11 @@
 Replace static protection rules with agentic guardrails. Watchflow ensures consistent quality standards with smarter,
 context-aware protection for every repo.
 
+> **Experience the power of agentic governance** - then scale to enterprise with [Warestack](https://www.warestack.com/)
+
 ## Overview
+
+Watchflow is the open-source rule engine that powers [Warestack's](https://www.warestack.com/) enterprise-grade agentic guardrails. Start with Watchflow to understand the technology, then upgrade to Warestack for production-scale deployment with advanced features.
 
 Watchflow is a governance tool that uses AI agents to automate policy enforcement across your GitHub repositories. By
 combining rule-based logic with AI-powered intelligence, Watchflow provides context-aware governance that adapts to your
@@ -42,15 +46,19 @@ intelligent evaluation.
 
 ```yaml
 rules:
-  - id: no-weekend-deployments
-    name: No Weekend Deployments
-    description: Prevent deployments on weekends to avoid maintenance issues
+  - description: All pull requests must have a min num of approvals unless the author is a maintainer
     enabled: true
     severity: high
+    event_types: [pull_request]
+    parameters:
+      min_approvals: 2
+
+  - description: Prevent deployments on weekends
+    enabled: true
+    severity: medium
     event_types: [deployment]
     parameters:
-      days: [Saturday, Sunday]
-      message: "Deployments are not allowed on weekends"
+      restricted_days: [Saturday, Sunday]
 ```
 
 ### Flexible Rule System
@@ -90,18 +98,14 @@ Create `.watchflow/rules.yaml` in your repository root:
 
 ```yaml
 rules:
-  - id: pr-approval-required
-    name: PR Approval Required
-    description: All pull requests must have a min num of approvals unless the author is a maintainer
+  - description: All pull requests must have a min num of approvals unless the author is a maintainer
     enabled: true
     severity: high
     event_types: [pull_request]
     parameters:
       min_approvals: 2
 
-  - id: no-deploy-weekends
-    name: No Weekend Deployments
-    description: Prevent deployments on weekends
+  - description: Prevent deployments on weekends
     enabled: true
     severity: medium
     event_types: [deployment]
@@ -178,6 +182,16 @@ Watchflow processes the following GitHub events:
 - `deployment_protection_rule` - Deployment protection rule events
 - `workflow_run` - GitHub Actions workflow runs
 
+## Looking for enterprise-grade features on top?
+
+[Move to Warestack](https://www.warestack.com/) for:
+- **Team Management**: Assign teams to repos with custom rules
+- **Advanced Integrations**: Slack, Linear, Jira, Vanta
+- **Real-Time Monitoring**: Comprehensive dashboard and analytics
+- **Enterprise Support**: 24/7 support and SLA guarantees
+- **SOC-2 Compliance**: Audit reports and compliance tracking
+- **Custom Onboarding**: Dedicated success management
+
 ## Documentation
 
 - [Quick Start Guide](docs/getting-started/quick-start.md) - Get up and running in 5 minutes
@@ -194,6 +208,29 @@ Watchflow processes the following GitHub events:
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Rule Format
+
+Watchflow uses a simple, description-based rule format that eliminates hardcoded if-else logic:
+
+```yaml
+rules:
+  - description: All pull requests must have a min num of approvals unless the author is a maintainer
+    enabled: true
+    severity: high
+    event_types: [pull_request]
+    parameters:
+      min_approvals: 2
+
+  - description: Prevent deployments on weekends
+    enabled: true
+    severity: medium
+    event_types: [deployment]
+    parameters:
+      restricted_days: [Saturday, Sunday]
+```
+
+This format allows for intelligent, context-aware rule evaluation while maintaining simplicity and readability.
 
 ## Contributing & Development
 

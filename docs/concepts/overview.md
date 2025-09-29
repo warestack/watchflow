@@ -1,6 +1,10 @@
 # Architecture Overview
 
-Watchflow replaces static protection rules with context-aware monitoring. Our hybrid architecture combines rule-based logic with AI intelligence to ensure consistent quality standards so teams can focus on building, increase trust, and move fast.
+Watchflow replaces static protection rules with context-aware monitoring. Our hybrid architecture combines rule-based
+logic with AI intelligence to ensure consistent quality standards so teams can focus on building, increase trust, and
+move fast.
+
+> **Experience the power of agentic governance** - then scale to enterprise with [Warestack](https://www.warestack.com/)
 
 ## Hybrid Architecture
 

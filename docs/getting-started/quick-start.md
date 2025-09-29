@@ -34,25 +34,19 @@ Create `.watchflow/rules.yaml` in your repository root to define your governance
 
 ```yaml
 rules:
-  - id: pr-approval-required
-    name: PR Approval Required
-    description: All pull requests must have at least 2 approvals
+  - description: All pull requests must have a min num of approvals unless the author is a maintainer
     enabled: true
     severity: high
     event_types: [pull_request]
     parameters:
       min_approvals: 2
-      message: "Pull requests require at least 2 approvals"
 
-  - id: no-deploy-weekends
-    name: No Weekend Deployments
-    description: Prevent deployments on weekends
+  - description: Prevent deployments on weekends
     enabled: true
     severity: medium
     event_types: [deployment]
     parameters:
       restricted_days: [Saturday, Sunday]
-      message: "Deployments are not allowed on weekends"
 ```
 
 **Pro Tip**: Start with simple rules and gradually add complexity as your team gets comfortable with the tool.
@@ -65,7 +59,8 @@ rules:
    - Verify that rules are being applied correctly
 
 2. **Try acknowledgment workflow**
-   - When a rule violation occurs, comment: `@watchflow acknowledge "Emergency fix, all comments have been resolved"` or `@watchflow ack "Emergency fix, all comments have been resolved"`
+   - When a rule violation occurs, comment: `@watchflow acknowledge "Emergency fix, all comments have been resolved"` or
+     `@watchflow ack "Emergency fix, all comments have been resolved"`
    - Watch how AI evaluates your acknowledgment request
 
 3. **Verify rule enforcement**
@@ -149,7 +144,8 @@ Use these commands in PR comments to interact with Watchflow:
 
 **Situation**: PR lacks required approvals but it's an emergency fix
 **Watchflow Action**: Blocks PR, requires acknowledgment
-**Developer Response**: `@watchflow acknowledge "Emergency fix, team is unavailable"` or `@watchflow ack "Emergency fix, team is unavailable"`
+**Developer Response**: `@watchflow acknowledge "Emergency fix, team is unavailable"` or `@watchflow ack "Emergency fix,
+   team is unavailable"`
 **Result**: PR approved with documented exception
 
 ### Remains Blocked: Security Review
@@ -163,7 +159,8 @@ Use these commands in PR comments to interact with Watchflow:
 
 **Situation**: Weekend deployment rules are violated for critical issue
 **Watchflow Action**: Blocks deployment, allows acknowledgment
-**Developer Response**: `@watchflow acknowledge "Critical production fix needed"` or `@watchflow ack "Critical production fix needed"`
+**Developer Response**: `@watchflow acknowledge "Critical production fix needed"` or `@watchflow ack "Critical
+   production fix needed"`
 **Result**: Deployment proceeds with documented exception
 
 ### Remains Blocked: Sensitive Files
@@ -180,4 +177,5 @@ Use these commands in PR comments to interact with Watchflow:
 - **View Performance**: See [Performance Benchmarks](../benchmarks.md) for real-world results
 - **Get Support**: Visit our [GitHub Discussions](https://github.com/warestack/watchflow/discussions) for help
 
-**Congratulations!** You've successfully set up Watchflow with context-aware rule guardrails. Your team can now focus on building while maintaining consistent quality standards.
+**Congratulations!** You've successfully set up Watchflow with context-aware rule guardrails. Your team can now focus on
+building while maintaining consistent quality standards.

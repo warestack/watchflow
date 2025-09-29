@@ -1,32 +1,29 @@
 # Configuration Guide
 
-This guide covers how to configure Watchflow rules to replace static protection rules with context-aware guardrails. Learn how to create effective governance rules that adapt to your team's needs and workflow.
+This guide covers how to configure Watchflow rules to replace static protection rules with context-aware guardrails.
+Learn how to create effective governance rules that adapt to your team's needs and workflow.
 
 ## Rule Configuration
 
 ### Basic Rule Structure
 
-Rules are defined in YAML format and stored in `.watchflow/rules.yaml` in your repository. Each rule consists of metadata, event triggers, and parameters that define the rule's behavior:
+Rules are defined in YAML format and stored in `.watchflow/rules.yaml` in your repository. Each rule consists of
+metadata, event triggers, and parameters that define the rule's behavior:
 
 ```yaml
 rules:
-  - id: pr-approval-required
-    name: PR Approval Required
-    description: All pull requests must have at least 2 approvals
+  - description: All pull requests must have a min num of approvals unless the author is a maintainer
     enabled: true
     severity: high
     event_types: [pull_request]
     parameters:
       min_approvals: 2
-      message: "Pull requests require at least 2 approvals"
 ```
 
 ### Rule Components
 
 | Component     | Description                       | Required | Type    |
 |---------------|-----------------------------------|----------|---------|
-| `id`          | Unique rule identifier            | Yes      | string  |
-| `name`        | Human-readable name               | Yes      | string  |
 | `description` | Rule description                  | Yes      | string  |
 | `enabled`     | Whether rule is active            | No       | boolean |
 | `severity`    | Rule severity level               | No       | string  |
@@ -41,16 +38,13 @@ This rule ensures that security-sensitive changes are properly reviewed:
 
 ```yaml
 rules:
-  - id: security-review-required
-    name: Security Review Required
-    description: Security-sensitive changes require security team review
+  - description: Security-sensitive changes require security team review
     enabled: true
     severity: critical
     event_types: [pull_request]
     parameters:
       file_patterns: ["**/security/**", "**/auth/**", "**/config/security.yaml"]
       required_teams: ["security-team"]
-      message: "Security changes require security team review"
 ```
 
 ### Deployment Protection Rule
@@ -59,15 +53,12 @@ This rule prevents deployments during restricted time periods:
 
 ```yaml
 rules:
-  - id: no-deploy-weekends
-    name: No Weekend Deployments
-    description: Prevent deployments on weekends
+  - description: Prevent deployments on weekends
     enabled: true
     severity: medium
     event_types: [deployment]
     parameters:
       restricted_days: [Saturday, Sunday]
-      message: "Deployments are not allowed on weekends"
 ```
 
 ### Large PR Rule
@@ -76,16 +67,13 @@ This rule helps maintain code quality by flagging large changes:
 
 ```yaml
 rules:
-  - id: large-pr-warning
-    name: Large PR Warning
-    description: Warn about large pull requests
+  - description: Warn about large pull requests that may be difficult to review
     enabled: true
     severity: medium
     event_types: [pull_request]
     parameters:
       max_files: 20
       max_lines: 500
-      message: "This is a large PR. Consider breaking it into smaller changes."
 ```
 
 ## Parameter Types
@@ -134,29 +122,25 @@ parameters:
 
 ```yaml
 rules:
-  - id: info-rule
-    name: Documentation Reminder
-    description: Remind developers to update documentation
+  - description: Remind developers to update documentation for significant changes
     severity: low
-    actions:
-      - type: comment
-        message: "Consider updating documentation for this change"
+    event_types: [pull_request]
+    parameters:
+      file_patterns: ["src/**", "lib/**"]
 
-  - id: warning-rule
-    name: Large PR Warning
-    description: Warn about large pull requests
+  - description: Warn about large pull requests that may be difficult to review
     severity: medium
-    actions:
-      - type: comment
-        message: "This is a large PR. Consider breaking it into smaller changes."
+    event_types: [pull_request]
+    parameters:
+      max_files: 20
+      max_lines: 500
 
-  - id: critical-rule
-    name: Security Review Required
-    description: Block security-sensitive changes
+  - description: Block security-sensitive changes without proper review
     severity: critical
-    actions:
-      - type: block
-        message: "Security review required for this change"
+    event_types: [pull_request]
+    parameters:
+      file_patterns: ["**/security/**", "**/auth/**"]
+      required_teams: ["security-team"]
 ```
 
 ## Event Types
@@ -174,19 +158,24 @@ rules:
 ```yaml
 rules:
   # PR-specific rule
-  - id: pr-rule
-    name: PR Review Required
+  - description: All pull requests must be reviewed before merging
     event_types: [pull_request]
+    parameters:
+      min_approvals: 1
 
   # Deployment-specific rule
-  - id: deployment-rule
-    name: Production Deployment Protection
+  - description: Production deployments require explicit approval
     event_types: [deployment]
+    parameters:
+      environment: "production"
+      min_approvals: 2
 
   # Multi-event rule
-  - id: general-rule
-    name: General Security Check
+  - description: Security-sensitive changes require security team review
     event_types: [pull_request, push, deployment]
+    parameters:
+      file_patterns: ["**/security/**", "**/auth/**"]
+      required_teams: ["security-team"]
 ```
 
 ## Advanced Configuration
@@ -195,9 +184,7 @@ rules:
 
 ```yaml
 rules:
-  - id: configurable-rule
-    name: Configurable Approval Rule
-    description: Configurable approval requirements
+  - description: Configurable approval requirements based on team and branch
     enabled: true
     severity: high
     event_types: [pull_request]
@@ -205,16 +192,13 @@ rules:
       min_approvals: 2
       required_teams: ["security", "senior-engineers"]
       excluded_branches: ["feature/*"]
-      message: "This PR requires {{ min_approvals }} approvals from required teams"
 ```
 
 ### Environment-Specific Rules
 
 ```yaml
 rules:
-  - id: production-deployment
-    name: Production Deployment Protection
-    description: Strict rules for production deployments
+  - description: Strict rules for production deployments requiring multiple approvals
     enabled: true
     severity: critical
     event_types: [deployment]
@@ -222,11 +206,8 @@ rules:
       environment: "production"
       min_approvals: 3
       required_teams: ["security", "senior-engineers", "product"]
-      message: "Production deployments require 3 approvals from security, senior engineers, and product teams"
 
-  - id: staging-deployment
-    name: Staging Deployment Rules
-    description: Moderate rules for staging deployments
+  - description: Moderate rules for staging deployments with basic approval requirements
     enabled: true
     severity: high
     event_types: [deployment]
@@ -234,7 +215,6 @@ rules:
       environment: "staging"
       min_approvals: 1
       required_teams: ["senior-engineers"]
-      message: "Staging deployments require 1 approval from senior engineers"
 ```
 
 ## Best Practices
