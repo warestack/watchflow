@@ -1,0 +1,132 @@
+---
+
+description: "Watchflow contributor + coding rules (single file). Keep PRs small, typed, tested, and auditable."
+globs:
+
+* "**/*"
+* "src/**/*.py"
+* "tests/**/*.py"
+* ".github/**"
+* "docs/**"
+  alwaysApply: true
+
+---
+
+# Watchflow – Cursor Rules
+
+## Project Overview
+
+Watchflow is an agentic DevOps governance framework. It blends a deterministic rule engine with AI agents to moderate
+ GitHub events (PRs, workflow runs, deployments). Contributions must be **safe**, **explainable**, and **fast**.
+
+## Code Style & Standards (MANDATORY)
+
+* **Modern typing only**: `dict[str, Any]`, `list[str]`, `str | None` (no `Dict`, `List`, `Optional`).
+* **Async-first I/O**: GitHub/HTTP/DB calls are `async def`; avoid blocking (`time.sleep`, sync HTTP) in async paths.
+* **Pydantic at boundaries**: all agent outputs and external payloads use validated `BaseModel`.
+* **Dataclasses** for internal immutable state where appropriate.
+* **Structured logging** once at boundaries with fields: `operation`, `subject_ids`, `decision`, `latency_ms`.
+* **No secrets in logs**. Mask tokens/PII in code, prompts, and telemetry.
+
+## Architecture Patterns
+
+* **Separation of concerns**: rule parsing, evaluation, orchestration, adapters, persistence.
+* **Strategy**: choose `static → hybrid → llm` based on complexity/ambiguity.
+* **Agent pattern**: single-responsibility agents with typed inputs/outputs.
+* **Observer (events)**: event-driven coordination across agents.
+* **Command**: encapsulate actions with audit/undo where applicable.
+* **Decorator**: retries, metrics, caching as cross-cutting concerns.
+
+## Agents & LLM Integration
+
+* **Outputs (required)**: `decision`, `confidence (0..1)`, short `reasoning`, `recommendations`, `strategy_used`.
+* **Confidence policy**: `< 0.5` → reject or route to human-in-the-loop.
+* **Prompts**: minimal, step-driven; provide CoT only for complexity > 0.7 or ambiguity > 0.6.
+* **Safety**: strip secrets/PII; scope tools; keep raw reasoning out of logs (store summaries only).
+
+## Performance Policy
+
+* Evaluation order: **1) Static**, **2) Hybrid**, **3) Full LLM** (last resort).
+* Cache idempotent lookups; lazy-import heavy deps; bound fan-out with `asyncio.Semaphore`.
+* Avoid redundant LLM calls; memoize per event when safe.
+
+## Error Handling & Resilience
+
+* Use domain errors (e.g., `AgentError`) with `error_type`, `message`, `context`, `timestamp`, `retry_count`.
+* Exponential backoff for transient failures; circuit-break noisy integrations when needed.
+* Fail closed for risky decisions; provide actionable remediation in error paths.
+
+## File Organization
+
+```
+src/
+  agents/
+    base.py          # BaseAgent + shared contracts
+    <agent>/
+      agent.py       # implementation
+      models.py      # Pydantic inputs/outputs
+      prompts.py     # prompt templates
+      nodes.py       # LangGraph nodes
+  rules/             # rule schema + validators (deterministic)
+  adapters/          # github/webhook/api adapters
+  orchestration/     # graphs, routing, strategy selection
+  core/              # shared utils, caching, config
+```
+
+## Rule Configuration
+
+* **YAML** with natural-language descriptions; no hard-coded if/else in rule files.
+* Include context factors (author, risk, timing, repo signals) for policy evaluation.
+
+## Testing Standards
+
+* **Unit**: deterministic rule evaluation (pass/warn/block); model validation; error paths.
+* **Integration**: webhook parsing, idempotency, multi-agent coordination, state persistence.
+* **Async**: `pytest.mark.asyncio`; no live network; freeze time and seed randomness.
+* Regression tests for every bug fix; keep CI coverage thresholds green.
+
+## CI & Tooling
+
+* CI runs: lint/format (ruff/black), type-check, tests, coverage, (optional) codecov.
+* Reproducible env via `uv`; lockfile updates in same PR as dependency bumps.
+* Pre-commit hooks must pass locally; CI re-runs hooks to prevent drift.
+
+## Docs
+
+* Update `README`/`docs` for user-visible changes and migrations.
+* Provide runnable examples for new/changed rules; keep cross-links current.
+
+## Security
+
+* Validate all external inputs; verify webhook signatures.
+* Prompt-injection hardening; sanitize repo content passed to LLMs.
+* Never commit or log credentials; use env vars/secret managers.
+
+## Performance Targets
+
+* Static validation: ~<100ms typical.
+* Hybrid decisions: sub-second when cache warm.
+* Complex LLM paths: budget thoughtfully and avoid chains when static suffices.
+
+## Contributor Workflow
+
+* **Small PRs** (~<300 LOC where possible). Split refactors.
+* **Conventional Commits** (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`...).
+* PR body includes: rationale, behavior change, risk/rollback, tests/docs updates.
+* Label `area/*`, `type/*`; request CODEOWNERS review; attach screenshots/sample payloads as needed.
+
+## Anti‑Patterns (reject in review)
+
+* Old typing (`Dict`, `List`, `Optional`).
+* Blocking calls in async code; bare `except:`; swallowed errors.
+* LLM calls for trivial/deterministic checks.
+* Unvalidated agent outputs / missing confidence gating.
+* Secrets in logs, prompts, or fixtures.
+
+## PR Checklist (copy into description)
+
+* [ ] Types added/updated; Pydantic at boundaries
+* [ ] Tests (unit/integration) updated; no network in unit tests
+* [ ] CI green: lint, types, tests, coverage
+* [ ] Docs/migrations updated
+* [ ] Performance order respected (static→hybrid→LLM)
