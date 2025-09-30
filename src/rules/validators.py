@@ -75,6 +75,31 @@ class AuthorTeamCondition(Condition):
         return author_login in team_memberships.get(team_name, [])
 
 
+class CommitCountLimitCondition(Condition):
+    """Validates that a push does not exceed a maximum number of commits."""
+
+    name = "commit_count_limit"
+    description = "Validates that a push does not exceed a maximum number of commits"
+    parameter_patterns = ["max_commits"]
+    event_types = ["push"]
+    examples = [{"max_commits": 5}, {"max_commits": 2}]
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        max_commits = int(parameters.get("max_commits", 2))
+        push_data = event.get("push", {})
+        commits = push_data.get("commits", [])
+
+        commit_count = len(commits)
+        logger.debug(f"CommitCountLimitCondition: found {commit_count} commits, max allowed={max_commits}")
+
+        if commit_count > max_commits:
+            logger.debug("CommitCountLimitCondition: VIOLATION - too many commits in push")
+            return False
+
+        logger.debug("CommitCountLimitCondition: PASS - within commit limit")
+        return True
+
+
 class FilePatternCondition(Condition):
     """Validates if files in the event match or don't match a pattern."""
 
@@ -454,11 +479,44 @@ class AllowForcePushCondition(Condition):
     examples = [{"allow_force_push": False}, {"allow_force_push": True}]
 
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
-        # allow_force_push = parameters.get("allow_force_push", False)
+        push_data = event.get("push", {})
+        if not push_data:
+            return True  # No violation if we can't check
 
-        # This would typically check if the push was a force push
-        # For now, return True (no violation) as placeholder
-        return True
+        allow_force_push = parameters.get("allow_force_push", False)
+        if allow_force_push:
+            return True  # No violation if force pushes are allowed
+
+        is_force_push = bool(push_data.get("forced", False))
+        if not is_force_push:
+            return True  # No violation if not a force push
+
+        ref = push_data.get("ref")
+        if not ref:
+            logger.debug("AllowForcePushCondition: No ref found in push data")
+            return True  # No violation if we can't determine branch
+
+        is_force_push = bool(push_data.get("forced", False))
+        if not is_force_push:
+            return True
+
+        # Extract branch name from ref (e.g., "refs/heads/main" -> "main")
+        branch_name = ref.replace("refs/heads/", "") if ref.startswith("refs/heads/") else ref
+
+        protected_branches = parameters.get("protected_branches", [])
+        if not protected_branches:
+            logger.debug(
+                f"AllowForcePushCondition: Force push to {branch_name} allowed (no protected branches specified so we select all branches as protected)"
+            )
+            return False  # No protected branches means all branches are protected
+
+        is_protected_branch = branch_name in protected_branches
+        if is_protected_branch:
+            logger.debug(f"AllowForcePushCondition: Force push to protected branch {branch_name} blocked")
+            return False  # Violation
+        else:
+            logger.debug(f"AllowForcePushCondition: Force push to unprotected branch {branch_name} allowed")
+            return True  # return True (no violation) as placeholder
 
 
 class ProtectedBranchesCondition(Condition):
@@ -762,6 +820,7 @@ VALIDATOR_REGISTRY = {
     "required_checks": RequiredChecksCondition(),
     "code_owners": CodeOwnersCondition(),
     "past_contributor_approval": PastContributorApprovalCondition(),
+    "commit_count_limit": CommitCountLimitCondition(),
 }
 
 

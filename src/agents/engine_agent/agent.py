@@ -111,7 +111,16 @@ class RuleEngineAgent(BaseAgent):
             logger.info(f"🔧 Rule Engine evaluation completed in {execution_time:.2f}s")
 
             # Extract violations from result
-            violations = result.violations if hasattr(result, "violations") else []
+            # violations = result.violations if hasattr(result, "violations") else []
+
+            # Extract violations from result (EngineState)
+            violations = []
+            if hasattr(result, "violations"):
+                violations = result.violations
+            elif isinstance(result, dict) and "violations" in result:
+                violations = result["violations"]
+
+            logger.info(f"🔧 Rule Engine extracted {len(violations)} violations from state")
 
             logger.info(f"🔧 Rule Engine extracted {len(violations)} violations")
 
