@@ -26,6 +26,13 @@ class AIConfig:
     model: str = "gpt-4.1-mini"
     max_tokens: int = 4096
     temperature: float = 0.1
+    # Optional provider-specific fields
+    # AWS Bedrock
+    bedrock_region: str | None = None
+    bedrock_model_id: str | None = None
+    # GCP Vertex/Model Garden
+    gcp_project: str | None = None
+    gcp_location: str | None = None
 
 
 @dataclass
@@ -85,6 +92,10 @@ class Config:
             model=os.getenv("AI_MODEL", "gpt-4.1-mini"),
             max_tokens=int(os.getenv("AI_MAX_TOKENS", "4096")),
             temperature=float(os.getenv("AI_TEMPERATURE", "0.1")),
+            bedrock_region=os.getenv("BEDROCK_REGION"),
+            bedrock_model_id=os.getenv("BEDROCK_MODEL_ID"),
+            gcp_project=os.getenv("GCP_PROJECT_ID"),
+            gcp_location=os.getenv("GCP_LOCATION"),
         )
 
         # LangSmith configuration
@@ -156,6 +167,14 @@ class Config:
 
         if self.ai.provider == "openai" and not self.ai.api_key:
             errors.append("OPENAI_API_KEY is required for OpenAI provider")
+        if self.ai.provider == "bedrock":
+            # Bedrock credentials are read from AWS environment/IMDS; encourage region/model hints
+            if not self.ai.bedrock_model_id and not self.ai.model:
+                errors.append("BEDROCK_MODEL_ID or AI_MODEL is required for Bedrock provider")
+        if self.ai.provider in {"garden", "vertex", "vertexai", "model_garden"}:
+            # Vertex typically uses ADC; project/location optional but recommended
+            if not self.ai.model:
+                errors.append("AI_MODEL is required for GCP Garden/Vertex provider")
 
         if errors:
             raise ValueError(f"Configuration errors: {', '.join(errors)}")

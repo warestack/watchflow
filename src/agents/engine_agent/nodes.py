@@ -8,7 +8,7 @@ import time
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
+from src.core.ai import get_chat_model
 
 from src.agents.engine_agent.models import (
     EngineState,
@@ -73,7 +73,7 @@ async def select_validation_strategy(state: EngineState) -> EngineState:
         logger.info(f"🎯 Selecting validation strategies for {len(state.rule_descriptions)} rules using LLM")
 
         # Use LLM to analyze rules and select validation strategies
-        llm = ChatOpenAI(api_key=config.ai.api_key, model=config.ai.model, max_tokens=2000, temperature=0.1)
+        llm = get_chat_model(max_tokens=2000, temperature=0.1)
 
         for rule_desc in state.rule_descriptions:
             # Create prompt for strategy selection
@@ -267,7 +267,7 @@ async def _execute_single_validator(rule_desc: RuleDescription, event_data: dict
 
 
 async def _execute_single_llm_evaluation(
-    rule_desc: RuleDescription, event_data: dict[str, Any], event_type: str, llm: ChatOpenAI
+    rule_desc: RuleDescription, event_data: dict[str, Any], event_type: str, llm
 ) -> dict[str, Any]:
     """Execute a single LLM evaluation."""
     start_time = time.time()
@@ -310,7 +310,7 @@ async def _generate_dynamic_how_to_fix(
     """Generate dynamic 'how to fix' message using LLM."""
 
     try:
-        llm = ChatOpenAI(api_key=config.ai.api_key, model=config.ai.model, max_tokens=1000, temperature=0.1)
+        llm = get_chat_model(max_tokens=1000, temperature=0.1)
 
         # Create prompt for how to fix generation
         how_to_fix_prompt = create_how_to_fix_prompt(rule_desc, event_data, validator_name)

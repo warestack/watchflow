@@ -7,7 +7,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, TypeVar
 
-from langchain_openai import ChatOpenAI
+from src.core.ai import get_chat_model
 
 from src.core.config import config
 
@@ -46,12 +46,7 @@ class BaseAgent(ABC):
     def __init__(self, max_retries: int = 3, retry_delay: float = 1.0):
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        self.llm = ChatOpenAI(
-            api_key=config.ai.api_key,
-            model=config.ai.model,
-            max_tokens=config.ai.max_tokens,
-            temperature=config.ai.temperature,
-        )
+        self.llm = get_chat_model()
         self.graph = self._build_graph()
         logger.info(f"🔧 {self.__class__.__name__} initialized with max_retries={max_retries}")
 

@@ -104,13 +104,11 @@ class AcknowledgmentAgent(BaseAgent):
             logger.info("🧠 Requesting LLM evaluation with structured output...")
 
             # Use the same pattern as engine agent: direct structured output
-            from langchain_openai import ChatOpenAI
-
-            from src.core.config import config
+            from src.core.ai import get_chat_model
 
             from .models import AcknowledgmentEvaluation
 
-            llm = ChatOpenAI(api_key=config.ai.api_key, model=config.ai.model, max_tokens=2000, temperature=0.1)
+            llm = get_chat_model(max_tokens=2000, temperature=0.1)
             structured_llm = llm.with_structured_output(AcknowledgmentEvaluation)
 
             messages = [SystemMessage(content=get_system_prompt()), HumanMessage(content=evaluation_prompt)]
