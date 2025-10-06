@@ -5,7 +5,7 @@ Test script for the Intelligent Acknowledgment Agent.
 import asyncio
 import logging
 
-from .agent import AcknowledgmentAgent
+from src.agents.acknowledgment_agent.agent import AcknowledgmentAgent
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

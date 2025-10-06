@@ -27,7 +27,7 @@ class RuleFeasibilityAgent(BaseAgent):
     """
 
     def __init__(self, max_retries: int = 3, timeout: float = 30.0):
-        super().__init__(max_retries=max_retries)
+        super().__init__(max_retries=max_retries, agent_name="feasibility_agent")
         self.timeout = timeout
         logger.info(f"🔧 FeasibilityAgent initialized with max_retries={max_retries}, timeout={timeout}s")
 
