@@ -18,21 +18,69 @@ class GitHubConfig:
 
 
 @dataclass
+class AgentAIConfig:
+    """Per-agent AI configuration."""
+
+    max_tokens: int = 4096
+    temperature: float = 0.1
+
+
+@dataclass
 class AIConfig:
     """AI provider configuration."""
 
     api_key: str
     provider: str = "openai"
-    model: str = "gpt-4.1-mini"
     max_tokens: int = 4096
     temperature: float = 0.1
+    # Provider-specific model fields
+    openai_model: str | None = None
+    bedrock_model_id: str | None = None
+    model_garden_model: str | None = None
     # Optional provider-specific fields
     # AWS Bedrock
     bedrock_region: str | None = None
-    bedrock_model_id: str | None = None
-    # GCP Vertex/Model Garden
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
+    aws_profile: str | None = None
+    # GCP Model Garden
     gcp_project: str | None = None
     gcp_location: str | None = None
+    gcp_service_account_key_base64: str | None = None
+    # Per-agent configurations
+    engine_agent: AgentAIConfig | None = None
+    feasibility_agent: AgentAIConfig | None = None
+    acknowledgment_agent: AgentAIConfig | None = None
+
+    def get_model_for_provider(self, provider: str) -> str:
+        """Get the appropriate model for the given provider with fallbacks."""
+        provider = provider.lower()
+
+        if provider == "openai":
+            return self.openai_model or "gpt-4.1-mini"
+        elif provider == "bedrock":
+            return self.bedrock_model_id or "anthropic.claude-3-sonnet-20240229-v1:0"
+        elif provider in ["garden", "model_garden", "gcp"]:
+            # Support both Gemini and Claude models in Model Garden
+            return self.model_garden_model or "gemini-pro"
+        else:
+            return "gpt-4.1-mini"  # Ultimate fallback
+
+    def get_max_tokens_for_agent(self, agent: str | None = None) -> int:
+        """Get max tokens for agent with fallback to global config."""
+        if agent and hasattr(self, agent):
+            agent_config = getattr(self, agent)
+            if agent_config and hasattr(agent_config, "max_tokens"):
+                return agent_config.max_tokens
+        return self.max_tokens
+
+    def get_temperature_for_agent(self, agent: str | None = None) -> float:
+        """Get temperature for agent with fallback to global config."""
+        if agent and hasattr(self, agent):
+            agent_config = getattr(self, agent)
+            if agent_config and hasattr(agent_config, "temperature"):
+                return agent_config.temperature
+        return self.temperature
 
 
 @dataclass
@@ -80,8 +128,8 @@ class Config:
     def __init__(self):
         self.github = GitHubConfig(
             app_name=os.getenv("APP_NAME_GITHUB", ""),
-            app_id=os.getenv("CLIENT_ID_GITHUB", ""),
-            app_client_secret=os.getenv("APP_CLIENT_SECRET", ""),
+            app_id=os.getenv("APP_CLIENT_ID_GITHUB", ""),
+            app_client_secret=os.getenv("APP_CLIENT_SECRET_GITHUB", ""),
             private_key=os.getenv("PRIVATE_KEY_BASE64_GITHUB", ""),
             webhook_secret=os.getenv("WEBHOOK_SECRET_GITHUB", ""),
         )
@@ -89,13 +137,34 @@ class Config:
         self.ai = AIConfig(
             provider=os.getenv("AI_PROVIDER", "openai"),
             api_key=os.getenv("OPENAI_API_KEY", ""),
-            model=os.getenv("AI_MODEL", "gpt-4.1-mini"),
             max_tokens=int(os.getenv("AI_MAX_TOKENS", "4096")),
             temperature=float(os.getenv("AI_TEMPERATURE", "0.1")),
-            bedrock_region=os.getenv("BEDROCK_REGION"),
+            # Provider-specific model fields
+            openai_model=os.getenv("OPENAI_MODEL"),
             bedrock_model_id=os.getenv("BEDROCK_MODEL_ID"),
+            model_garden_model=os.getenv("MODEL_GARDEN_MODEL"),
+            # AWS Bedrock configuration
+            bedrock_region=os.getenv("BEDROCK_REGION"),
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            aws_profile=os.getenv("AWS_PROFILE"),
+            # GCP Model Garden configuration
             gcp_project=os.getenv("GCP_PROJECT_ID"),
             gcp_location=os.getenv("GCP_LOCATION"),
+            gcp_service_account_key_base64=os.getenv("GCP_SERVICE_ACCOUNT_KEY_BASE64"),
+            # Per-agent configurations
+            engine_agent=AgentAIConfig(
+                max_tokens=int(os.getenv("AI_ENGINE_MAX_TOKENS", "8000")),
+                temperature=float(os.getenv("AI_ENGINE_TEMPERATURE", "0.1")),
+            ),
+            feasibility_agent=AgentAIConfig(
+                max_tokens=int(os.getenv("AI_FEASIBILITY_MAX_TOKENS", "4096")),
+                temperature=float(os.getenv("AI_FEASIBILITY_TEMPERATURE", "0.1")),
+            ),
+            acknowledgment_agent=AgentAIConfig(
+                max_tokens=int(os.getenv("AI_ACKNOWLEDGMENT_MAX_TOKENS", "2000")),
+                temperature=float(os.getenv("AI_ACKNOWLEDGMENT_TEMPERATURE", "0.1")),
+            ),
         )
 
         # LangSmith configuration

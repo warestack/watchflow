@@ -3,12 +3,12 @@ LangGraph nodes for the Rule Engine Agent with hybrid validation strategy.
 """
 
 import asyncio
+import json
 import logging
 import time
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from src.core.ai import get_chat_model
 
 from src.agents.engine_agent.models import (
     EngineState,
@@ -24,7 +24,7 @@ from src.agents.engine_agent.prompts import (
     create_validation_strategy_prompt,
     get_llm_evaluation_system_prompt,
 )
-from src.core.config import config
+from src.core.ai import get_chat_model
 from src.rules.validators import VALIDATOR_REGISTRY
 
 logger = logging.getLogger(__name__)
@@ -73,7 +73,7 @@ async def select_validation_strategy(state: EngineState) -> EngineState:
         logger.info(f"🎯 Selecting validation strategies for {len(state.rule_descriptions)} rules using LLM")
 
         # Use LLM to analyze rules and select validation strategies
-        llm = get_chat_model(max_tokens=2000, temperature=0.1)
+        llm = get_chat_model(agent="engine_agent")
 
         for rule_desc in state.rule_descriptions:
             # Create prompt for strategy selection
@@ -88,8 +88,23 @@ async def select_validation_strategy(state: EngineState) -> EngineState:
                 structured_llm = llm.with_structured_output(StrategySelectionResponse)
                 strategy_result = await structured_llm.ainvoke(messages)
 
-                rule_desc.validation_strategy = strategy_result.strategy
-                rule_desc.validator_name = strategy_result.validator_name
+                # Handle both structured response and BaseMessage cases
+                if hasattr(strategy_result, "strategy"):
+                    # It's a structured response
+                    rule_desc.validation_strategy = strategy_result.strategy
+                    rule_desc.validator_name = strategy_result.validator_name
+                else:
+                    # It's a BaseMessage, try to parse the content
+                    import json
+
+                    try:
+                        content = json.loads(strategy_result.content)
+                        rule_desc.validation_strategy = ValidationStrategy(content.get("strategy", "hybrid"))
+                        rule_desc.validator_name = content.get("validator_name")
+                    except (json.JSONDecodeError, ValueError):
+                        # Fallback to default values
+                        rule_desc.validation_strategy = ValidationStrategy.HYBRID
+                        rule_desc.validator_name = None
 
                 logger.info(f"🎯 Rule '{rule_desc.description[:50]}...' using {rule_desc.validation_strategy} strategy")
                 if rule_desc.validator_name:
@@ -183,7 +198,7 @@ async def execute_llm_fallback(state: EngineState) -> EngineState:
             return state
 
         # Execute LLM evaluations concurrently (with rate limiting)
-        llm = ChatOpenAI(api_key=config.ai.api_key, model=config.ai.model, max_tokens=2000, temperature=0.1)
+        llm = get_chat_model(agent="engine_agent")
 
         llm_tasks = []
         for rule_desc in llm_rules:
@@ -205,8 +220,12 @@ async def execute_llm_fallback(state: EngineState) -> EngineState:
                         state.analysis_steps.append(f"🧠 LLM failed: {rule_desc.description[:50]}...")
                     else:
                         if result.get("is_violated", False):
-                            state.violations.append(result.get("violation", {}))
+                            violation = result.get("violation", {})
+                            state.violations.append(violation)
                             state.analysis_steps.append(f"🧠 LLM violation: {rule_desc.description[:50]}...")
+                            logger.info(
+                                f"🚨 Violation detected: {rule_desc.description[:50]}... - {violation.get('message', 'No message')[:100]}..."
+                            )
                         else:
                             state.analysis_steps.append(f"🧠 LLM passed: {rule_desc.description[:50]}...")
 
@@ -267,7 +286,7 @@ async def _execute_single_validator(rule_desc: RuleDescription, event_data: dict
 
 
 async def _execute_single_llm_evaluation(
-    rule_desc: RuleDescription, event_data: dict[str, Any], event_type: str, llm
+    rule_desc: RuleDescription, event_data: dict[str, Any], event_type: str, llm: Any
 ) -> dict[str, Any]:
     """Execute a single LLM evaluation."""
     start_time = time.time()
@@ -283,13 +302,45 @@ async def _execute_single_llm_evaluation(
 
         execution_time = (time.time() - start_time) * 1000
 
-        if evaluation_result.is_violated:
+        # Handle both structured response and BaseMessage cases
+        if hasattr(evaluation_result, "is_violated"):
+            # It's a structured response
+            is_violated = evaluation_result.is_violated
+            message = evaluation_result.message
+            details = evaluation_result.details
+            how_to_fix = evaluation_result.how_to_fix
+        else:
+            # It's a BaseMessage, try to parse the content
+            try:
+                content = json.loads(evaluation_result.content)
+                is_violated = content.get("is_violated", False)
+                message = content.get("message", "No message provided")
+                details = content.get("details", {})
+                how_to_fix = content.get("how_to_fix")
+            except (json.JSONDecodeError, ValueError) as e:
+                # Try to extract violation info from partial JSON
+                logger.warning(f"⚠️ Failed to parse LLM response for rule '{rule_desc.description[:30]}...': {e}")
+
+                # Check if we can extract basic violation info from truncated JSON
+                content_str = evaluation_result.content
+                if '"rule_violation": true' in content_str or '"is_violated": true' in content_str:
+                    is_violated = True
+                    message = "Rule violation detected (truncated response)"
+                    details = {"truncated": True, "raw_content": content_str[:500]}
+                    how_to_fix = "Review the rule requirements"
+                else:
+                    is_violated = False
+                    message = "Failed to parse LLM response"
+                    details = {}
+                    how_to_fix = None
+
+        if is_violated:
             violation = {
                 "rule_description": rule_desc.description,
                 "severity": rule_desc.severity,
-                "message": evaluation_result.message,
-                "details": evaluation_result.details,
-                "how_to_fix": evaluation_result.how_to_fix or "",
+                "message": message,
+                "details": details,
+                "how_to_fix": how_to_fix or "",
                 "docs_url": "",
                 "validation_strategy": ValidationStrategy.LLM_REASONING,
                 "execution_time_ms": execution_time,
@@ -301,7 +352,21 @@ async def _execute_single_llm_evaluation(
     except Exception as e:
         execution_time = (time.time() - start_time) * 1000
         logger.error(f"❌ LLM evaluation error for rule '{rule_desc.description[:50]}...': {e}")
-        return {"is_violated": False, "error": str(e), "execution_time_ms": execution_time}
+        return {
+            "is_violated": False,
+            "error": str(e),
+            "execution_time_ms": execution_time,
+            "violation": {
+                "rule_description": rule_desc.description,
+                "severity": rule_desc.severity,
+                "message": f"LLM evaluation failed: {str(e)}",
+                "details": {"error_type": type(e).__name__, "error_message": str(e)},
+                "how_to_fix": "Review the rule configuration and try again",
+                "docs_url": "",
+                "validation_strategy": ValidationStrategy.LLM_REASONING,
+                "execution_time_ms": execution_time,
+            },
+        }
 
 
 async def _generate_dynamic_how_to_fix(
@@ -310,7 +375,7 @@ async def _generate_dynamic_how_to_fix(
     """Generate dynamic 'how to fix' message using LLM."""
 
     try:
-        llm = get_chat_model(max_tokens=1000, temperature=0.1)
+        llm = get_chat_model(agent="engine_agent", max_tokens=1000)
 
         # Create prompt for how to fix generation
         how_to_fix_prompt = create_how_to_fix_prompt(rule_desc, event_data, validator_name)
@@ -325,7 +390,20 @@ async def _generate_dynamic_how_to_fix(
         structured_llm = llm.with_structured_output(HowToFixResponse)
         how_to_fix_result = await structured_llm.ainvoke(messages)
 
-        return how_to_fix_result.how_to_fix
+        # Handle both structured response and BaseMessage cases
+        if hasattr(how_to_fix_result, "how_to_fix"):
+            return how_to_fix_result.how_to_fix
+        else:
+            # It's a BaseMessage, try to parse the content
+            import json
+
+            try:
+                content = json.loads(how_to_fix_result.content)
+                return content.get(
+                    "how_to_fix", f"Review and address the requirements for rule: {rule_desc.description}"
+                )
+            except (json.JSONDecodeError, ValueError):
+                return f"Review and address the requirements for rule: {rule_desc.description}"
 
     except Exception as e:
         logger.error(f"❌ Error generating how to fix message: {e}")

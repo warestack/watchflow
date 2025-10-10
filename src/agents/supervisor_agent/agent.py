@@ -30,7 +30,7 @@ class RuleSupervisorAgent(SupervisorAgent):
     4. Supervisor: Coordinates and synthesizes results
     """
 
-    def __init__(self, max_concurrent_agents: int = 3, timeout: float = 60.0, **kwargs):
+    def __init__(self, max_concurrent_agents: int = 3, timeout: float = 300.0, **kwargs):  # Increased to 5 minutes
         super().__init__(**kwargs)
         self.max_concurrent_agents = max_concurrent_agents
         self.timeout = timeout

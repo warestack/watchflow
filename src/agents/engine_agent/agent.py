@@ -43,8 +43,8 @@ class RuleEngineAgent(BaseAgent):
     5. This provides 80% speed/cost savings while maintaining 100% flexibility
     """
 
-    def __init__(self, max_retries: int = 3, timeout: float = 60.0):
-        super().__init__(max_retries=max_retries)
+    def __init__(self, max_retries: int = 3, timeout: float = 300.0):
+        super().__init__(max_retries=max_retries, agent_name="engine_agent")
         self.timeout = timeout
 
         logger.info("🔧 Rule Engine agent initializing...")
@@ -111,7 +111,11 @@ class RuleEngineAgent(BaseAgent):
             logger.info(f"🔧 Rule Engine evaluation completed in {execution_time:.2f}s")
 
             # Extract violations from result
-            violations = result.violations if hasattr(result, "violations") else []
+            violations = []
+            if isinstance(result, dict):
+                violations = result.get("violations", [])
+            elif hasattr(result, "violations"):
+                violations = result.violations
 
             logger.info(f"🔧 Rule Engine extracted {len(violations)} violations")
 

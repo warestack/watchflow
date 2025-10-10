@@ -9,8 +9,6 @@ from typing import Any, TypeVar
 
 from src.core.ai import get_chat_model
 
-from src.core.config import config
-
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -43,12 +41,13 @@ class BaseAgent(ABC):
     - Performance metrics tracking
     """
 
-    def __init__(self, max_retries: int = 3, retry_delay: float = 1.0):
+    def __init__(self, max_retries: int = 3, retry_delay: float = 1.0, agent_name: str | None = None):
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        self.llm = get_chat_model()
+        self.agent_name = agent_name
+        self.llm = get_chat_model(agent=agent_name)
         self.graph = self._build_graph()
-        logger.info(f"🔧 {self.__class__.__name__} initialized with max_retries={max_retries}")
+        logger.info(f"🔧 {self.__class__.__name__} initialized with max_retries={max_retries}, agent_name={agent_name}")
 
     @abstractmethod
     def _build_graph(self):

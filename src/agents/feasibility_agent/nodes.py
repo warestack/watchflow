@@ -4,11 +4,9 @@ LangGraph nodes for the Rule Feasibility Agent with enhanced error handling.
 
 import logging
 
-from src.core.ai import get_chat_model
-
 from src.agents.feasibility_agent.models import FeasibilityAnalysis, FeasibilityState, YamlGeneration
 from src.agents.feasibility_agent.prompts import RULE_FEASIBILITY_PROMPT, YAML_GENERATION_PROMPT
-from src.core.config import config
+from src.core.ai import get_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +18,7 @@ async def analyze_rule_feasibility(state: FeasibilityState) -> FeasibilityState:
     """
     try:
         # Create LLM client with structured output
-        llm = get_chat_model()
+        llm = get_chat_model(agent="feasibility_agent")
 
         # Use structured output instead of manual JSON parsing
         structured_llm = llm.with_structured_output(FeasibilityAnalysis)
@@ -64,7 +62,7 @@ async def generate_yaml_config(state: FeasibilityState) -> FeasibilityState:
 
     try:
         # Create LLM client with structured output
-        llm = get_chat_model()
+        llm = get_chat_model(agent="feasibility_agent")
 
         # Use structured output for YAML generation
         structured_llm = llm.with_structured_output(YamlGeneration)
