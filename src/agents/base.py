@@ -7,9 +7,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, TypeVar
 
-from langchain_openai import ChatOpenAI
-
-from src.core.config import config
+from src.core.ai import get_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -43,17 +41,13 @@ class BaseAgent(ABC):
     - Performance metrics tracking
     """
 
-    def __init__(self, max_retries: int = 3, retry_delay: float = 1.0):
+    def __init__(self, max_retries: int = 3, retry_delay: float = 1.0, agent_name: str | None = None):
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        self.llm = ChatOpenAI(
-            api_key=config.ai.api_key,
-            model=config.ai.model,
-            max_tokens=config.ai.max_tokens,
-            temperature=config.ai.temperature,
-        )
+        self.agent_name = agent_name
+        self.llm = get_chat_model(agent=agent_name)
         self.graph = self._build_graph()
-        logger.info(f"🔧 {self.__class__.__name__} initialized with max_retries={max_retries}")
+        logger.info(f"🔧 {self.__class__.__name__} initialized with max_retries={max_retries}, agent_name={agent_name}")
 
     @abstractmethod
     def _build_graph(self):

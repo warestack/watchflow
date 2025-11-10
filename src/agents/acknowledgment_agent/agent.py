@@ -8,8 +8,10 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph
 
+from src.agents.acknowledgment_agent.models import AcknowledgmentContext, AcknowledgmentEvaluation
 from src.agents.acknowledgment_agent.prompts import create_evaluation_prompt, get_system_prompt
 from src.agents.base import AgentResult, BaseAgent
+from src.core.ai import get_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,7 @@ class AcknowledgmentAgent(BaseAgent):
 
     def __init__(self, max_retries: int = 3, timeout: float = 30.0):
         # Call super class __init__ first
-        super().__init__(max_retries=max_retries)
+        super().__init__(max_retries=max_retries, agent_name="acknowledgment_agent")
         self.timeout = timeout
         logger.info(f"🧠 Acknowledgment agent initialized with timeout: {timeout}s")
 
@@ -36,7 +38,6 @@ class AcknowledgmentAgent(BaseAgent):
         Build a simple LangGraph workflow for acknowledgment evaluation.
         Since this agent is primarily LLM-based, we create a minimal graph.
         """
-        from .models import AcknowledgmentContext
 
         # Create a simple state graph
         workflow = StateGraph(AcknowledgmentContext)
@@ -103,14 +104,8 @@ class AcknowledgmentAgent(BaseAgent):
             # Get LLM evaluation with structured output
             logger.info("🧠 Requesting LLM evaluation with structured output...")
 
-            # Use the same pattern as engine agent: direct structured output
-            from langchain_openai import ChatOpenAI
-
-            from src.core.config import config
-
-            from .models import AcknowledgmentEvaluation
-
-            llm = ChatOpenAI(api_key=config.ai.api_key, model=config.ai.model, max_tokens=2000, temperature=0.1)
+            # Use the same pattern as other agents: direct get_chat_model call
+            llm = get_chat_model(agent="acknowledgment_agent")
             structured_llm = llm.with_structured_output(AcknowledgmentEvaluation)
 
             messages = [SystemMessage(content=get_system_prompt()), HumanMessage(content=evaluation_prompt)]
