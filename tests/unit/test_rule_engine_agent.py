@@ -584,8 +584,8 @@ class TestDynamicHowToFix:
     """Test dynamic how-to-fix message generation."""
 
     @pytest.mark.asyncio
-    @patch("src.agents.engine_agent.nodes.ChatOpenAI")
-    async def test_dynamic_how_to_fix_generation(self, mock_chat_openai):
+    @patch("src.agents.engine_agent.nodes.get_chat_model")
+    async def test_dynamic_how_to_fix_generation(self, mock_get_chat_model):
         """Test dynamic how-to-fix message generation."""
         from src.agents.engine_agent.nodes import _generate_dynamic_how_to_fix
 
@@ -596,7 +596,7 @@ class TestDynamicHowToFix:
             how_to_fix="Add the 'security' and 'review' labels to this pull request"
         )
         mock_llm.with_structured_output.return_value = mock_structured_llm
-        mock_chat_openai.return_value = mock_llm
+        mock_get_chat_model.return_value = mock_llm
 
         # Test data
         rule_desc = RuleDescription(
@@ -615,13 +615,13 @@ class TestDynamicHowToFix:
         assert "labels" in result
 
     @pytest.mark.asyncio
-    @patch("src.agents.engine_agent.nodes.ChatOpenAI")
-    async def test_dynamic_how_to_fix_fallback(self, mock_chat_openai):
+    @patch("src.agents.engine_agent.nodes.get_chat_model")
+    async def test_dynamic_how_to_fix_fallback(self, mock_get_chat_model):
         """Test dynamic how-to-fix message generation with fallback."""
         from src.agents.engine_agent.nodes import _generate_dynamic_how_to_fix
 
         # Mock LLM error
-        mock_chat_openai.side_effect = Exception("LLM error")
+        mock_get_chat_model.side_effect = Exception("LLM error")
 
         # Test data
         rule_desc = RuleDescription(

@@ -1,7 +1,7 @@
 """
 Base AI Provider interface.
 
-This module defines the base interface that all AI providers must implement.
+This module defines the abstract base class that all AI providers must implement.
 """
 
 from abc import ABC, abstractmethod

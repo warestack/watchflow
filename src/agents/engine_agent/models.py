@@ -41,7 +41,11 @@ class LLMEvaluationResponse(BaseModel):
 
     is_violated: bool = Field(description="Whether the rule is violated")
     message: str = Field(description="Explanation of the violation or why the rule passed")
-    details: dict[str, Any] = Field(description="Detailed reasoning and metadata", default_factory=dict)
+    details: dict[str, Any] = Field(
+        description="Detailed reasoning and metadata",
+        default_factory=dict,
+        json_schema_extra={"additionalProperties": False},
+    )
     how_to_fix: str | None = Field(description="Specific instructions on how to fix the violation", default=None)
 
 

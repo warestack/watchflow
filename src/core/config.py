@@ -36,7 +36,7 @@ class AIConfig:
     # Provider-specific model fields
     openai_model: str | None = None
     bedrock_model_id: str | None = None
-    model_garden_model: str | None = None
+    vertex_ai_model: str | None = None
     # Optional provider-specific fields
     # AWS Bedrock
     bedrock_region: str | None = None
@@ -60,9 +60,9 @@ class AIConfig:
             return self.openai_model or "gpt-4.1-mini"
         elif provider == "bedrock":
             return self.bedrock_model_id or "anthropic.claude-3-sonnet-20240229-v1:0"
-        elif provider in ["garden", "model_garden", "gcp"]:
-            # Support both Gemini and Claude models in Model Garden
-            return self.model_garden_model or "gemini-pro"
+        elif provider in ["vertex_ai", "garden", "model_garden", "gcp", "vertex", "vertexai"]:
+            # Support both Gemini and Claude models in Vertex AI
+            return self.vertex_ai_model or "gemini-pro"
         else:
             return "gpt-4.1-mini"  # Ultimate fallback
 
@@ -142,7 +142,7 @@ class Config:
             # Provider-specific model fields
             openai_model=os.getenv("OPENAI_MODEL"),
             bedrock_model_id=os.getenv("BEDROCK_MODEL_ID"),
-            model_garden_model=os.getenv("MODEL_GARDEN_MODEL"),
+            vertex_ai_model=os.getenv("VERTEX_AI_MODEL") or os.getenv("MODEL_GARDEN_MODEL"),  # Support legacy name
             # AWS Bedrock configuration
             bedrock_region=os.getenv("BEDROCK_REGION"),
             aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
@@ -238,12 +238,12 @@ class Config:
             errors.append("OPENAI_API_KEY is required for OpenAI provider")
         if self.ai.provider == "bedrock":
             # Bedrock credentials are read from AWS environment/IMDS; encourage region/model hints
-            if not self.ai.bedrock_model_id and not self.ai.model:
-                errors.append("BEDROCK_MODEL_ID or AI_MODEL is required for Bedrock provider")
-        if self.ai.provider in {"garden", "vertex", "vertexai", "model_garden"}:
-            # Vertex typically uses ADC; project/location optional but recommended
-            if not self.ai.model:
-                errors.append("AI_MODEL is required for GCP Garden/Vertex provider")
+            if not self.ai.bedrock_model_id:
+                errors.append("BEDROCK_MODEL_ID is required for Bedrock provider")
+        if self.ai.provider in {"vertex_ai", "garden", "vertex", "vertexai", "model_garden", "gcp"}:
+            # Vertex AI typically uses ADC; project/location optional but recommended
+            if not self.ai.vertex_ai_model:
+                errors.append("VERTEX_AI_MODEL is required for Google Vertex AI provider")
 
         if errors:
             raise ValueError(f"Configuration errors: {', '.join(errors)}")
