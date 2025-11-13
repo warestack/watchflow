@@ -27,11 +27,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Set up Python
+      # Set up Python (must match requires-python in pyproject.toml)
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      # Verify Python version matches project requirements
+      - name: Verify Python version
+        run: |
+          python --version
+          python -c "import sys; assert sys.version_info >= (3, 12), f'Python 3.12+ required, got {sys.version}'"
 
       # Set up a Python virtual environment
       - name: Set up Python and Virtual Environment
@@ -48,7 +54,14 @@ jobs:
           pre-commit install
 
       # Run pre-commit hooks on all files
-      - name: Run pre-commit
+      # This includes:
+      # - Python syntax validation (check-ast)
+      # - Code formatting (ruff-format)
+      # - Linting and import sorting (ruff)
+      # - Python version compatibility checks (pyupgrade for Python 3.12+)
+      # - YAML/JSON validation
+      # - Trailing whitespace and end-of-file fixes
+      - name: Run pre-commit hooks
         run: |
           source venv/bin/activate
           pre-commit run --all-files --show-diff-on-failure
