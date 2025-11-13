@@ -17,6 +17,9 @@ repos:
         # Checks YAML files for syntax errors
       - id: check-json
         # Checks JSON files for syntax errors
+      - id: check-ast
+        name: "Check Python syntax (AST validation)"
+        # Validates that Python files have valid syntax
 
   # Ruff hooks for Python linting and formatting
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -30,6 +33,15 @@ repos:
       - id: ruff
         name: "Linting and import sorting"
         args: ["--fix"]
+
+  # Pyupgrade: Check and fix Python version incompatibilities and outdated syntax
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.15.2
+    hooks:
+      - id: pyupgrade
+        name: "Upgrade syntax for Python 3.12+"
+        args: [--py312-plus]
+        # Auto-fixes outdated syntax to Python 3.12+ compatible code
 
   # Conventional pre-commit hooks for commit messages
   - repo: https://github.com/compilerla/conventional-pre-commit
