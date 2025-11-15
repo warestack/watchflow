@@ -2,12 +2,12 @@
 Base agent classes and utilities for agents.
 """
 
-import asyncio
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, TypeVar
 
-from src.providers import get_chat_model
+from src.core.utils.timeout import execute_with_timeout
+from src.integrations.providers import get_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -70,24 +70,20 @@ class BaseAgent(ABC):
         Raises:
             Exception: If all retries fail
         """
+        from src.core.utils.retry import retry_async
+
         structured_llm = llm.with_structured_output(output_model)
 
-        for attempt in range(self.max_retries):
-            try:
-                result = await structured_llm.ainvoke(prompt, **kwargs)
-                if attempt > 0:
-                    logger.info(f"✅ Structured output succeeded on attempt {attempt + 1}")
-                return result
-            except Exception as e:
-                if attempt == self.max_retries - 1:
-                    logger.error(f"❌ Structured output failed after {self.max_retries} attempts: {e}")
-                    raise Exception(f"Structured output failed after {self.max_retries} attempts: {str(e)}") from e
+        async def _invoke_structured() -> T:
+            """Inner function to invoke structured LLM."""
+            return await structured_llm.ainvoke(prompt, **kwargs)
 
-                wait_time = self.retry_delay * (2**attempt)
-                logger.warning(f"⚠️ Structured output attempt {attempt + 1} failed, retrying in {wait_time}s: {e}")
-                await asyncio.sleep(wait_time)
-
-        raise Exception(f"Structured output failed after {self.max_retries} attempts")
+        return await retry_async(
+            _invoke_structured,
+            max_retries=self.max_retries,
+            initial_delay=self.retry_delay,
+            exceptions=(Exception,),
+        )
 
     async def _execute_with_timeout(self, coro, timeout: float = 30.0):
         """
@@ -101,39 +97,15 @@ class BaseAgent(ABC):
             The result of the coroutine
 
         Raises:
-            Exception: If the operation times out
+            TimeoutError: If the operation times out
         """
-        try:
-            return await asyncio.wait_for(coro, timeout=timeout)
-        except TimeoutError as err:
-            raise Exception(f"Operation timed out after {timeout} seconds") from err
+        return await execute_with_timeout(
+            coro,
+            timeout=timeout,
+            timeout_message=f"Operation timed out after {timeout} seconds",
+        )
 
     @abstractmethod
     async def execute(self, **kwargs) -> AgentResult:
         """Execute the agent with given parameters."""
         pass
-
-
-class SupervisorAgent(BaseAgent):
-    """
-    Supervisor agent that coordinates multiple sub-agents.
-    """
-
-    def __init__(self, sub_agents: dict[str, BaseAgent] = None, **kwargs):
-        self.sub_agents = sub_agents or {}
-        super().__init__(**kwargs)
-
-    async def coordinate_agents(self, task: str, **kwargs) -> AgentResult:
-        """
-        Coordinate multiple agents to complete a complex task.
-
-        Args:
-            task: Description of the task to coordinate
-            **kwargs: Additional parameters for the task
-
-        Returns:
-            AgentResult with the coordinated results
-        """
-        # This is a template for supervisor coordination
-        # Subclasses should implement specific coordination logic
-        raise NotImplementedError("Subclasses must implement coordinate_agents")

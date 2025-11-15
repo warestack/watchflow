@@ -16,11 +16,11 @@ from langchain_core.messages import BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from src.core.config import config
-from src.providers.base_provider import BaseAIProvider
+from src.integrations.providers.base import BaseProvider
 
 
-class BedrockProvider(BaseAIProvider):
-    """AWS Bedrock AI Provider with hybrid client support."""
+class BedrockProvider(BaseProvider):
+    """AWS Bedrock Provider with hybrid client support."""
 
     def get_chat_model(self) -> Any:
         """Get Bedrock chat model using appropriate client."""

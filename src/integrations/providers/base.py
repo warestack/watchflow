@@ -1,15 +1,15 @@
 """
-Base AI Provider interface.
+Base Provider interface.
 
-This module defines the abstract base class that all AI providers must implement.
+This module defines the abstract base class that all providers must implement.
 """
 
 from abc import ABC, abstractmethod
 from typing import Any
 
 
-class BaseAIProvider(ABC):
-    """Base class for AI providers."""
+class BaseProvider(ABC):
+    """Base class for providers."""
 
     def __init__(self, model: str, max_tokens: int = 4096, temperature: float = 0.1, **kwargs):
         self.model = model
@@ -40,3 +40,7 @@ class BaseAIProvider(ABC):
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
         }
+
+
+# Alias for backward compatibility
+BaseAIProvider = BaseProvider

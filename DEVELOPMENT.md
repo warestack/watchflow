@@ -66,33 +66,57 @@ cp .env.example .env
 Required environment variables:
 
 ```bash
-# GitHub App Configuration
-APP_NAME_GITHUB=your-app-name
-CLIENT_ID_GITHUB=your-app-id
-APP_CLIENT_SECRET=your-client-secret
-PRIVATE_KEY_BASE64_GITHUB=your-base64-private-key
-WEBHOOK_SECRET_GITHUB=your-webhook-secret
+# GitHub Configuration (required)
+APP_NAME_GITHUB=your_app_name
+APP_CLIENT_ID_GITHUB=your_client_id
+APP_CLIENT_SECRET_GITHUB=your_client_secret
+PRIVATE_KEY_BASE64_GITHUB=your_private_key_base64
+WEBHOOK_SECRET_GITHUB=your_webhook_secret
 
-# AI Configuration
-OPENAI_API_KEY=your-openai-api-key
-AI_MODEL=gpt-4.1-mini
+# AI Provider Selection
+AI_PROVIDER=openai  # Options: openai, bedrock, vertex_ai
+
+# Common AI Settings (defaults for all agents)
 AI_MAX_TOKENS=4096
 AI_TEMPERATURE=0.1
 
-# LangSmith Configuration
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
-LANGCHAIN_API_KEY=your-langsmith-api-key
-LANGCHAIN_PROJECT=watchflow-dev
+# OpenAI Configuration (when AI_PROVIDER=openai)
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_MODEL=gpt-4.1-mini  # Optional, defaults to gpt-4.1-mini
 
-# Development Settings
-DEBUG=true
-LOG_LEVEL=DEBUG
-ENVIRONMENT=development
+# Engine Agent Configuration
+AI_ENGINE_MAX_TOKENS=8000  # Default: 8000
+AI_ENGINE_TEMPERATURE=0.1
+
+# Feasibility Agent Configuration
+AI_FEASIBILITY_MAX_TOKENS=4096
+AI_FEASIBILITY_TEMPERATURE=0.1
+
+# Acknowledgment Agent Configuration
+AI_ACKNOWLEDGMENT_MAX_TOKENS=2000
+AI_ACKNOWLEDGMENT_TEMPERATURE=0.1
+
+# LangSmith Configuration
+LANGCHAIN_TRACING_V2=false
+LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
+LANGCHAIN_API_KEY=your_langsmith_api_key
+LANGCHAIN_PROJECT=watchflow-dev
 
 # CORS Configuration
 CORS_HEADERS=["*"]
-CORS_ORIGINS='["http://localhost:3000", "http://127.0.0.1:3000"]'
+CORS_ORIGINS=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5500", "https://warestack.github.io", "https://watchflow.dev"]
+
+# Repository Configuration
+REPO_CONFIG_BASE_PATH=.watchflow
+REPO_CONFIG_RULES_FILE=rules.yaml
+
+# Logging Configuration
+LOG_LEVEL=INFO
+LOG_FORMAT=%(asctime)s - %(name)s - %(levelname)s - %(message)s
+
+# Development Settings
+DEBUG=false
+ENVIRONMENT=development
 ```
 
 ### 4. GitHub App Setup
@@ -306,22 +330,20 @@ With LangSmith configured, you can:
 
 ### Local Rule Testing
 
+**💡 Tip**: Test your natural language rules at [watchflow.dev](https://watchflow.dev) to verify they're supported and get the generated YAML. Copy the output directly into your `rules.yaml` file.
+
 Create a test repository with `.watchflow/rules.yaml`:
 
 ```yaml
 rules:
-  - id: test-rule
-    name: Test Rule
-    description: Test rule for development
+  - description: Test rule for development
     enabled: true
     severity: medium
     event_types: [pull_request]
     parameters:
       test_param: "test_value"
 
-  - id: status-check-required
-    name: Status Check Required
-    description: All PRs must pass required status checks
+  - description: All PRs must pass required status checks
     enabled: true
     severity: high
     event_types: [pull_request]

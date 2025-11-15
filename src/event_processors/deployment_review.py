@@ -2,7 +2,7 @@ import logging
 import time
 from typing import Any
 
-from src.agents.engine_agent.agent import RuleEngineAgent
+from src.agents import get_agent
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.tasks.task_queue import Task
 
@@ -17,7 +17,7 @@ class DeploymentReviewProcessor(BaseEventProcessor):
         super().__init__()
 
         # Create instance of hybrid RuleEngineAgent
-        self.engine_agent = RuleEngineAgent()
+        self.engine_agent = get_agent("engine")
 
     def get_event_type(self) -> str:
         return "deployment_review"
@@ -86,7 +86,7 @@ class DeploymentReviewProcessor(BaseEventProcessor):
         logger.info(f"📋 Found {len(deployment_review_rules)} applicable rules for deployment_review")
 
         # Convert rules to the new format expected by the agent
-        formatted_rules = self._convert_rules_to_new_format(deployment_review_rules)
+        formatted_rules = DeploymentReviewProcessor._convert_rules_to_new_format(deployment_review_rules)
 
         # Run agentic analysis using the instance
         result = await self.engine_agent.execute(
@@ -109,7 +109,16 @@ class DeploymentReviewProcessor(BaseEventProcessor):
             processing_time_ms=int((time.time() - start_time) * 1000),
         )
 
-    def _convert_rules_to_new_format(self, rules: list[Any]) -> list[dict[str, Any]]:
+    async def prepare_webhook_data(self, task) -> dict[str, Any]:
+        """Extract data available in webhook payload."""
+        return task.payload
+
+    async def prepare_api_data(self, task) -> dict[str, Any]:
+        """Fetch data not available in webhook."""
+        return {}
+
+    @staticmethod
+    def _convert_rules_to_new_format(rules: list[Any]) -> list[dict[str, Any]]:
         """Convert Rule objects to the new flat schema format."""
         formatted_rules = []
 
@@ -132,15 +141,8 @@ class DeploymentReviewProcessor(BaseEventProcessor):
 
         return formatted_rules
 
-    async def prepare_webhook_data(self, task) -> dict[str, Any]:
-        """Extract data available in webhook payload."""
-        return task.payload
-
-    async def prepare_api_data(self, task) -> dict[str, Any]:
-        """Fetch data not available in webhook."""
-        return {}
-
-    def _format_violation_comment(self, violations):
+    @staticmethod
+    def _format_violation_comment(violations):
         lines = []
         for v in violations:
             emoji = "❌" if v.get("severity", "high") in ("critical", "high") else "⚠️"

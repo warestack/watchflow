@@ -3,7 +3,7 @@ import re
 import time
 from typing import Any
 
-from src.agents.feasibility_agent.agent import RuleFeasibilityAgent
+from src.agents import get_agent
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.tasks.task_queue import Task
 
@@ -18,7 +18,7 @@ class RuleCreationProcessor(BaseEventProcessor):
         super().__init__()
 
         # Create instance using new structure
-        self.feasibility_agent = RuleFeasibilityAgent()
+        self.feasibility_agent = get_agent("feasibility")
 
     def get_event_type(self) -> str:
         return "rule_creation"

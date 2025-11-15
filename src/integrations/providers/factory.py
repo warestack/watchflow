@@ -1,20 +1,20 @@
 """
-AI Provider Factory.
+Provider Factory.
 
 This module provides factory functions to create the appropriate
-AI provider based on configuration using a simple mapping approach.
+provider based on configuration using a simple mapping approach.
 """
 
 from typing import Any
 
 from src.core.config import config
-from src.providers.base_provider import BaseAIProvider
-from src.providers.bedrock_provider import BedrockProvider
-from src.providers.openai_provider import OpenAIProvider
-from src.providers.vertex_ai_provider import VertexAIProvider
+from src.integrations.providers.base import BaseProvider
+from src.integrations.providers.bedrock_provider import BedrockProvider
+from src.integrations.providers.openai_provider import OpenAIProvider
+from src.integrations.providers.vertex_ai_provider import VertexAIProvider
 
 # Provider mapping - canonical names to provider classes
-PROVIDER_MAP: dict[str, type[BaseAIProvider]] = {
+PROVIDER_MAP: dict[str, type[BaseProvider]] = {
     "openai": OpenAIProvider,
     "bedrock": BedrockProvider,
     "vertex_ai": VertexAIProvider,
@@ -34,12 +34,12 @@ def get_provider(
     temperature: float | None = None,
     agent: str | None = None,
     **kwargs: Any,
-) -> BaseAIProvider:
+) -> BaseProvider:
     """
-    Get the appropriate AI provider based on configuration.
+    Get the appropriate provider based on configuration.
 
     Args:
-        provider: AI provider name (openai, bedrock, vertex_ai)
+        provider: Provider name (openai, bedrock, vertex_ai)
         model: Model name/ID
         max_tokens: Maximum tokens to generate
         temperature: Sampling temperature
@@ -47,7 +47,7 @@ def get_provider(
         **kwargs: Additional provider-specific parameters
 
     Returns:
-        Configured AI provider instance
+        Configured provider instance
 
     Raises:
         ValueError: If provider is not supported
@@ -62,7 +62,7 @@ def get_provider(
         supported = ", ".join(
             sorted(set(PROVIDER_MAP.keys()) - {"garden", "model_garden", "gcp", "vertex", "vertexai"})
         )
-        raise ValueError(f"Unsupported AI provider: {provider_name}. Supported: {supported}")
+        raise ValueError(f"Unsupported provider: {provider_name}. Supported: {supported}")
 
     # Get model with fallbacks handled by config
     if not model:
@@ -113,7 +113,7 @@ def get_chat_model(
     This is a convenience function that creates a provider and returns its chat model.
 
     Args:
-        provider: AI provider name (openai, bedrock, vertex_ai)
+        provider: Provider name (openai, bedrock, vertex_ai)
         model: Model name/ID
         max_tokens: Maximum tokens to generate
         temperature: Sampling temperature
@@ -133,3 +133,7 @@ def get_chat_model(
     )
 
     return provider_instance.get_chat_model()
+
+
+# Backward compatibility aliases
+BaseAIProvider = BaseProvider

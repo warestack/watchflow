@@ -5,9 +5,9 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from src.core.models import WebhookEvent
-from src.integrations.github_api import github_client
-from src.rules.github_provider import GitHubRuleLoader
+from src.integrations.github import github_client
 from src.rules.interface import RuleLoader
+from src.rules.loaders.github_loader import GitHubRuleLoader
 from src.tasks.task_queue import Task
 
 logger = logging.getLogger(__name__)

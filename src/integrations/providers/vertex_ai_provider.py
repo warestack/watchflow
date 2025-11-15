@@ -14,10 +14,10 @@ import tempfile
 from typing import Any
 
 from src.core.config import config
-from src.providers.base_provider import BaseAIProvider
+from src.integrations.providers.base import BaseProvider
 
 
-class VertexAIProvider(BaseAIProvider):
+class VertexAIProvider(BaseProvider):
     """Google Vertex AI Provider (Model Garden)."""
 
     def get_chat_model(self) -> Any:

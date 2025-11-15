@@ -24,7 +24,7 @@ from src.agents.engine_agent.prompts import (
     create_validation_strategy_prompt,
     get_llm_evaluation_system_prompt,
 )
-from src.providers import get_chat_model
+from src.integrations.providers import get_chat_model
 from src.rules.validators import VALIDATOR_REGISTRY
 
 logger = logging.getLogger(__name__)
@@ -297,7 +297,8 @@ async def _execute_single_llm_evaluation(
         messages = [SystemMessage(content=get_llm_evaluation_system_prompt()), HumanMessage(content=evaluation_prompt)]
 
         # Use structured output for reliable parsing
-        structured_llm = llm.with_structured_output(LLMEvaluationResponse)
+        # Use function_calling method for better OpenAI compatibility
+        structured_llm = llm.with_structured_output(LLMEvaluationResponse, method="function_calling")
         evaluation_result = await structured_llm.ainvoke(messages)
 
         execution_time = (time.time() - start_time) * 1000

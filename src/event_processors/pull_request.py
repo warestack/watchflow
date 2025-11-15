@@ -3,9 +3,9 @@ import re
 import time
 from typing import Any
 
-from src.agents.engine_agent.agent import RuleEngineAgent
+from src.agents import get_agent
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
-from src.rules.github_provider import RulesFileNotFoundError
+from src.rules.loaders.github_loader import RulesFileNotFoundError
 from src.tasks.task_queue import Task
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ class PullRequestProcessor(BaseEventProcessor):
         super().__init__()
 
         # Create instance of RuleEngineAgent
-        self.engine_agent = RuleEngineAgent()
+        self.engine_agent = get_agent("engine")
 
     def get_event_type(self) -> str:
         return "pull_request"
@@ -74,7 +74,11 @@ class PullRequestProcessor(BaseEventProcessor):
             logger.info("📋 Rules applicable to pull_request events:")
             for rule in formatted_rules:
                 if "pull_request" in rule.get("event_types", []):
-                    logger.info(f"   - {rule.get('name', 'Unknown')} ({rule.get('id', 'unknown')})")
+                    description = rule.get("description", "Unknown rule")
+                    severity = rule.get("severity", "medium")
+                    # Truncate long descriptions for cleaner logs
+                    desc_preview = description[:60] + "..." if len(description) > 60 else description
+                    logger.info(f"   - {desc_preview} ({severity})")
 
             # Check for existing acknowledgments from previous comments first
             pr_data = task.payload.get("pull_request", {})

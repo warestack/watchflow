@@ -1,3 +1,9 @@
+"""
+Rule validation utilities.
+
+Functions for validating rule YAML files and posting validation results.
+"""
+
 import logging
 from typing import Any
 
@@ -12,6 +18,7 @@ DOCS_URL = "https://github.com/warestack/watchflow/blob/main/docs/getting-starte
 
 
 async def validate_rules_yaml_from_repo(repo_full_name: str, installation_id: int, pr_number: int):
+    """Validate rules YAML and post results to PR comment."""
     validation_result = await _validate_rules_yaml(repo_full_name, installation_id)
     # Only post a comment if the result is not a success
     if not validation_result["success"]:
@@ -25,6 +32,7 @@ async def validate_rules_yaml_from_repo(repo_full_name: str, installation_id: in
 
 
 async def _validate_rules_yaml(repo: str, installation_id: int) -> dict[str, Any]:
+    """Validate rules YAML file from repository."""
     try:
         file_content = await github_client.get_file_content(repo, ".watchflow/rules.yaml", installation_id)
         if file_content is None:
@@ -36,7 +44,7 @@ async def _validate_rules_yaml(repo: str, installation_id: int) -> dict[str, Any
                     "**How to set up rules:**\n"
                     "1. Create a file at `.watchflow/rules.yaml` in your repository root\n"
                     "2. Add your rules in the following format:\n"
-                    "   ```yaml\n   rules:\n     - id: pr-approval-required\n       name: PR Approval Required\n       description: All pull requests must have at least 2 approvals\n       enabled: true\n       severity: high\n       event_types: [pull_request]\n       parameters:\n         min_approvals: 2\n   ```\n\n"
+                    "   ```yaml\n   rules:\n     - description: All pull requests must have at least 2 approvals\n       enabled: true\n       severity: high\n       event_types: [pull_request]\n       parameters:\n         min_approvals: 2\n   ```\n\n"
                     "**Note:** Rules are currently read from the main branch only.\n\n"
                     "📖 [Read the documentation for more examples](https://github.com/warestack/watchflow/blob/main/docs/getting-started/configuration.md)\n\n"
                     "After adding the file, push your changes to re-run validation."
@@ -62,7 +70,7 @@ async def _validate_rules_yaml(repo: str, installation_id: int) -> dict[str, Any
                 "message": (
                     "❌ **Invalid `.watchflow/rules.yaml`: missing top-level `rules:` key**\n\n"
                     "Your file must start with a `rules:` key, like:\n"
-                    "```yaml\nrules:\n  - id: ...\n```\n"
+                    "```yaml\nrules:\n  - description: ...\n```\n"
                     f"[See configuration docs.]({DOCS_URL})"
                 ),
             }
@@ -72,7 +80,7 @@ async def _validate_rules_yaml(repo: str, installation_id: int) -> dict[str, Any
                 "message": (
                     "❌ **Invalid `.watchflow/rules.yaml`: `rules` must be a list**\n\n"
                     "Example:\n"
-                    "```yaml\nrules:\n  - id: my-rule\n    description: ...\n```\n"
+                    "```yaml\nrules:\n  - description: ...\n```\n"
                     f"[See configuration docs.]({DOCS_URL})"
                 ),
             }
@@ -92,7 +100,7 @@ async def _validate_rules_yaml(repo: str, installation_id: int) -> dict[str, Any
                 return {
                     "success": False,
                     "message": (
-                        f"❌ **Rule #{i + 1} (`{rule_data.get('id', 'N/A')}`) failed validation**\n\n"
+                        f"❌ **Rule #{i + 1} failed validation**\n\n"
                         f"Error: `{e}`\n\n"
                         "Please check your rule definition and fix the error above.\n\n"
                         f"[See rule schema docs.]({DOCS_URL})"

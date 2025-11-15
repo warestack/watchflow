@@ -5,6 +5,8 @@ Learn how to create effective governance rules that adapt to your team's needs a
 
 ## Rule Configuration
 
+**💡 Pro Tip**: Not sure if your rule is supported? Test it at [watchflow.dev](https://watchflow.dev) first! Enter your natural language rule description, and the tool will generate the YAML configuration for you. Simply copy and paste it into your `rules.yaml` file.
+
 ### Basic Rule Structure
 
 Rules are defined in YAML format and stored in `.watchflow/rules.yaml` in your repository. Each rule consists of

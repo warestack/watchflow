@@ -1,124 +1,20 @@
+"""
+Main configuration class that composes all configs.
+"""
+
 import json
 import os
-from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
+from src.core.config.cors_config import CORSConfig
+from src.core.config.github_config import GitHubConfig
+from src.core.config.langsmith_config import LangSmithConfig
+from src.core.config.logging_config import LoggingConfig
+from src.core.config.provider_config import AgentConfig, ProviderConfig
+from src.core.config.repo_config import RepoConfig
 
-@dataclass
-class GitHubConfig:
-    """GitHub configuration."""
-
-    app_name: str
-    app_id: str
-    app_client_secret: str
-    private_key: str
-    webhook_secret: str
-    api_base_url: str = "https://api.github.com"
-
-
-@dataclass
-class AgentAIConfig:
-    """Per-agent AI configuration."""
-
-    max_tokens: int = 4096
-    temperature: float = 0.1
-
-
-@dataclass
-class AIConfig:
-    """AI provider configuration."""
-
-    api_key: str
-    provider: str = "openai"
-    max_tokens: int = 4096
-    temperature: float = 0.1
-    # Provider-specific model fields
-    openai_model: str | None = None
-    bedrock_model_id: str | None = None
-    vertex_ai_model: str | None = None
-    # Optional provider-specific fields
-    # AWS Bedrock
-    bedrock_region: str | None = None
-    aws_access_key_id: str | None = None
-    aws_secret_access_key: str | None = None
-    aws_profile: str | None = None
-    # GCP Model Garden
-    gcp_project: str | None = None
-    gcp_location: str | None = None
-    gcp_service_account_key_base64: str | None = None
-    # Per-agent configurations
-    engine_agent: AgentAIConfig | None = None
-    feasibility_agent: AgentAIConfig | None = None
-    acknowledgment_agent: AgentAIConfig | None = None
-
-    def get_model_for_provider(self, provider: str) -> str:
-        """Get the appropriate model for the given provider with fallbacks."""
-        provider = provider.lower()
-
-        if provider == "openai":
-            return self.openai_model or "gpt-4.1-mini"
-        elif provider == "bedrock":
-            return self.bedrock_model_id or "anthropic.claude-3-sonnet-20240229-v1:0"
-        elif provider in ["vertex_ai", "garden", "model_garden", "gcp", "vertex", "vertexai"]:
-            # Support both Gemini and Claude models in Vertex AI
-            return self.vertex_ai_model or "gemini-pro"
-        else:
-            return "gpt-4.1-mini"  # Ultimate fallback
-
-    def get_max_tokens_for_agent(self, agent: str | None = None) -> int:
-        """Get max tokens for agent with fallback to global config."""
-        if agent and hasattr(self, agent):
-            agent_config = getattr(self, agent)
-            if agent_config and hasattr(agent_config, "max_tokens"):
-                return agent_config.max_tokens
-        return self.max_tokens
-
-    def get_temperature_for_agent(self, agent: str | None = None) -> float:
-        """Get temperature for agent with fallback to global config."""
-        if agent and hasattr(self, agent):
-            agent_config = getattr(self, agent)
-            if agent_config and hasattr(agent_config, "temperature"):
-                return agent_config.temperature
-        return self.temperature
-
-
-@dataclass
-class LangSmithConfig:
-    """LangSmith configuration for AI agent debugging."""
-
-    tracing_v2: bool = False
-    endpoint: str = "https://api.smith.langchain.com"
-    api_key: str = ""
-    project: str = "watchflow-dev"
-
-
-@dataclass
-class CORSConfig:
-    """CORS configuration."""
-
-    headers: list[str]
-    origins: list[str]
-
-
-@dataclass
-class RepoConfig:
-    """Repo configuration."""
-
-    base_path: str = ".watchflow"
-    rules_file: str = "rules.yaml"
-
-
-@dataclass
-class LoggingConfig:
-    """Logging configuration."""
-
-    level: str = "INFO"
-    format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    file_path: str | None = None
-
-
-# Load environment variables from a .env file located in the same directory as this script.
+# Load environment variables from a .env file
 load_dotenv()
 
 
@@ -134,7 +30,7 @@ class Config:
             webhook_secret=os.getenv("WEBHOOK_SECRET_GITHUB", ""),
         )
 
-        self.ai = AIConfig(
+        self.ai = ProviderConfig(
             provider=os.getenv("AI_PROVIDER", "openai"),
             api_key=os.getenv("OPENAI_API_KEY", ""),
             max_tokens=int(os.getenv("AI_MAX_TOKENS", "4096")),
@@ -153,15 +49,15 @@ class Config:
             gcp_location=os.getenv("GCP_LOCATION"),
             gcp_service_account_key_base64=os.getenv("GCP_SERVICE_ACCOUNT_KEY_BASE64"),
             # Per-agent configurations
-            engine_agent=AgentAIConfig(
+            engine_agent=AgentConfig(
                 max_tokens=int(os.getenv("AI_ENGINE_MAX_TOKENS", "8000")),
                 temperature=float(os.getenv("AI_ENGINE_TEMPERATURE", "0.1")),
             ),
-            feasibility_agent=AgentAIConfig(
+            feasibility_agent=AgentConfig(
                 max_tokens=int(os.getenv("AI_FEASIBILITY_MAX_TOKENS", "4096")),
                 temperature=float(os.getenv("AI_FEASIBILITY_TEMPERATURE", "0.1")),
             ),
-            acknowledgment_agent=AgentAIConfig(
+            acknowledgment_agent=AgentConfig(
                 max_tokens=int(os.getenv("AI_ACKNOWLEDGMENT_MAX_TOKENS", "2000")),
                 temperature=float(os.getenv("AI_ACKNOWLEDGMENT_TEMPERATURE", "0.1")),
             ),

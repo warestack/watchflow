@@ -2,7 +2,7 @@ import logging
 import time
 from typing import Any
 
-from src.agents.engine_agent.agent import RuleEngineAgent
+from src.agents import get_agent
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.tasks.task_queue import Task
 
@@ -17,7 +17,7 @@ class CheckRunProcessor(BaseEventProcessor):
         super().__init__()
 
         # Create instance of hybrid RuleEngineAgent
-        self.engine_agent = RuleEngineAgent()
+        self.engine_agent = get_agent("engine")
 
     def get_event_type(self) -> str:
         return "check_run"
