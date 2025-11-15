@@ -26,10 +26,10 @@ class TestRulesAPIIntegration:
         """Test successful rule evaluation through the complete stack (mocked OpenAI)."""
         # Mock OpenAI unless real API testing is explicitly enabled
         if not os.getenv("INTEGRATION_TEST_REAL_API", "false").lower() == "true":
-            with patch("src.api.rules.RuleFeasibilityAgent") as mock_agent_class:
+            with patch("src.api.rules.get_agent") as mock_get_agent:
                 # Mock the agent instance
                 mock_agent = MagicMock()
-                mock_agent_class.return_value = mock_agent
+                mock_get_agent.return_value = mock_agent
 
                 # Mock the execute method as async
                 mock_result = AgentResult(
@@ -69,10 +69,10 @@ class TestRulesAPIIntegration:
         """Test unfeasible rule evaluation through the complete stack (mocked OpenAI)."""
         # Mock OpenAI unless real API testing is explicitly enabled
         if not os.getenv("INTEGRATION_TEST_REAL_API", "false").lower() == "true":
-            with patch("src.api.rules.RuleFeasibilityAgent") as mock_agent_class:
+            with patch("src.api.rules.get_agent") as mock_get_agent:
                 # Mock the agent instance
                 mock_agent = MagicMock()
-                mock_agent_class.return_value = mock_agent
+                mock_get_agent.return_value = mock_agent
 
                 # Mock the execute method as async
                 mock_result = AgentResult(

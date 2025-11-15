@@ -3,8 +3,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 
-from src.agents.engine_agent.agent import RuleEngineAgent
-from src.integrations.github_api import github_client
+from src.agents import get_agent
+from src.integrations.github import github_client
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +20,10 @@ class DeploymentScheduler:
         self._engine_agent = None
 
     @property
-    def engine_agent(self) -> RuleEngineAgent:
+    def engine_agent(self):
         """Lazy-load the engine agent to avoid API key validation at import time."""
         if self._engine_agent is None:
-            self._engine_agent = RuleEngineAgent()
+            self._engine_agent = get_agent("engine")
         return self._engine_agent
 
     async def start(self):
@@ -188,7 +188,7 @@ class DeploymentScheduler:
                 return False
 
             # Convert rules to the format expected by the analysis agent
-            formatted_rules = self._convert_rules_to_new_format(deployment["rules"])
+            formatted_rules = DeploymentScheduler._convert_rules_to_new_format(deployment["rules"])
 
             # Re-run rule analysis
             result = await self.engine_agent.execute(
@@ -321,7 +321,13 @@ class DeploymentScheduler:
         if not self.running:
             await self.start()
 
-    def _convert_rules_to_new_format(self, rules: list[Any]) -> list[dict[str, Any]]:
+    async def stop_background_scheduler(self):
+        """Stop the background scheduler task."""
+        if self.running:
+            await self.stop()
+
+    @staticmethod
+    def _convert_rules_to_new_format(rules: list[Any]) -> list[dict[str, Any]]:
         """Convert Rule objects to the new flat schema format."""
         formatted_rules = []
 
@@ -349,11 +355,6 @@ class DeploymentScheduler:
                 continue
 
         return formatted_rules
-
-    async def stop_background_scheduler(self):
-        """Stop the background scheduler task."""
-        if self.running:
-            await self.stop()
 
 
 # Global instance - lazy loaded to avoid API key validation at import time

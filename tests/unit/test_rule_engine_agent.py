@@ -235,7 +235,7 @@ class TestRuleEngineAgent:
 
         assert result.success is False
         assert "timed out" in result.message
-        assert result.metadata["error_type"] == "Exception"
+        assert result.metadata["error_type"] == "TimeoutError"
 
     @pytest.mark.asyncio
     @patch("src.agents.base.BaseAgent.__init__")

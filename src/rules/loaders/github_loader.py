@@ -1,3 +1,9 @@
+"""
+GitHub-based rule loader.
+
+Loads rules from GitHub repository files, implementing the RuleLoader interface.
+"""
+
 import logging
 from typing import Any
 
@@ -5,7 +11,7 @@ import yaml
 
 from src.core.config import config
 from src.core.models import EventType
-from src.integrations.github_api import GitHubClient, github_client
+from src.integrations.github import GitHubClient, github_client
 from src.rules.interface import RuleLoader
 from src.rules.models import Rule, RuleAction, RuleSeverity
 
@@ -21,11 +27,11 @@ class RulesFileNotFoundError(Exception):
 class GitHubRuleLoader(RuleLoader):
     """
     Loads rules from a GitHub repository's rules yaml file.
-    This provider does NOT map parameters to condition types; it loads rules as-is.
+    This loader does NOT map parameters to condition types; it loads rules as-is.
     """
 
-    def __init__(self, github_client: GitHubClient):
-        self.github_client = github_client
+    def __init__(self, client: GitHubClient):
+        self.github_client = client
 
     async def get_rules(self, repository: str, installation_id: int) -> list[Rule]:
         try:
@@ -46,7 +52,7 @@ class GitHubRuleLoader(RuleLoader):
             rules = []
             for rule_data in rules_data["rules"]:
                 try:
-                    rule = self._parse_rule(rule_data)
+                    rule = GitHubRuleLoader._parse_rule(rule_data)
                     if rule:
                         rules.append(rule)
                 except Exception as e:
@@ -63,7 +69,8 @@ class GitHubRuleLoader(RuleLoader):
             logger.error(f"Error fetching rules for {repository}: {e}")
             raise
 
-    def _parse_rule(self, rule_data: dict[str, Any]) -> Rule:
+    @staticmethod
+    def _parse_rule(rule_data: dict[str, Any]) -> Rule:
         # Validate required fields
         if "description" not in rule_data:
             raise ValueError("Rule must have 'description' field")

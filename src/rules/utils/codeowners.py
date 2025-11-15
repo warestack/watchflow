@@ -1,5 +1,8 @@
 """
-Utilities for parsing and using CODEOWNERS files.
+Rule evaluation utilities for parsing and using CODEOWNERS files.
+
+These utilities are used by rule validators to check code ownership
+requirements and determine critical file patterns.
 """
 
 import logging
@@ -90,7 +93,7 @@ class CodeOwnersParser:
             return True
 
         # Convert pattern to regex
-        regex_pattern = self._pattern_to_regex(pattern)
+        regex_pattern = CodeOwnersParser._pattern_to_regex(pattern)
 
         try:
             return bool(re.match(regex_pattern, file_path))
@@ -98,7 +101,8 @@ class CodeOwnersParser:
             logger.error(f"Invalid regex pattern: {regex_pattern}")
             return False
 
-    def _pattern_to_regex(self, pattern: str) -> str:
+    @staticmethod
+    def _pattern_to_regex(pattern: str) -> str:
         """
         Convert a CODEOWNERS pattern to a regex pattern.
 

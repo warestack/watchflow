@@ -6,7 +6,7 @@ import logging
 
 from src.agents.feasibility_agent.models import FeasibilityAnalysis, FeasibilityState, YamlGeneration
 from src.agents.feasibility_agent.prompts import RULE_FEASIBILITY_PROMPT, YAML_GENERATION_PROMPT
-from src.providers import get_chat_model
+from src.integrations.providers import get_chat_model
 
 logger = logging.getLogger(__name__)
 

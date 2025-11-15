@@ -2,9 +2,9 @@ import logging
 import re
 from typing import Any
 
-from src.agents.feasibility_agent.agent import RuleFeasibilityAgent
+from src.agents import get_agent
 from src.core.models import EventType, WebhookEvent
-from src.integrations.github_api import github_client
+from src.integrations.github import github_client
 from src.rules.utils import _validate_rules_yaml
 from src.tasks.task_queue import task_queue
 from src.webhooks.handlers.base import EventHandler
@@ -84,7 +84,7 @@ class IssueCommentEventHandler(EventHandler):
             # Check if this is an evaluate command
             eval_rule = self._extract_evaluate_rule(comment_body)
             if eval_rule is not None:
-                agent = RuleFeasibilityAgent()
+                agent = get_agent("feasibility")
                 result = await agent.execute(rule_description=eval_rule)
                 is_feasible = result.data.get("is_feasible", False)
                 yaml_content = result.data.get("yaml_content", "")

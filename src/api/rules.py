@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from src.agents.feasibility_agent.agent import RuleFeasibilityAgent
+from src.agents import get_agent
 
 router = APIRouter()
 
@@ -14,7 +14,7 @@ class RuleEvaluationRequest(BaseModel):
 @router.post("/rules/evaluate")
 async def evaluate_rule(request: RuleEvaluationRequest):
     # Create agent instance (uses centralized config)
-    agent = RuleFeasibilityAgent()
+    agent = get_agent("feasibility")
 
     # Use the execute method
     result = await agent.execute(rule_description=request.rule_text)

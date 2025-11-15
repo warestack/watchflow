@@ -7,17 +7,16 @@ output, retry logic, and timeout handling.
 """
 
 from src.agents.acknowledgment_agent import AcknowledgmentAgent
-from src.agents.base import AgentResult, BaseAgent, SupervisorAgent
+from src.agents.base import AgentResult, BaseAgent
 from src.agents.engine_agent import RuleEngineAgent
+from src.agents.factory import get_agent
 from src.agents.feasibility_agent import RuleFeasibilityAgent
-from src.agents.supervisor_agent import RuleSupervisorAgent
 
 __all__ = [
     "BaseAgent",
-    "SupervisorAgent",
     "AgentResult",
     "RuleFeasibilityAgent",
     "RuleEngineAgent",
     "AcknowledgmentAgent",
-    "RuleSupervisorAgent",
+    "get_agent",
 ]

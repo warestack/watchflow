@@ -101,7 +101,7 @@ class FilePatternCondition(Condition):
             return False
 
         # Convert glob pattern to regex
-        regex_pattern = self._glob_to_regex(pattern)
+        regex_pattern = FilePatternCondition._glob_to_regex(pattern)
 
         # Check if any files match the pattern
         matching_files = [file for file in changed_files if re.match(regex_pattern, file)]
@@ -128,7 +128,8 @@ class FilePatternCondition(Condition):
         else:
             return []
 
-    def _glob_to_regex(self, glob_pattern: str) -> str:
+    @staticmethod
+    def _glob_to_regex(glob_pattern: str) -> str:
         """Converts a glob pattern to a regex pattern."""
         # Simple conversion - in production, you'd want a more robust implementation
         regex = glob_pattern.replace(".", "\\.").replace("*", ".*").replace("?", ".")
@@ -635,7 +636,7 @@ class CodeOwnersCondition(Condition):
             return True
 
         # Check if any of the changed files require code owner review
-        from src.integrations.codeowners import is_critical_file
+        from src.rules.utils.codeowners import is_critical_file
 
         # Get critical owners from rule parameters or use default behavior
         critical_owners = parameters.get("critical_owners")
@@ -699,7 +700,7 @@ class PastContributorApprovalCondition(Condition):
             return False
 
         # Check if author is a new contributor using the contributor analyzer
-        from src.integrations.contributors import is_new_contributor
+        from src.rules.utils.contributors import is_new_contributor
 
         is_author_new = await is_new_contributor(author_login, repo, github_client, installation_id)
 

@@ -30,6 +30,8 @@ Get Watchflow up and running in minutes to replace static protection rules with 
 
 ## Step 2: Create Your Rules
 
+**💡 Pro Tip**: Before writing rules manually, test your natural language rules at [watchflow.dev](https://watchflow.dev) to see if they're supported. The tool will generate the YAML configuration for you - just copy and paste it into your `rules.yaml` file!
+
 Create `.watchflow/rules.yaml` in your repository root to define your governance rules:
 
 ```yaml

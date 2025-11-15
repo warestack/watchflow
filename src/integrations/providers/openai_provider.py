@@ -1,16 +1,16 @@
 """
-OpenAI AI Provider implementation.
+OpenAI Provider implementation.
 
 This provider handles OpenAI API integration directly.
 """
 
 from typing import Any
 
-from src.providers.base_provider import BaseAIProvider
+from src.integrations.providers.base import BaseProvider
 
 
-class OpenAIProvider(BaseAIProvider):
-    """OpenAI AI Provider."""
+class OpenAIProvider(BaseProvider):
+    """OpenAI Provider."""
 
     def get_chat_model(self) -> Any:
         """Get OpenAI chat model."""

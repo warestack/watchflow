@@ -3,8 +3,7 @@ import re
 import time
 from typing import Any
 
-from src.agents.acknowledgment_agent.agent import AcknowledgmentAgent
-from src.agents.engine_agent.agent import RuleEngineAgent
+from src.agents import get_agent
 from src.core.models import EventType
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.tasks.task_queue import Task
@@ -23,9 +22,9 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
         super().__init__()
 
         # Create instance of hybrid RuleEngineAgent for rule evaluation
-        self.engine_agent = RuleEngineAgent()
+        self.engine_agent = get_agent("engine")
         # Create instance of intelligent AcknowledgmentAgent for acknowledgment evaluation
-        self.acknowledgment_agent = AcknowledgmentAgent()
+        self.acknowledgment_agent = get_agent("acknowledgment")
 
     def get_event_type(self) -> str:
         return "violation_acknowledgment"
@@ -669,6 +668,6 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
 
     def _get_rule_provider(self):
         """Get the rule provider for this processor."""
-        from src.rules.github_provider import github_rule_loader
+        from src.rules.loaders.github_loader import github_rule_loader
 
         return github_rule_loader

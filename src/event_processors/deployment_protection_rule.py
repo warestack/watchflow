@@ -2,7 +2,7 @@ import logging
 import time
 from typing import Any
 
-from src.agents.engine_agent.agent import RuleEngineAgent
+from src.agents import get_agent
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.tasks.scheduler.deployment_scheduler import get_deployment_scheduler
 from src.tasks.task_queue import Task
@@ -18,7 +18,7 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
         super().__init__()
 
         # Create instance of hybrid RuleEngineAgent
-        self.engine_agent = RuleEngineAgent()
+        self.engine_agent = get_agent("engine")
 
     def get_event_type(self) -> str:
         return "deployment_protection_rule"
@@ -262,6 +262,6 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
         return {}
 
     def _get_rule_provider(self):
-        from src.rules.github_provider import github_rule_loader
+        from src.rules.loaders.github_loader import github_rule_loader
 
         return github_rule_loader

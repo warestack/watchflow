@@ -162,35 +162,57 @@ cp .env.example .env
 Edit your `.env` file with the following configuration:
 
 ```bash
-# GitHub App Configuration
+# GitHub Configuration (required)
 APP_NAME_GITHUB=watchflow-dev
-CLIENT_ID_GITHUB=your_app_id_from_github_app_settings
-CLIENT_SECRET_GITHUB=your_client_secret_from_github_app_settings
+APP_CLIENT_ID_GITHUB=your_app_id_from_github_app_settings
+APP_CLIENT_SECRET_GITHUB=your_client_secret_from_github_app_settings
 PRIVATE_KEY_BASE64_GITHUB=your_base64_encoded_private_key
-REDIRECT_URI_GITHUB=http://localhost:3000
-
-# GitHub Webhook Configuration
 WEBHOOK_SECRET_GITHUB=your_webhook_secret_from_step_1
 
-# OpenAI API Configuration
-OPENAI_API_KEY=your-openai-api-key
+# AI Provider Selection
+AI_PROVIDER=openai  # Options: openai, bedrock, vertex_ai
 
-# LangChain Configuration (Optional - for AI debugging)
-LANGCHAIN_TRACING_V2=true
+# Common AI Settings (defaults for all agents)
+AI_MAX_TOKENS=4096
+AI_TEMPERATURE=0.1
+
+# OpenAI Configuration (when AI_PROVIDER=openai)
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_MODEL=gpt-4.1-mini  # Optional, defaults to gpt-4.1-mini
+
+# Engine Agent Configuration
+AI_ENGINE_MAX_TOKENS=8000  # Default: 8000
+AI_ENGINE_TEMPERATURE=0.1
+
+# Feasibility Agent Configuration
+AI_FEASIBILITY_MAX_TOKENS=4096
+AI_FEASIBILITY_TEMPERATURE=0.1
+
+# Acknowledgment Agent Configuration
+AI_ACKNOWLEDGMENT_MAX_TOKENS=2000
+AI_ACKNOWLEDGMENT_TEMPERATURE=0.1
+
+# LangSmith Configuration
+LANGCHAIN_TRACING_V2=false
 LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
-LANGCHAIN_API_KEY=your-langsmith-api-key
+LANGCHAIN_API_KEY=your_langsmith_api_key
 LANGCHAIN_PROJECT=watchflow-dev
-
-# Application Configuration
-ENVIRONMENT=development
 
 # CORS Configuration
 CORS_HEADERS=["*"]
-CORS_ORIGINS='["http://localhost:3000", "http://127.0.0.1:3000"]'
+CORS_ORIGINS=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5500", "https://warestack.github.io", "https://watchflow.dev"]
 
-# AWS Configuration (if using AWS services)
-AWS_ACCESS_KEY_ID=your_aws_access_key_id
-AWS_SECRET_ACCESS_KEY=your_aws_secret_access_key
+# Repository Configuration
+REPO_CONFIG_BASE_PATH=.watchflow
+REPO_CONFIG_RULES_FILE=rules.yaml
+
+# Logging Configuration
+LOG_LEVEL=INFO
+LOG_FORMAT=%(asctime)s - %(name)s - %(levelname)s - %(message)s
+
+# Development Settings
+DEBUG=false
+ENVIRONMENT=development
 ```
 
 ### 4.3 Encode Your Private Key
@@ -271,22 +293,20 @@ Open your browser and navigate to:
 
 ### 7.3 Test Rule Evaluation
 
+**💡 Tip**: You can test your natural language rules at [watchflow.dev](https://watchflow.dev) to see if they're supported and get the generated YAML configuration. Then copy and paste it into your repository's `rules.yaml` file.
+
 Create a test rule in a monitored repository by adding `.watchflow/rules.yaml`:
 
 ```yaml
 rules:
-  - id: test-rule
-    name: Test Rule for Local Development
-    description: Simple rule to test local setup
+  - description: Simple rule to test local setup
     enabled: true
     severity: medium
     event_types: [pull_request]
     parameters:
       test_param: "local_test"
 
-  - id: pr-approval-required
-    name: PR Approval Required
-    description: All pull requests must have at least 1 approval
+  - description: All pull requests must have at least 1 approval
     enabled: true
     severity: high
     event_types: [pull_request]

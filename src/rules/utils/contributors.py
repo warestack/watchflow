@@ -1,9 +1,14 @@
 """
-Utilities for analyzing repository contributors and determining contribution history.
+Rule evaluation utilities for analyzing repository contributors.
+
+These utilities are used by rule validators to check contributor history
+and determine if users are new or established contributors.
 """
 
 import logging
 from datetime import datetime, timedelta
+
+from src.core.utils.caching import AsyncCache
 
 logger = logging.getLogger(__name__)
 
@@ -13,8 +18,8 @@ class ContributorAnalyzer:
 
     def __init__(self, github_client):
         self.github_client = github_client
-        self._contributors_cache: dict[str, dict] = {}
-        self._cache_ttl = 3600  # 1 hour cache
+        # Use AsyncCache for better cache management
+        self._contributors_cache = AsyncCache(maxsize=100, ttl=3600)  # 1 hour cache
 
     async def get_past_contributors(
         self, repo: str, installation_id: int, min_contributions: int = 5, days_back: int = 365
@@ -34,11 +39,10 @@ class ContributorAnalyzer:
         cache_key = f"{repo}_{min_contributions}_{days_back}"
 
         # Check cache first
-        if cache_key in self._contributors_cache:
-            cached_data = self._contributors_cache[cache_key]
-            if datetime.now().timestamp() - cached_data.get("timestamp", 0) < self._cache_ttl:
-                logger.debug(f"Using cached past contributors for {repo}")
-                return set(cached_data.get("contributors", []))
+        cached_value = self._contributors_cache.get(cache_key)
+        if cached_value is not None:
+            logger.debug(f"Using cached past contributors for {repo}")
+            return set(cached_value)
 
         try:
             logger.info(f"Fetching past contributors for {repo}")
@@ -60,10 +64,7 @@ class ContributorAnalyzer:
                         past_contributors.add(username)
 
             # Cache the results
-            self._contributors_cache[cache_key] = {
-                "contributors": list(past_contributors),
-                "timestamp": datetime.now().timestamp(),
-            }
+            self._contributors_cache.set(cache_key, list(past_contributors))
 
             logger.info(f"Found {len(past_contributors)} past contributors for {repo}")
             return past_contributors
