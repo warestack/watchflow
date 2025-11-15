@@ -11,7 +11,7 @@ from langgraph.graph import StateGraph
 from src.agents.acknowledgment_agent.models import AcknowledgmentContext, AcknowledgmentEvaluation
 from src.agents.acknowledgment_agent.prompts import create_evaluation_prompt, get_system_prompt
 from src.agents.base import AgentResult, BaseAgent
-from src.core.ai import get_chat_model
+from src.providers import get_chat_model
 
 logger = logging.getLogger(__name__)
 

@@ -1,10 +1,12 @@
 """
 OpenAI AI Provider implementation.
+
+This provider handles OpenAI API integration directly.
 """
 
 from typing import Any
 
-from .base import BaseAIProvider
+from src.providers.base_provider import BaseAIProvider
 
 
 class OpenAIProvider(BaseAIProvider):
@@ -19,7 +21,13 @@ class OpenAIProvider(BaseAIProvider):
                 "OpenAI provider requires 'langchain-openai' package. Install with: pip install langchain-openai"
             ) from e
 
-        return ChatOpenAI(model=self.model, max_tokens=self.max_tokens, temperature=self.temperature, **self.kwargs)
+        return ChatOpenAI(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+            api_key=self.kwargs.get("api_key"),
+            **{k: v for k, v in self.kwargs.items() if k != "api_key"},
+        )
 
     def supports_structured_output(self) -> bool:
         """OpenAI supports structured output."""

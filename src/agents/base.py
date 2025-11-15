@@ -7,7 +7,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, TypeVar
 
-from src.core.ai import get_chat_model
+from src.providers import get_chat_model
 
 logger = logging.getLogger(__name__)
 

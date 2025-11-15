@@ -24,7 +24,7 @@ from src.agents.engine_agent.prompts import (
     create_validation_strategy_prompt,
     get_llm_evaluation_system_prompt,
 )
-from src.core.ai import get_chat_model
+from src.providers import get_chat_model
 from src.rules.validators import VALIDATOR_REGISTRY
 
 logger = logging.getLogger(__name__)
