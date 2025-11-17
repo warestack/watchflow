@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.api.recommendations import router as recommendations_api_router
 from src.api.rules import router as rules_api_router
 from src.api.scheduler import router as scheduler_api_router
 from src.core.config import config
@@ -102,6 +103,7 @@ app.add_middleware(
 
 app.include_router(webhook_router, prefix="/webhooks", tags=["GitHub Webhooks"])
 app.include_router(rules_api_router, prefix="/api/v1", tags=["Public API"])
+app.include_router(recommendations_api_router, prefix="/api", tags=["Recommendations API"])
 app.include_router(scheduler_api_router, prefix="/api/v1/scheduler", tags=["Scheduler API"])
 
 # --- Root Endpoint ---
