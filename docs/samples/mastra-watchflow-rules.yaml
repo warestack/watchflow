@@ -1,0 +1,44 @@
+rules:
+  - description: "Block merges when PRs change filter validation logic without failing on invalid inputs"
+    enabled: true
+    severity: "high"
+    event_types: ["pull_request"]
+    parameters:
+      file_patterns:
+        - "packages/core/src/**/vector-query.ts"
+        - "packages/core/src/**/graph-rag.ts"
+      require_exception_on_invalid_filter: true
+      how_to_fix: "Ensure invalid filters raise descriptive errors instead of silently returning unfiltered results."
+
+  - description: "Require regression tests when modifying tool schema validation or client tool execution"
+    enabled: true
+    severity: "medium"
+    event_types: ["pull_request"]
+    parameters:
+      file_patterns:
+        - "packages/core/src/**/tool*.ts"
+        - "packages/client/**"
+      require_test_updates: true
+      rationale: "Tool invocation changes have previously caused regressions in clientTools streaming."
+
+  - description: "Ensure every agent exposes a user-facing description for UI profiles"
+    enabled: true
+    severity: "low"
+    event_types: ["pull_request"]
+    parameters:
+      file_patterns:
+        - "packages/core/src/agent/**"
+      require_field: "description"
+      message: "Add or update the agent description so downstream UIs can render capabilities."
+
+  - description: "Block merges when URL or asset handling changes bypass provider capability checks"
+    enabled: true
+    severity: "high"
+    event_types: ["pull_request"]
+    parameters:
+      file_patterns:
+        - "packages/core/src/agent/message-list/**"
+        - "packages/core/src/llm/**"
+      require_provider_capability_check: true
+      how_to_fix: "Preserve remote URLs for providers that support them natively; only download assets for unsupported providers."
+
