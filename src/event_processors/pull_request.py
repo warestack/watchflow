@@ -221,6 +221,16 @@ class PullRequestProcessor(BaseEventProcessor):
                     task.repo_full_name, pr_number, task.installation_id
                 )
                 event_data["files"] = files or []
+                event_data["changed_files"] = [
+                    {
+                        "filename": file.get("filename"),
+                        "status": file.get("status"),
+                        "additions": file.get("additions"),
+                        "deletions": file.get("deletions"),
+                    }
+                    for file in files or []
+                ]
+                event_data["diff_summary"] = self._summarize_files_for_llm(files or [])
 
             except Exception as e:
                 logger.warning(f"Error enriching event data: {e}")
@@ -395,6 +405,41 @@ class PullRequestProcessor(BaseEventProcessor):
                 "files": pr_data.get("files", []),
             },
         }
+
+    @staticmethod
+    def _summarize_files_for_llm(files: list[dict[str, Any]], max_files: int = 5, max_patch_lines: int = 8) -> str:
+        """
+        Build a compact diff summary suitable for LLM prompts.
+
+        Args:
+            files: GitHub file metadata objects (filename, status, additions, deletions, patch)
+            max_files: Max number of files to include in summary
+            max_patch_lines: Max patch lines per file (truncated beyond this)
+
+        Returns:
+            Multiline summary string describing high-risk file changes with truncated patches.
+        """
+        if not files:
+            return ""
+
+        summary_lines: list[str] = []
+        for file in files[:max_files]:
+            filename = file.get("filename", "unknown")
+            status = file.get("status", "modified")
+            additions = file.get("additions", 0)
+            deletions = file.get("deletions", 0)
+            summary_lines.append(f"- {filename} ({status}, +{additions}/-{deletions})")
+
+            patch = file.get("patch")
+            if patch:
+                lines = patch.splitlines()
+                truncated = lines[:max_patch_lines]
+                indented_patch = "\n".join(f"    {line}" for line in truncated)
+                summary_lines.append(indented_patch)
+                if len(lines) > max_patch_lines:
+                    summary_lines.append("    ... (diff truncated)")
+
+        return "\n".join(summary_lines)
 
     async def prepare_api_data(self, task: Task) -> dict[str, Any]:
         """Fetch data not available in webhook."""
