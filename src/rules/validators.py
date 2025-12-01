@@ -2,10 +2,80 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from datetime import datetime
-from fnmatch import fnmatch
-from typing import Any
+from typing import Any, Pattern
 
 logger = logging.getLogger(__name__)
+
+_GLOB_CACHE: dict[str, Pattern[str]] = {}
+
+
+def _compile_glob(pattern: str) -> Pattern[str]:
+    """Convert a glob pattern supporting ** into a compiled regex."""
+    cached = _GLOB_CACHE.get(pattern)
+    if cached:
+        return cached
+
+    regex_parts: list[str] = []
+    i = 0
+    length = len(pattern)
+    while i < length:
+        char = pattern[i]
+        if char == "*":
+            if i + 1 < length and pattern[i + 1] == "*":
+                regex_parts.append(".*")
+                i += 1
+            else:
+                regex_parts.append("[^/]*")
+        elif char == "?":
+            regex_parts.append("[^/]")
+        else:
+            regex_parts.append(re.escape(char))
+        i += 1
+
+    compiled = re.compile("^" + "".join(regex_parts) + "$")
+    _GLOB_CACHE[pattern] = compiled
+    return compiled
+
+
+def _expand_pattern_variants(pattern: str) -> set[str]:
+    """Generate fallback globs so ** can match zero directories."""
+    variants = {pattern}
+    queue = [pattern]
+
+    while queue:
+        current = queue.pop()
+        normalized = current.replace("//", "/")
+
+        transformations = [
+            ("/**/", "/"),
+            ("**/", ""),
+            ("/**", ""),
+            ("**", ""),
+        ]
+
+        for old, new in transformations:
+            if old in normalized:
+                replaced = normalized.replace(old, new, 1)
+                replaced = replaced.replace("//", "/")
+                if replaced not in variants:
+                    variants.add(replaced)
+                    queue.append(replaced)
+
+    return variants
+
+
+def _matches_any(path: str, patterns: list[str]) -> bool:
+    """Utility matcher shared across validators."""
+    if not path or not patterns:
+        return False
+
+    normalized_path = path.replace("\\", "/")
+    for pattern in patterns:
+        for variant in _expand_pattern_variants(pattern.replace("\\", "/")):
+            compiled = _compile_glob(variant)
+            if compiled.match(normalized_path):
+                return True
+    return False
 
 
 class Condition(ABC):
@@ -770,7 +840,7 @@ class DiffPatternCondition(Condition):
 
         for file in files:
             filename = file.get("filename", "")
-            if not filename or not self._matches_any(filename, file_patterns):
+            if not filename or not _matches_any(filename, file_patterns):
                 continue
 
             patch = file.get("patch")
@@ -798,11 +868,6 @@ class DiffPatternCondition(Condition):
             return False
 
         return True
-
-    @staticmethod
-    def _matches_any(path: str, patterns: list[str]) -> bool:
-        return any(fnmatch(path, pattern) for pattern in patterns)
-
 
 class RelatedTestsCondition(Condition):
     """Ensures that changes to source files include corresponding test updates."""
@@ -833,7 +898,7 @@ class RelatedTestsCondition(Condition):
         touched_sources = [
             file
             for file in files
-            if file.get("status") != "removed" and self._matches_any(file.get("filename", ""), source_patterns)
+            if file.get("status") != "removed" and _matches_any(file.get("filename", ""), source_patterns)
         ]
 
         if not touched_sources:
@@ -842,7 +907,7 @@ class RelatedTestsCondition(Condition):
         touched_tests = [
             file
             for file in files
-            if file.get("status") != "removed" and self._matches_any(file.get("filename", ""), test_patterns)
+            if file.get("status") != "removed" and _matches_any(file.get("filename", ""), test_patterns)
         ]
 
         is_valid = len(touched_tests) >= min_test_files
@@ -853,13 +918,6 @@ class RelatedTestsCondition(Condition):
                 len(touched_tests),
             )
         return is_valid
-
-    @staticmethod
-    def _matches_any(path: str, patterns: list[str]) -> bool:
-        if not path:
-            return False
-        return any(fnmatch(path, pattern) for pattern in patterns)
-
 
 class RequiredFieldInDiffCondition(Condition):
     """Validates that additions to specific files include a required field or text fragment."""
@@ -892,7 +950,7 @@ class RequiredFieldInDiffCondition(Condition):
 
         for file in files:
             filename = file.get("filename", "")
-            if not filename or not self._matches_any(filename, file_patterns):
+            if not filename or not _matches_any(filename, file_patterns):
                 continue
 
             patch = file.get("patch")
@@ -923,7 +981,8 @@ class RequiredFieldInDiffCondition(Condition):
     def _matches_any(path: str, patterns: list[str]) -> bool:
         if not path:
             return False
-        return any(fnmatch(path, pattern) for pattern in patterns)
+        posix_path = PurePosixPath(path)
+        return any(posix_path.match(pattern) for pattern in patterns)
 
 
 # Registry of all available validators
