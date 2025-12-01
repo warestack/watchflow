@@ -35,6 +35,14 @@ Rules intentionally avoid the optional `actions:` block so they remain compatibl
 --8<-- "../samples/mastra-watchflow-rules.yaml"
 ```
 
+These concrete rules rely on the diff-aware validators recently added to Watchflow:
+
+- `diff_pattern` ensures critical patches keep throwing exceptions or performing capability checks.
+- `related_tests` requires PRs touching core modules to include matching test updates.
+- `required_field_in_diff` verifies additions to agent definitions include a `description` so downstream UIs stay in sync.
+
+Because the PR processor now passes normalized diffs into the engine, these validators operate deterministically without LLM fallbacks.
+
 ## PR Template Snippet
 
 ```markdown
