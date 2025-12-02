@@ -265,6 +265,39 @@ rules:
       required_teams: ["senior-engineers"]
 ```
 
+## Diff-Aware Validators
+
+Watchflow supports advanced validators that inspect actual PR diffs to enforce code-level patterns:
+
+### diff_pattern
+Enforce regex requirements or prohibitions within file patches.
+
+```yaml
+parameters:
+  file_patterns: ["packages/core/src/**/vector-query.ts"]
+  require_patterns: ["throw\\s+new\\s+Error"]
+  forbid_patterns: ["silent.*skip"]
+```
+
+### related_tests
+Require test file updates when core code changes.
+
+```yaml
+parameters:
+  file_patterns: ["packages/core/src/**"]
+  require_test_updates: true
+  min_test_files: 1
+```
+
+### required_field_in_diff
+Ensure new additions include required fields (e.g., agent descriptions).
+
+```yaml
+parameters:
+  file_patterns: ["packages/core/src/agent/**"]
+  required_text: "description"
+```
+
 ## Best Practices
 
 ### Rule Design
