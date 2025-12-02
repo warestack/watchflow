@@ -32,7 +32,62 @@ Mastra (`mastra-ai/mastra`) is a TypeScript-first agent framework for building p
 Rules intentionally avoid the optional `actions:` block so they remain compatible with the current loader. Enforcement intent is described in each `description` and reflected in `severity`.
 
 ```yaml
---8<-- "../samples/mastra-watchflow-rules.yaml"
+rules:
+  - description: "Block merges when PRs change filter validation logic without failing on invalid inputs"
+    enabled: true
+    severity: "high"
+    event_types: ["pull_request"]
+    parameters:
+      file_patterns:
+        - "packages/core/src/**/vector-query.ts"
+        - "packages/core/src/**/graph-rag.ts"
+        - "packages/core/src/**/filters/*.ts"
+      require_patterns:
+        - "throw\\s+new\\s+Error"
+        - "raise\\s+ValueError"
+      forbidden_patterns:
+        - "return\\s+.*filter\\s*$"
+      how_to_fix: "Ensure invalid filters raise descriptive errors instead of silently returning unfiltered results."
+
+  - description: "Require regression tests when modifying tool schema validation or client tool execution"
+    enabled: true
+    severity: "medium"
+    event_types: ["pull_request"]
+    parameters:
+      source_patterns:
+        - "packages/core/src/**/tool*.ts"
+        - "packages/core/src/agent/**"
+        - "packages/client/**"
+      test_patterns:
+        - "packages/core/tests/**"
+        - "tests/**"
+      min_test_files: 1
+      rationale: "Tool invocation changes have previously caused regressions in clientTools streaming."
+
+  - description: "Ensure every agent exposes a user-facing description for UI profiles"
+    enabled: true
+    severity: "low"
+    event_types: ["pull_request"]
+    parameters:
+      file_patterns:
+        - "packages/core/src/agent/**"
+      required_text:
+        - "description"
+      message: "Add or update the agent description so downstream UIs can render capabilities."
+
+  - description: "Block merges when URL or asset handling changes bypass provider capability checks"
+    enabled: true
+    severity: "high"
+    event_types: ["pull_request"]
+    parameters:
+      file_patterns:
+        - "packages/core/src/agent/message-list/**"
+        - "packages/core/src/llm/**"
+      require_patterns:
+        - "isUrlSupportedByModel"
+      forbidden_patterns:
+        - "downloadAssetsFromMessages\\(messages\\)"
+      how_to_fix: "Preserve remote URLs for providers that support them natively; only download assets for unsupported providers."
 ```
 
 These concrete rules rely on the diff-aware validators recently added to Watchflow:
