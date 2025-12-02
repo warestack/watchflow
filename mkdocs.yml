@@ -134,6 +134,3 @@ extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/warestack/watchflow
-  analytics:
-    provider: google
-    property: ${GOOGLE_ANALYTICS_KEY}
