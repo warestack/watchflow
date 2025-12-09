@@ -111,3 +111,11 @@ class RepositoryAnalysisResponse(BaseModel):
     )
     analyzed_at: str = Field(description="Timestamp of analysis")
     total_recommendations: int = Field(description="Total number of recommendations made")
+    rules_yaml: str = Field(
+        description="Rendered rules.yaml content for easy consumption",
+        default="",
+    )
+    pr_template: str = Field(
+        description="Prebuilt PR body that includes install steps and rule summary",
+        default="",
+    )

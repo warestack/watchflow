@@ -1,7 +1,7 @@
 import logging
 import time
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from langgraph.graph import END, START, StateGraph
 
@@ -13,6 +13,7 @@ from src.agents.repository_analysis_agent.models import (
 )
 from src.agents.repository_analysis_agent.nodes import (
     analyze_contributing_guidelines,
+    analyze_pr_history,
     analyze_repository_structure,
     generate_rule_recommendations,
     summarize_analysis,
@@ -129,6 +130,8 @@ class RepositoryAnalysisAgent(BaseAgent):
                 analysis_summary=state.analysis_summary,
                 analyzed_at=datetime.now().isoformat(),
                 total_recommendations=len(state.recommendations),
+                rules_yaml=self._build_rules_yaml(state.recommendations),
+                pr_template=self._build_pr_template(repository_full_name, state.recommendations),
             )
 
             # Check for errors
@@ -166,6 +169,44 @@ class RepositoryAnalysisAgent(BaseAgent):
                     "error_type": type(e).__name__,
                 }
             )
+
+    @staticmethod
+    def _build_rules_yaml(recommendations: List[Any]) -> str:
+        """Render a combined rules.yaml from individual recommendations."""
+        if not recommendations:
+            return ""
+
+        lines = ["rules:"]
+        for rec in recommendations:
+            yaml = rec.yaml_content.rstrip("\n")
+            # Indent each line by two spaces to nest under rules:
+            indented = "\n".join(f"  {line}" for line in yaml.splitlines())
+            lines.append(indented)
+
+        return "\n".join(lines) + "\n"
+
+    @staticmethod
+    def _build_pr_template(repo_full_name: str, recommendations: List[Any]) -> str:
+        """Build a PR body with install steps and rule summary."""
+        bullet_rules = "\n".join(f"- {rec.yaml_content.splitlines()[0].replace('description: ', '').strip('\"')}"
+                                 for rec in recommendations)
+
+        return f"""## Watchflow Rule Proposal for {repo_full_name}
+
+We've analyzed recent PRs and propose enabling the following rules:
+
+{bullet_rules}
+
+### Installation
+1) Install the Watchflow GitHub App and grant access to this repo.
+2) Add the provided `rules.yaml` under `.watchflow/`.
+3) Watchflow will start reporting on PRs with the rules above.
+
+### Files Included
+- `.watchflow/rules.yaml` (see below)
+
+If you'd like, we can adjust these rules or add more coverage based on your feedback.
+"""
 
     async def analyze_repository(self, request: RepositoryAnalysisRequest) -> RepositoryAnalysisResponse:
         """
