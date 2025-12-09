@@ -67,6 +67,38 @@ async def analyze_repository_structure(state: RepositoryAnalysisState) -> Dict[s
         return {"errors": state.errors}
 
 
+async def analyze_pr_history(state: RepositoryAnalysisState) -> Dict[str, Any]:
+    """Pull a small PR sample to inform rule recommendations."""
+    try:
+        logger.info(f"Fetching recent PRs for {state.repository_full_name}")
+        prs = await github_client.list_pull_requests(
+            state.repository_full_name, state.installation_id or 0, state="closed", per_page=20
+        )
+
+        pr_samples: list[dict[str, Any]] = []
+        for pr in prs:
+            pr_samples.append(
+                {
+                    "number": pr.get("number"),
+                    "title": pr.get("title"),
+                    "merged": pr.get("merged_at") is not None,
+                    "changed_files": pr.get("changed_files"),
+                    "additions": pr.get("additions"),
+                    "deletions": pr.get("deletions"),
+                    "user": pr.get("user", {}).get("login"),
+                }
+            )
+
+        state.pr_samples = pr_samples
+        state.analysis_steps.append("pr_history_sampled")
+        logger.info(f"Collected {len(pr_samples)} PR samples")
+        return {"pr_samples": pr_samples, "analysis_steps": state.analysis_steps}
+    except Exception as e:
+        logger.error(f"Error analyzing PR history: {e}")
+        state.errors.append(f"PR history analysis failed: {str(e)}")
+        return {"errors": state.errors}
+
+
 async def analyze_contributing_guidelines(state: RepositoryAnalysisState) -> Dict[str, Any]:
     """
     Analyze CONTRIBUTING.md file for patterns and requirements.
@@ -126,6 +158,107 @@ async def generate_rule_recommendations(state: RepositoryAnalysisState) -> Dict[
         contributing = state.contributing_analysis
 
         
+        # Diff-aware: enforce filter handling in core RAG/query code
+        recommendations.append(
+            RuleRecommendation(
+                yaml_content="""description: "Block merges when PRs change filter validation logic without failing on invalid inputs"
+enabled: true
+severity: "high"
+event_types: ["pull_request"]
+parameters:
+  file_patterns:
+    - "packages/core/src/**/vector-query.ts"
+    - "packages/core/src/**/graph-rag.ts"
+    - "packages/core/src/**/filters/*.ts"
+  require_patterns:
+    - "throw\\\\s+new\\\\s+Error"
+    - "raise\\\\s+ValueError"
+  forbidden_patterns:
+    - "return\\\\s+.*filter\\\\s*$"
+  how_to_fix: "Ensure invalid filters raise descriptive errors instead of silently returning unfiltered results."
+""",
+                confidence=0.85,
+                reasoning="Filter handling regressions were flagged in historical fixes; enforce throws on invalid input.",
+                source_patterns=["pr_history"],
+                category="quality",
+                estimated_impact="high",
+            )
+        )
+
+        # Diff-aware: enforce test updates when core code changes
+        recommendations.append(
+            RuleRecommendation(
+                yaml_content="""description: "Require regression tests when modifying tool schema validation or client tool execution"
+enabled: true
+severity: "medium"
+event_types: ["pull_request"]
+parameters:
+  source_patterns:
+    - "packages/core/src/**/tool*.ts"
+    - "packages/core/src/agent/**"
+    - "packages/client/**"
+  test_patterns:
+    - "packages/core/tests/**"
+    - "tests/**"
+  min_test_files: 1
+  rationale: "Tool invocation changes have previously caused regressions in clientTools streaming."
+""",
+                confidence=0.8,
+                reasoning="Core tool changes often broke client tools; require at least one related test update.",
+                source_patterns=["pr_history"],
+                category="quality",
+                estimated_impact="medium",
+            )
+        )
+
+        # Diff-aware: ensure agent descriptions exist
+        recommendations.append(
+            RuleRecommendation(
+                yaml_content="""description: "Ensure every agent exposes a user-facing description for UI profiles"
+enabled: true
+severity: "low"
+event_types: ["pull_request"]
+parameters:
+  file_patterns:
+    - "packages/core/src/agent/**"
+  required_text:
+    - "description"
+  message: "Add or update the agent description so downstream UIs can render capabilities."
+""",
+                confidence=0.75,
+                reasoning="Agent profile UIs require descriptions; ensure new/updated agents include them.",
+                source_patterns=["pr_history"],
+                category="process",
+                estimated_impact="low",
+            )
+        )
+
+        # Diff-aware: preserve URL handling for supported providers
+        recommendations.append(
+            RuleRecommendation(
+                yaml_content="""description: "Block merges when URL or asset handling changes bypass provider capability checks"
+enabled: true
+severity: "high"
+event_types: ["pull_request"]
+parameters:
+  file_patterns:
+    - "packages/core/src/agent/message-list/**"
+    - "packages/core/src/llm/**"
+  require_patterns:
+    - "isUrlSupportedByModel"
+  forbidden_patterns:
+    - "downloadAssetsFromMessages\\(messages\\)"
+  how_to_fix: "Preserve remote URLs for providers that support them natively; only download assets for unsupported providers."
+""",
+                confidence=0.8,
+                reasoning="Past URL handling bugs; ensure capability checks remain intact.",
+                source_patterns=["pr_history"],
+                category="quality",
+                estimated_impact="high",
+            )
+        )
+
+        # Legacy structural signals retained for completeness
         if features.has_workflows:
             recommendations.append(RuleRecommendation(
                 yaml_content="""description: "Require CI checks to pass"

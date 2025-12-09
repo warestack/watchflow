@@ -49,6 +49,7 @@ class RepositoryAnalysisAgent(BaseAgent):
 
         # Add nodes
         workflow.add_node("analyze_repository_structure", analyze_repository_structure)
+        workflow.add_node("analyze_pr_history", analyze_pr_history)
         workflow.add_node("analyze_contributing_guidelines", analyze_contributing_guidelines)
         workflow.add_node("generate_rule_recommendations", generate_rule_recommendations)
         workflow.add_node("validate_recommendations", validate_recommendations)
@@ -56,7 +57,8 @@ class RepositoryAnalysisAgent(BaseAgent):
 
         # Define workflow edges
         workflow.add_edge(START, "analyze_repository_structure")
-        workflow.add_edge("analyze_repository_structure", "analyze_contributing_guidelines")
+        workflow.add_edge("analyze_repository_structure", "analyze_pr_history")
+        workflow.add_edge("analyze_pr_history", "analyze_contributing_guidelines")
         workflow.add_edge("analyze_contributing_guidelines", "generate_rule_recommendations")
         workflow.add_edge("generate_rule_recommendations", "validate_recommendations")
         workflow.add_edge("validate_recommendations", "summarize_analysis")

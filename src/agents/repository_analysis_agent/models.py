@@ -80,6 +80,7 @@ class RepositoryAnalysisState(BaseModel):
 
     repository_full_name: str
     installation_id: Optional[int]
+    pr_samples: List[dict[str, Any]] = Field(default_factory=list)
 
     # Analysis data
     repository_features: RepositoryFeatures = Field(default_factory=RepositoryFeatures)
