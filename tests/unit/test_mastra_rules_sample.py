@@ -7,7 +7,7 @@ import yaml
 from src.rules.models import Rule
 
 
-SAMPLE_RULES_PATH = Path(__file__).resolve().parents[2] / "docs" / "samples" / "mastra-watchflow-rules.yaml"
+SAMPLE_RULES_PATH = Path(__file__).resolve().parents[2] / "docs" / "assets" / "mastra-watchflow-rules.yaml"
 
 
 def test_mastra_sample_rules_validate_without_actions():
