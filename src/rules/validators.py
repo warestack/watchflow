@@ -2,7 +2,6 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from datetime import datetime
-from pathlib import PurePosixPath
 from re import Pattern
 from typing import Any
 
@@ -978,13 +977,6 @@ class RequiredFieldInDiffCondition(Condition):
             return False
 
         return True
-
-    @staticmethod
-    def _matches_any(path: str, patterns: list[str]) -> bool:
-        if not path:
-            return False
-        posix_path = PurePosixPath(path)
-        return any(posix_path.match(pattern) for pattern in patterns)
 
 
 # Registry of all available validators
