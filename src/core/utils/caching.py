@@ -115,6 +115,26 @@ class AsyncCache:
         return len(self._cache)
 
 
+# Simple module-level cache used by recommendations API
+_GLOBAL_CACHE = AsyncCache(maxsize=1024, ttl=3600)
+
+
+async def get_cache(key: str) -> Any | None:
+    """
+    Async helper to fetch from the module-level cache.
+    """
+    return _GLOBAL_CACHE.get(key)
+
+
+async def set_cache(key: str, value: Any, ttl: int | None = None) -> None:
+    """
+    Async helper to store into the module-level cache.
+    """
+    if ttl and ttl != _GLOBAL_CACHE.ttl:
+        _GLOBAL_CACHE.ttl = ttl
+    _GLOBAL_CACHE.set(key, value)
+
+
 def cached_async(
     cache: AsyncCache | TTLCache | None = None,
     key_func: Callable[..., str] | None = None,
