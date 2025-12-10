@@ -24,4 +24,3 @@ def test_summarize_files_for_llm_handles_no_files():
     summary = PullRequestProcessor._summarize_files_for_llm([])
 
     assert summary == ""
-

@@ -2,7 +2,9 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Pattern
+from pathlib import PurePosixPath
+from re import Pattern
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -869,6 +871,7 @@ class DiffPatternCondition(Condition):
 
         return True
 
+
 class RelatedTestsCondition(Condition):
     """Ensures that changes to source files include corresponding test updates."""
 
@@ -919,6 +922,7 @@ class RelatedTestsCondition(Condition):
             )
         return is_valid
 
+
 class RequiredFieldInDiffCondition(Condition):
     """Validates that additions to specific files include a required field or text fragment."""
 
@@ -959,9 +963,7 @@ class RequiredFieldInDiffCondition(Condition):
 
             matched_files = True
             additions = "\n".join(
-                line[1:]
-                for line in patch.splitlines()
-                if line.startswith("+") and not line.startswith("+++")
+                line[1:] for line in patch.splitlines() if line.startswith("+") and not line.startswith("+++")
             )
 
             if all(text in additions for text in required_text):

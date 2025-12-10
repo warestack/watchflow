@@ -1,8 +1,5 @@
 from langchain_core.prompts import ChatPromptTemplate
 
-from src.agents.repository_analysis_agent.models import ContributingGuidelinesAnalysis
-
-
 CONTRIBUTING_GUIDELINES_ANALYSIS_PROMPT = ChatPromptTemplate.from_template("""
 You are a senior software engineer analyzing contributing guidelines to recommend appropriate repository governance rules.
 

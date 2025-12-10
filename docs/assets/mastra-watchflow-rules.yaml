@@ -54,4 +54,3 @@ rules:
       forbidden_patterns:
         - "downloadAssetsFromMessages\\(messages\\)"
       how_to_fix: "Preserve remote URLs for providers that support them natively; only download assets for unsupported providers."
-

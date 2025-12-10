@@ -27,7 +27,7 @@ agent = get_agent("repository_analysis")
 
 result = await agent.execute(
     repository_full_name="owner/repo-name",
-    installation_id=12345 
+    installation_id=12345
 )
 
 

@@ -1,8 +1,7 @@
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from src.agents.repository_analysis_agent.models import (
-    AnalysisSource,
     ContributingGuidelinesAnalysis,
     RepositoryAnalysisState,
     RepositoryFeatures,
@@ -10,15 +9,13 @@ from src.agents.repository_analysis_agent.models import (
 )
 from src.agents.repository_analysis_agent.prompts import (
     CONTRIBUTING_GUIDELINES_ANALYSIS_PROMPT,
-    REPOSITORY_ANALYSIS_PROMPT,
-    RULE_GENERATION_PROMPT,
 )
 from src.integrations.github.api import github_client
 
 logger = logging.getLogger(__name__)
 
 
-async def analyze_repository_structure(state: RepositoryAnalysisState) -> Dict[str, Any]:
+async def analyze_repository_structure(state: RepositoryAnalysisState) -> dict[str, Any]:
     """
     Analyze basic repository structure and features.
 
@@ -38,15 +35,13 @@ async def analyze_repository_structure(state: RepositoryAnalysisState) -> Dict[s
         )
         features.has_codeowners = codeowners_content is not None
 
-        
         workflow_content = await github_client.get_file_content(
             state.repository_full_name, ".github/workflows/main.yml", state.installation_id
         )
         if workflow_content:
             features.has_workflows = True
-            features.workflow_count = 1  
+            features.workflow_count = 1
 
-      
         contributors = await github_client.get_repository_contributors(
             state.repository_full_name, state.installation_id
         )
@@ -67,7 +62,7 @@ async def analyze_repository_structure(state: RepositoryAnalysisState) -> Dict[s
         return {"errors": state.errors}
 
 
-async def analyze_pr_history(state: RepositoryAnalysisState) -> Dict[str, Any]:
+async def analyze_pr_history(state: RepositoryAnalysisState) -> dict[str, Any]:
     """Pull a small PR sample to inform rule recommendations."""
     try:
         logger.info(f"Fetching recent PRs for {state.repository_full_name}")
@@ -99,7 +94,7 @@ async def analyze_pr_history(state: RepositoryAnalysisState) -> Dict[str, Any]:
         return {"errors": state.errors}
 
 
-async def analyze_contributing_guidelines(state: RepositoryAnalysisState) -> Dict[str, Any]:
+async def analyze_contributing_guidelines(state: RepositoryAnalysisState) -> dict[str, Any]:
     """
     Analyze CONTRIBUTING.md file for patterns and requirements.
     """
@@ -115,14 +110,12 @@ async def analyze_contributing_guidelines(state: RepositoryAnalysisState) -> Dic
             logger.info("No CONTRIBUTING.md file found")
             analysis = ContributingGuidelinesAnalysis()
         else:
-           
-            llm = github_client.llm if hasattr(github_client, 'llm') else None
+            llm = github_client.llm if hasattr(github_client, "llm") else None
             if llm:
                 try:
                     prompt = CONTRIBUTING_GUIDELINES_ANALYSIS_PROMPT.format(content=content)
-                    response = await llm.ainvoke(prompt)
+                    await llm.ainvoke(prompt)
 
-                   
                     # TODO: Parse JSON response and create ContributingGuidelinesAnalysis
 
                     analysis = ContributingGuidelinesAnalysis(content=content)
@@ -145,7 +138,7 @@ async def analyze_contributing_guidelines(state: RepositoryAnalysisState) -> Dic
         return {"errors": state.errors}
 
 
-async def generate_rule_recommendations(state: RepositoryAnalysisState) -> Dict[str, Any]:
+async def generate_rule_recommendations(state: RepositoryAnalysisState) -> dict[str, Any]:
     """
     Generate Watchflow rule recommendations based on repository analysis.
     """
@@ -157,7 +150,6 @@ async def generate_rule_recommendations(state: RepositoryAnalysisState) -> Dict[
         features = state.repository_features
         contributing = state.contributing_analysis
 
-        
         # Diff-aware: enforce filter handling in core RAG/query code
         recommendations.append(
             RuleRecommendation(
@@ -260,8 +252,9 @@ parameters:
 
         # Legacy structural signals retained for completeness
         if features.has_workflows:
-            recommendations.append(RuleRecommendation(
-                yaml_content="""description: "Require CI checks to pass"
+            recommendations.append(
+                RuleRecommendation(
+                    yaml_content="""description: "Require CI checks to pass"
 enabled: true
 severity: "high"
 event_types:
@@ -275,16 +268,18 @@ actions:
     parameters:
       message: "All CI checks must pass before merging"
 """,
-                confidence=0.9,
-                reasoning="Repository has CI workflows configured, so requiring checks to pass is a standard practice",
-                source_patterns=["has_workflows"],
-                category="quality",
-                estimated_impact="high"
-            ))
+                    confidence=0.9,
+                    reasoning="Repository has CI workflows configured, so requiring checks to pass is a standard practice",
+                    source_patterns=["has_workflows"],
+                    category="quality",
+                    estimated_impact="high",
+                )
+            )
 
         if features.has_codeowners:
-            recommendations.append(RuleRecommendation(
-                yaml_content="""description: "Require CODEOWNERS approval for changes"
+            recommendations.append(
+                RuleRecommendation(
+                    yaml_content="""description: "Require CODEOWNERS approval for changes"
 enabled: true
 severity: "medium"
 event_types:
@@ -297,16 +292,18 @@ actions:
     parameters:
       message: "CODEOWNERS must approve changes to owned files"
 """,
-                confidence=0.8,
-                reasoning="CODEOWNERS file exists, indicating ownership requirements for code changes",
-                source_patterns=["has_codeowners"],
-                category="process",
-                estimated_impact="medium"
-            ))
+                    confidence=0.8,
+                    reasoning="CODEOWNERS file exists, indicating ownership requirements for code changes",
+                    source_patterns=["has_codeowners"],
+                    category="process",
+                    estimated_impact="medium",
+                )
+            )
 
         if contributing.requires_tests:
-            recommendations.append(RuleRecommendation(
-                yaml_content="""description: "Require test coverage for code changes"
+            recommendations.append(
+                RuleRecommendation(
+                    yaml_content="""description: "Require test coverage for code changes"
 enabled: true
 severity: "medium"
 event_types:
@@ -320,16 +317,18 @@ actions:
     parameters:
       message: "Test coverage must be at least 80%"
 """,
-                confidence=0.7,
-                reasoning="Contributing guidelines mention testing requirements",
-                source_patterns=["requires_tests"],
-                category="quality",
-                estimated_impact="medium"
-            ))
+                    confidence=0.7,
+                    reasoning="Contributing guidelines mention testing requirements",
+                    source_patterns=["requires_tests"],
+                    category="quality",
+                    estimated_impact="medium",
+                )
+            )
 
         if features.contributor_count > 10:
-            recommendations.append(RuleRecommendation(
-                yaml_content="""description: "Require at least one approval for pull requests"
+            recommendations.append(
+                RuleRecommendation(
+                    yaml_content="""description: "Require at least one approval for pull requests"
 enabled: true
 severity: "medium"
 event_types:
@@ -343,14 +342,14 @@ actions:
     parameters:
       message: "Pull requests require at least one approval"
 """,
-                confidence=0.6,
-                reasoning="Repository has multiple contributors, indicating collaborative development",
-                source_patterns=["contributor_count"],
-                category="process",
-                estimated_impact="medium"
-            ))
+                    confidence=0.6,
+                    reasoning="Repository has multiple contributors, indicating collaborative development",
+                    source_patterns=["contributor_count"],
+                    category="process",
+                    estimated_impact="medium",
+                )
+            )
 
-        
         state.recommendations = recommendations
         state.analysis_steps.append("recommendations_generated")
 
@@ -364,7 +363,7 @@ actions:
         return {"errors": state.errors}
 
 
-async def validate_recommendations(state: RepositoryAnalysisState) -> Dict[str, Any]:
+async def validate_recommendations(state: RepositoryAnalysisState) -> dict[str, Any]:
     """
     Validate that generated recommendations contain valid YAML.
     """
@@ -400,7 +399,7 @@ async def validate_recommendations(state: RepositoryAnalysisState) -> Dict[str, 
         return {"errors": state.errors}
 
 
-async def summarize_analysis(state: RepositoryAnalysisState) -> Dict[str, Any]:
+async def summarize_analysis(state: RepositoryAnalysisState) -> dict[str, Any]:
     """
     Create a summary of the analysis findings.
     """

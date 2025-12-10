@@ -1,7 +1,6 @@
 import logging
 import time
 from datetime import datetime
-from typing import Any, Dict
 
 from langgraph.graph import END, START, StateGraph
 
@@ -13,6 +12,7 @@ from src.agents.repository_analysis_agent.models import (
 )
 from src.agents.repository_analysis_agent.nodes import (
     analyze_contributing_guidelines,
+    analyze_pr_history,
     analyze_repository_structure,
     generate_rule_recommendations,
     summarize_analysis,
@@ -66,12 +66,7 @@ class RepositoryAnalysisAgent(BaseAgent):
 
         return workflow.compile()
 
-    async def execute(
-        self,
-        repository_full_name: str,
-        installation_id: int | None = None,
-        **kwargs
-    ) -> AgentResult:
+    async def execute(self, repository_full_name: str, installation_id: int | None = None, **kwargs) -> AgentResult:
         """
         Analyze a repository and generate rule recommendations.
 
@@ -94,10 +89,9 @@ class RepositoryAnalysisAgent(BaseAgent):
                     success=False,
                     message="Invalid repository name format. Expected 'owner/repo'",
                     data={},
-                    metadata={"execution_time_ms": 0}
+                    metadata={"execution_time_ms": 0},
                 )
 
-           
             initial_state = RepositoryAnalysisState(
                 repository_full_name=repository_full_name,
                 installation_id=installation_id,
@@ -107,22 +101,16 @@ class RepositoryAnalysisAgent(BaseAgent):
 
             logger.info("Initial state prepared, starting analysis workflow")
 
-            
-            result = await self._execute_with_timeout(
-                self.graph.ainvoke(initial_state),
-                timeout=self.timeout
-            )
+            result = await self._execute_with_timeout(self.graph.ainvoke(initial_state), timeout=self.timeout)
 
             execution_time = time.time() - start_time
             logger.info(f"Analysis completed in {execution_time:.2f}s")
 
-          
             if isinstance(result, dict):
                 state = RepositoryAnalysisState(**result)
             else:
                 state = result
 
-         
             response = RepositoryAnalysisResponse(
                 repository_full_name=repository_full_name,
                 recommendations=state.recommendations,
@@ -133,16 +121,14 @@ class RepositoryAnalysisAgent(BaseAgent):
 
             # Check for errors
             has_errors = len(state.errors) > 0
-            success_message = (
-                f"Analysis completed successfully with {len(state.recommendations)} recommendations"
-            )
+            success_message = f"Analysis completed successfully with {len(state.recommendations)} recommendations"
             if has_errors:
                 success_message += f" ({len(state.errors)} errors encountered)"
 
             logger.info(f"Analysis result: {len(state.recommendations)} recommendations, {len(state.errors)} errors")
 
             return AgentResult(
-                success=not has_errors,  
+                success=not has_errors,
                 message=success_message,
                 data={"analysis_response": response},
                 metadata={
@@ -150,7 +136,7 @@ class RepositoryAnalysisAgent(BaseAgent):
                     "recommendations_count": len(state.recommendations),
                     "errors_count": len(state.errors),
                     "analysis_steps": state.analysis_steps,
-                }
+                },
             )
 
         except Exception as e:
@@ -164,7 +150,7 @@ class RepositoryAnalysisAgent(BaseAgent):
                 metadata={
                     "execution_time_ms": execution_time * 1000,
                     "error_type": type(e).__name__,
-                }
+                },
             )
 
     async def analyze_repository(self, request: RepositoryAnalysisRequest) -> RepositoryAnalysisResponse:
@@ -185,7 +171,6 @@ class RepositoryAnalysisAgent(BaseAgent):
         if result.success and "analysis_response" in result.data:
             return result.data["analysis_response"]
         else:
-           
             return RepositoryAnalysisResponse(
                 repository_full_name=request.repository_full_name,
                 recommendations=[],

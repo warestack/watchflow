@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -9,7 +8,6 @@ from src.agents.repository_analysis_agent.models import (
     RepositoryAnalysisRequest,
     RepositoryAnalysisResponse,
 )
-from src.core.config import config
 from src.core.utils.caching import get_cache, set_cache
 from src.core.utils.logging import log_structured
 
@@ -43,15 +41,9 @@ async def recommend_rules(
     Raises:
         HTTPException: If analysis fails or repository is invalid
     """
-    start_time = req.app.state.start_time if hasattr(req.app.state, 'start_time') else None
-
     try:
-       
         if not request.repository_full_name or "/" not in request.repository_full_name:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid repository name format. Expected 'owner/repo'"
-            )
+            raise HTTPException(status_code=400, detail="Invalid repository name format. Expected 'owner/repo'")
 
         cache_key = f"repo_analysis:{request.repository_full_name}"
         cached_result = await get_cache(cache_key)
@@ -66,10 +58,8 @@ async def recommend_rules(
             )
             return RepositoryAnalysisResponse(**cached_result)
 
-      
         agent = get_agent("repository_analysis")
 
-      
         log_structured(
             logger,
             "analysis_started",
@@ -94,12 +84,10 @@ async def recommend_rules(
             )
             raise HTTPException(status_code=500, detail=result.message)
 
-       
         analysis_response = result.data.get("analysis_response")
         if not analysis_response:
             raise HTTPException(status_code=500, detail="No analysis response generated")
 
-      
         await set_cache(cache_key, analysis_response.model_dump(), ttl=3600)
 
         log_structured(
@@ -114,8 +102,8 @@ async def recommend_rules(
 
         return analysis_response
 
-    except HTTPException:
-        raise
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error in recommend_rules endpoint: {e}")
         log_structured(
@@ -125,7 +113,7 @@ async def recommend_rules(
             subject_ids=[request.repository_full_name] if request else [],
             error=str(e),
         )
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}") from e
 
 
 @router.get("/v1/rules/recommend/{repository_full_name}")

@@ -1,5 +1,3 @@
-import asyncio
-
 import pytest
 
 from src.rules.validators import (
@@ -103,7 +101,7 @@ async def test_required_field_in_diff_condition():
             {
                 "filename": "packages/core/src/agent/foo/agent.py",
                 "status": "modified",
-                "patch": "+class FooAgent:\n+    description = \"foo\"\n",
+                "patch": '+class FooAgent:\n+    description = "foo"\n',
             }
         ]
     }
@@ -135,4 +133,3 @@ async def test_required_field_in_diff_condition_missing_text():
     }
 
     assert not await condition.validate(params, event)
-
