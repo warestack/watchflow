@@ -67,6 +67,8 @@ nav:
     - Comparative Analysis: benchmarks.md
   - Architecture:
     - Overview: concepts/overview.md
+  - Case Studies:
+    - Mastra Repository Analysis: reports/mastra-analysis.md
 
 # Plugins
 plugins:
@@ -132,6 +134,3 @@ extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/warestack/watchflow
-  analytics:
-    provider: google
-    property: ${GOOGLE_ANALYTICS_KEY}

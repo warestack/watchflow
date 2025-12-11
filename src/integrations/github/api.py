@@ -418,6 +418,43 @@ class GitHubClient:
             logger.error(f"Error getting PR #{pr_number} from {repo}: {e}")
             return {}
 
+    async def list_pull_requests(
+        self, repo: str, installation_id: int, state: str = "all", per_page: int = 20
+    ) -> list[dict[str, Any]]:
+        """
+        List pull requests for a repository.
+
+        Args:
+            repo: Full repo name (owner/repo)
+            installation_id: GitHub App installation id
+            state: "open", "closed", or "all"
+            per_page: max items to fetch (up to 100)
+        """
+        try:
+            token = await self.get_installation_access_token(installation_id)
+            if not token:
+                logger.error(f"Failed to get installation token for {installation_id}")
+                return []
+
+            headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+            url = f"{config.github.api_base_url}/repos/{repo}/pulls?state={state}&per_page={min(per_page, 100)}"
+
+            session = await self._get_session()
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    logger.info(f"Retrieved {len(result)} pull requests for {repo}")
+                    return result
+                else:
+                    error_text = await response.text()
+                    logger.error(
+                        f"Failed to list pull requests for {repo}. Status: {response.status}, Response: {error_text}"
+                    )
+                    return []
+        except Exception as e:
+            logger.error(f"Error listing pull requests for {repo}: {e}")
+            return []
+
     async def create_deployment_status(
         self,
         repo: str,

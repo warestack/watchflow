@@ -177,7 +177,7 @@ def _extract_event_context(event_data: dict, event_type: str) -> str:
     context_parts = []
 
     if event_type == "pull_request":
-        pr = event_data.get("pull_request", {})
+        pr = event_data.get("pull_request_details") or event_data.get("pull_request") or {}
         context_parts.extend(
             [
                 f"Title: {pr.get('title', 'N/A')}",
@@ -187,6 +187,17 @@ def _extract_event_context(event_data: dict, event_type: str) -> str:
                 f"Review Count: {pr.get('requested_reviewers', [])}",
             ]
         )
+
+        files = event_data.get("files", [])
+        if files:
+            top_files = [file.get("filename") for file in files[:5] if file.get("filename")]
+            context_parts.append(
+                f"Changed Files ({len(files)} total): {top_files if top_files else '[filenames unavailable]'}"
+            )
+
+        diff_summary = event_data.get("diff_summary")
+        if diff_summary:
+            context_parts.append(f"Diff Summary:\n{diff_summary}")
 
     elif event_type == "push":
         context_parts.extend(

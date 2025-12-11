@@ -2,9 +2,81 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from datetime import datetime
+from re import Pattern
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+_GLOB_CACHE: dict[str, Pattern[str]] = {}
+
+
+def _compile_glob(pattern: str) -> Pattern[str]:
+    """Convert a glob pattern supporting ** into a compiled regex."""
+    cached = _GLOB_CACHE.get(pattern)
+    if cached:
+        return cached
+
+    regex_parts: list[str] = []
+    i = 0
+    length = len(pattern)
+    while i < length:
+        char = pattern[i]
+        if char == "*":
+            if i + 1 < length and pattern[i + 1] == "*":
+                regex_parts.append(".*")
+                i += 1
+            else:
+                regex_parts.append("[^/]*")
+        elif char == "?":
+            regex_parts.append("[^/]")
+        else:
+            regex_parts.append(re.escape(char))
+        i += 1
+
+    compiled = re.compile("^" + "".join(regex_parts) + "$")
+    _GLOB_CACHE[pattern] = compiled
+    return compiled
+
+
+def _expand_pattern_variants(pattern: str) -> set[str]:
+    """Generate fallback globs so ** can match zero directories."""
+    variants = {pattern}
+    queue = [pattern]
+
+    while queue:
+        current = queue.pop()
+        normalized = current.replace("//", "/")
+
+        transformations = [
+            ("/**/", "/"),
+            ("**/", ""),
+            ("/**", ""),
+            ("**", ""),
+        ]
+
+        for old, new in transformations:
+            if old in normalized:
+                replaced = normalized.replace(old, new, 1)
+                replaced = replaced.replace("//", "/")
+                if replaced not in variants:
+                    variants.add(replaced)
+                    queue.append(replaced)
+
+    return variants
+
+
+def _matches_any(path: str, patterns: list[str]) -> bool:
+    """Utility matcher shared across validators."""
+    if not path or not patterns:
+        return False
+
+    normalized_path = path.replace("\\", "/")
+    for pattern in patterns:
+        for variant in _expand_pattern_variants(pattern.replace("\\", "/")):
+            compiled = _compile_glob(variant)
+            if compiled.match(normalized_path):
+                return True
+    return False
 
 
 class Condition(ABC):
@@ -738,6 +810,175 @@ class PastContributorApprovalCondition(Condition):
         return True
 
 
+class DiffPatternCondition(Condition):
+    """Validates that specific regex patterns appear (or do not appear) in PR diffs."""
+
+    name = "diff_pattern"
+    description = "Validates pull-request patches against required or forbidden regex patterns"
+    parameter_patterns = ["require_patterns", "forbidden_patterns", "file_patterns"]
+    event_types = ["pull_request"]
+    examples = [
+        {
+            "file_patterns": ["packages/core/src/**/vector-query.ts"],
+            "require_patterns": ["throw\\s+new\\s+Error"],
+        },
+        {
+            "file_patterns": ["packages/core/src/llm/**"],
+            "forbidden_patterns": ["console\\.log"],
+        },
+    ]
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        files = event.get("files", [])
+        if not files:
+            return True
+
+        file_patterns = parameters.get("file_patterns") or ["**"]
+        require_patterns = parameters.get("require_patterns") or []
+        forbidden_patterns = parameters.get("forbidden_patterns") or []
+
+        remaining_requirements = set(require_patterns)
+
+        for file in files:
+            filename = file.get("filename", "")
+            if not filename or not _matches_any(filename, file_patterns):
+                continue
+
+            patch = file.get("patch")
+            if not patch:
+                continue
+
+            for pattern in list(remaining_requirements):
+                if re.search(pattern, patch, re.MULTILINE):
+                    remaining_requirements.discard(pattern)
+
+            for pattern in forbidden_patterns:
+                if re.search(pattern, patch, re.MULTILINE):
+                    logger.debug(
+                        "DiffPatternCondition: Forbidden pattern '%s' present in %s",
+                        pattern,
+                        filename,
+                    )
+                    return False
+
+        if remaining_requirements:
+            logger.debug(
+                "DiffPatternCondition: Required patterns missing -> %s",
+                remaining_requirements,
+            )
+            return False
+
+        return True
+
+
+class RelatedTestsCondition(Condition):
+    """Ensures that changes to source files include corresponding test updates."""
+
+    name = "related_tests"
+    description = "Validates that touching core files requires touching tests"
+    parameter_patterns = ["source_patterns", "test_patterns", "min_test_files"]
+    event_types = ["pull_request"]
+    examples = [
+        {
+            "source_patterns": ["packages/core/src/**"],
+            "test_patterns": ["packages/core/tests/**", "tests/**"],
+        }
+    ]
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        files = event.get("files", [])
+        if not files:
+            return True
+
+        source_patterns = parameters.get("source_patterns") or []
+        test_patterns = parameters.get("test_patterns") or []
+        min_test_files = parameters.get("min_test_files", 1)
+
+        if not source_patterns or not test_patterns:
+            return True
+
+        touched_sources = [
+            file
+            for file in files
+            if file.get("status") != "removed" and _matches_any(file.get("filename", ""), source_patterns)
+        ]
+
+        if not touched_sources:
+            return True
+
+        touched_tests = [
+            file
+            for file in files
+            if file.get("status") != "removed" and _matches_any(file.get("filename", ""), test_patterns)
+        ]
+
+        is_valid = len(touched_tests) >= min_test_files
+        if not is_valid:
+            logger.debug(
+                "RelatedTestsCondition: %d source files touched but only %d test files updated",
+                len(touched_sources),
+                len(touched_tests),
+            )
+        return is_valid
+
+
+class RequiredFieldInDiffCondition(Condition):
+    """Validates that additions to specific files include a required field or text fragment."""
+
+    name = "required_field_in_diff"
+    description = "Ensures additions to matched files include specific text fragments"
+    parameter_patterns = ["file_patterns", "required_text"]
+    event_types = ["pull_request"]
+    examples = [
+        {
+            "file_patterns": ["packages/core/src/agent/**/agent.py"],
+            "required_text": ["description:"],
+        }
+    ]
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        files = event.get("files", [])
+        if not files:
+            return True
+
+        file_patterns = parameters.get("file_patterns") or []
+        required_text = parameters.get("required_text")
+        if not file_patterns or not required_text:
+            return True
+
+        if isinstance(required_text, str):
+            required_text = [required_text]
+
+        matched_files = False
+
+        for file in files:
+            filename = file.get("filename", "")
+            if not filename or not _matches_any(filename, file_patterns):
+                continue
+
+            patch = file.get("patch")
+            if not patch:
+                continue
+
+            matched_files = True
+            additions = "\n".join(
+                line[1:] for line in patch.splitlines() if line.startswith("+") and not line.startswith("+++")
+            )
+
+            if all(text in additions for text in required_text):
+                return True
+
+        # If we matched files but didn't find the required text, the rule fails.
+        if matched_files:
+            logger.debug(
+                "RequiredFieldInDiffCondition: Required text %s not present in additions",
+                required_text,
+            )
+            return False
+
+        return True
+
+
 # Registry of all available validators
 VALIDATOR_REGISTRY = {
     "author_team_is": AuthorTeamCondition(),
@@ -763,6 +1004,9 @@ VALIDATOR_REGISTRY = {
     "required_checks": RequiredChecksCondition(),
     "code_owners": CodeOwnersCondition(),
     "past_contributor_approval": PastContributorApprovalCondition(),
+    "diff_pattern": DiffPatternCondition(),
+    "related_tests": RelatedTestsCondition(),
+    "required_field_in_diff": RequiredFieldInDiffCondition(),
 }
 
 
