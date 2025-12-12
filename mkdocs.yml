@@ -62,6 +62,7 @@ nav:
   - Getting Started:
     - Quick Start: getting-started/quick-start.md
     - Configuration: getting-started/configuration.md
+    - Diff Rule Presets: getting-started/diff-rule-presets.md
   - Features & Capabilities:
     - Features: features.md
     - Comparative Analysis: benchmarks.md
