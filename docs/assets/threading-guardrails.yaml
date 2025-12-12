@@ -1,5 +1,5 @@
 rules:
-  - description: "Prefer ThreadPoolExecutor over raw threading.Thread"
+  - description: "Avoid raw threading.Thread; prefer ThreadPoolExecutor"
     enabled: true
     severity: "medium"
     event_types: ["pull_request"]
@@ -7,33 +7,13 @@ rules:
       file_patterns: ["**/*.py"]
       forbidden_patterns:
         - "threading\\.Thread"
-      require_patterns:
-        - "concurrent\\.futures\\.ThreadPoolExecutor"
 
-  - description: "Require locks when using threading for shared data"
-    enabled: true
-    severity: "high"
-    event_types: ["pull_request"]
-    parameters:
-      file_patterns: ["**/*.py"]
-      require_patterns:
-        - "threading\\.Lock"
-
-  - description: "Use queue.Queue for thread communication (avoid shared lists/dicts)"
-    enabled: true
-    severity: "medium"
-    event_types: ["pull_request"]
-    parameters:
-      file_patterns: ["**/*.py"]
-      require_patterns:
-        - "queue\\.Queue"
-
-  - description: "Limit ThreadPoolExecutor max_workers to 10"
+  - description: "Warn when ThreadPoolExecutor max_workers is greater than 10"
     enabled: true
     severity: "medium"
     event_types: ["pull_request"]
     parameters:
       file_patterns: ["**/*.py"]
       forbidden_patterns:
-        - "ThreadPoolExecutor\\(max_workers\\s*=\\s*(1[1-9]|[2-9][0-9])"
+        - "ThreadPoolExecutor\\(max_workers\\s*=\\s*(1[1-9]|[2-9][0-9]|\\d{3,})"
 
