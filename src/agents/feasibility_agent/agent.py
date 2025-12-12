@@ -87,6 +87,7 @@ class RuleFeasibilityAgent(BaseAgent):
                     "is_feasible": result.is_feasible,
                     "yaml_content": result.yaml_content,
                     "confidence_score": result.confidence_score,
+                    "chosen_validators": result.chosen_validators,
                     "rule_type": result.rule_type,
                     "analysis_steps": result.analysis_steps,
                 },

@@ -7,6 +7,7 @@ import logging
 from src.agents.feasibility_agent.models import FeasibilityAnalysis, FeasibilityState, YamlGeneration
 from src.agents.feasibility_agent.prompts import RULE_FEASIBILITY_PROMPT, YAML_GENERATION_PROMPT
 from src.integrations.providers import get_chat_model
+from src.rules.validators import get_validator_descriptions
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +24,22 @@ async def analyze_rule_feasibility(state: FeasibilityState) -> FeasibilityState:
         # Use structured output instead of manual JSON parsing
         structured_llm = llm.with_structured_output(FeasibilityAnalysis)
 
-        # Analyze rule feasibility
-        prompt = RULE_FEASIBILITY_PROMPT.format(rule_description=state.rule_description)
+        # Build validator catalog text for the prompt
+        validator_catalog = []
+        for v in get_validator_descriptions():
+            validator_catalog.append(
+                f"- name: {v.get('name')}\n"
+                f"  event_types: {v.get('event_types')}\n"
+                f"  parameter_patterns: {v.get('parameter_patterns')}\n"
+                f"  description: {v.get('description')}"
+            )
+        validators_text = "\n".join(validator_catalog)
+
+        # Analyze rule feasibility with awareness of available validators
+        prompt = RULE_FEASIBILITY_PROMPT.format(
+            rule_description=state.rule_description,
+            validator_catalog=validators_text,
+        )
 
         # Get structured response with retry logic
         result = await structured_llm.ainvoke(prompt)
@@ -32,6 +47,7 @@ async def analyze_rule_feasibility(state: FeasibilityState) -> FeasibilityState:
         # Update state with analysis results - now type-safe!
         state.is_feasible = result.is_feasible
         state.rule_type = result.rule_type
+        state.chosen_validators = result.chosen_validators
         state.confidence_score = result.confidence_score
         state.feedback = result.feedback
         state.analysis_steps = result.analysis_steps
@@ -67,7 +83,11 @@ async def generate_yaml_config(state: FeasibilityState) -> FeasibilityState:
         # Use structured output for YAML generation
         structured_llm = llm.with_structured_output(YamlGeneration)
 
-        prompt = YAML_GENERATION_PROMPT.format(rule_type=state.rule_type, rule_description=state.rule_description)
+        prompt = YAML_GENERATION_PROMPT.format(
+            rule_type=state.rule_type,
+            rule_description=state.rule_description,
+            chosen_validators=", ".join(state.chosen_validators),
+        )
 
         # Get structured response with retry logic
         result = await structured_llm.ainvoke(prompt)
