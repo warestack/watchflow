@@ -7,6 +7,7 @@ with timing, error tracking, and metadata.
 
 import logging
 import time
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from functools import wraps
 from typing import Any
@@ -124,3 +125,22 @@ def log_function_call(operation: str | None = None):
         return sync_wrapper
 
     return decorator
+
+
+def log_structured(
+    logger_obj: logging.Logger,
+    event: str,
+    level: str = "info",
+    **context: Any,
+) -> None:
+    """
+    Lightweight structured logging helper.
+
+    Args:
+        logger_obj: Logger instance to use.
+        event: Event/operation name.
+        level: Logging level (info|warning|error).
+        **context: Arbitrary key/value metadata.
+    """
+    log_fn: Callable[..., Any] = getattr(logger_obj, level, logger_obj.info)
+    log_fn(event, extra=context)

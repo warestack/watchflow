@@ -111,6 +111,52 @@ parameters:
   excluded_branches: ["feature/*", "hotfix/*"]
 ```
 
+### Diff-Aware Validators
+
+Watchflow can now reason about pull-request diffs directly. The following parameter groups plug into diff-aware validators:
+
+#### `diff_pattern`
+
+Use this to require or forbid specific regex patterns inside matched files.
+
+```yaml
+parameters:
+  file_patterns:
+    - "packages/core/src/**/vector-query.ts"
+  require_patterns:
+    - "throw\\s+new\\s+Error"
+  forbidden_patterns:
+    - "console\\.log"
+```
+
+#### `related_tests`
+
+Ensure core source changes include matching test updates.
+
+```yaml
+parameters:
+  source_patterns:
+    - "packages/core/src/**"
+  test_patterns:
+    - "tests/**"
+    - "packages/core/tests/**"
+  min_test_files: 1
+```
+
+#### `required_field_in_diff`
+
+Verify that additions to certain files include a text fragment (for example, enforcing `description` on new agents).
+
+```yaml
+parameters:
+  file_patterns:
+    - "packages/core/src/agent/**"
+  required_text:
+    - "description"
+```
+
+These validators activate automatically when the parameters above are present, so you do not need to declare an `actions` block or manual mapping.
+
 ## Severity Levels
 
 ### Severity Configuration
@@ -217,6 +263,39 @@ rules:
       environment: "staging"
       min_approvals: 1
       required_teams: ["senior-engineers"]
+```
+
+## Diff-Aware Validators
+
+Watchflow supports advanced validators that inspect actual PR diffs to enforce code-level patterns:
+
+### diff_pattern
+Enforce regex requirements or prohibitions within file patches.
+
+```yaml
+parameters:
+  file_patterns: ["packages/core/src/**/vector-query.ts"]
+  require_patterns: ["throw\\s+new\\s+Error"]
+  forbid_patterns: ["silent.*skip"]
+```
+
+### related_tests
+Require test file updates when core code changes.
+
+```yaml
+parameters:
+  file_patterns: ["packages/core/src/**"]
+  require_test_updates: true
+  min_test_files: 1
+```
+
+### required_field_in_diff
+Ensure new additions include required fields (e.g., agent descriptions).
+
+```yaml
+parameters:
+  file_patterns: ["packages/core/src/agent/**"]
+  required_text: "description"
 ```
 
 ## Best Practices
