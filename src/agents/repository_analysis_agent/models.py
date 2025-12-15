@@ -1,66 +1,120 @@
-from enum import Enum
+from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
-class AnalysisSource(str, Enum):
-    """Sources of analysis data for rule recommendations."""
+def parse_github_repo_identifier(value: str) -> str:
+    """
+    Normalize a GitHub repository identifier.
 
-    CONTRIBUTING_GUIDELINES = "contributing_guidelines"
-    REPOSITORY_STRUCTURE = "repository_structure"
-    WORKFLOWS = "workflows"
-    BRANCH_PROTECTION = "branch_protection"
-    COMMIT_PATTERNS = "commit_patterns"
-    PR_PATTERNS = "pr_patterns"
+    Accepts:
+    - owner/repo
+    - https://github.com/owner/repo
+    - https://github.com/owner/repo.git
+    - owner/repo/
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+
+    if raw.startswith("https://") or raw.startswith("http://"):
+        parts = raw.split("/")
+        try:
+            gh_idx = parts.index("github.com")
+        except ValueError:
+            # Could be enterprise; keep as-is and let API validation fail.
+            return raw.rstrip("/").removesuffix(".git")
+
+        owner = parts[gh_idx + 1] if len(parts) > gh_idx + 1 else ""
+        repo = parts[gh_idx + 2] if len(parts) > gh_idx + 2 else ""
+        return f"{owner}/{repo}".rstrip("/").removesuffix(".git")
+
+    return raw.rstrip("/").removesuffix(".git")
+
+
+class PullRequestSample(BaseModel):
+    """Minimal PR snapshot used for recommendations."""
+
+    number: int
+    title: str
+    state: str
+    merged: bool = False
+    additions: int | None = None
+    deletions: int | None = None
+    changed_files: int | None = None
 
 
 class RuleRecommendation(BaseModel):
     """A recommended Watchflow rule with confidence and reasoning."""
 
-    yaml_content: str = Field(description="Valid Watchflow rule YAML content")
-    confidence: float = Field(description="Confidence score (0.0-1.0) in the recommendation", ge=0.0, le=1.0)
-    reasoning: str = Field(description="Explanation of why this rule is recommended")
-    source_patterns: list[str] = Field(
-        description="Repository patterns that led to this recommendation", default_factory=list
-    )
-    category: str = Field(description="Category of the rule (e.g., 'quality', 'security', 'process')")
-    estimated_impact: str = Field(description="Expected impact (e.g., 'high', 'medium', 'low')")
-
-
-class RepositoryAnalysisRequest(BaseModel):
-    """Request model for repository analysis."""
-
-    repository_full_name: str = Field(description="Full repository name (owner/repo)")
-    installation_id: int | None = Field(
-        description="GitHub App installation ID for accessing private repos", default=None
-    )
+    yaml_rule: str = Field(description="Valid Watchflow rule YAML content")
+    confidence: float = Field(description="Confidence score (0.0-1.0)", ge=0.0, le=1.0)
+    reasoning: str = Field(description="Short explanation of why this rule is recommended")
+    strategy_used: str = Field(description="Strategy used (static, hybrid, llm)")
 
 
 class RepositoryFeatures(BaseModel):
     """Features and characteristics discovered in the repository."""
 
-    has_contributing: bool = Field(description="Has CONTRIBUTING.md file", default=False)
-    has_codeowners: bool = Field(description="Has CODEOWNERS file", default=False)
-    has_workflows: bool = Field(description="Has GitHub Actions workflows", default=False)
-    has_branch_protection: bool = Field(description="Has branch protection rules", default=False)
-    workflow_count: int = Field(description="Number of workflow files", default=0)
-    language: str | None = Field(description="Primary programming language", default=None)
-    contributor_count: int = Field(description="Number of contributors", default=0)
-    pr_count: int = Field(description="Number of pull requests", default=0)
-    issue_count: int = Field(description="Number of issues", default=0)
+    has_contributing: bool = Field(default=False, description="Has CONTRIBUTING.md file")
+    has_codeowners: bool = Field(default=False, description="Has CODEOWNERS file")
+    has_workflows: bool = Field(default=False, description="Has GitHub Actions workflows")
+    workflow_count: int = Field(default=0, description="Number of workflow files")
+    language: str | None = Field(default=None, description="Primary programming language")
+    contributor_count: int = Field(default=0, description="Number of contributors")
+    pr_count: int = Field(default=0, description="Number of pull requests")
 
 
 class ContributingGuidelinesAnalysis(BaseModel):
     """Analysis of contributing guidelines content."""
 
-    content: str | None = Field(description="Full CONTRIBUTING.md content", default=None)
-    has_pr_template: bool = Field(description="Requires PR templates", default=False)
-    has_issue_template: bool = Field(description="Requires issue templates", default=False)
-    requires_tests: bool = Field(description="Requires tests for contributions", default=False)
-    requires_docs: bool = Field(description="Requires documentation updates", default=False)
-    code_style_requirements: list[str] = Field(description="Code style requirements mentioned", default_factory=list)
-    review_requirements: list[str] = Field(description="Code review requirements mentioned", default_factory=list)
+    content: str | None = Field(default=None, description="Full CONTRIBUTING.md content")
+    has_pr_template: bool = Field(default=False, description="Requires PR templates")
+    has_issue_template: bool = Field(default=False, description="Requires issue templates")
+    requires_tests: bool = Field(default=False, description="Requires tests for contributions")
+    requires_docs: bool = Field(default=False, description="Requires documentation updates")
+    code_style_requirements: list[str] = Field(default_factory=list, description="Code style requirements mentioned")
+    review_requirements: list[str] = Field(default_factory=list, description="Code review requirements mentioned")
+
+
+class PullRequestPlan(BaseModel):
+    """Plan for creating a PR with generated rules."""
+
+    branch_name: str = "watchflow/rules"
+    base_branch: str = "main"
+    commit_message: str = "chore: add Watchflow rules"
+    pr_title: str = "Add Watchflow rules"
+    pr_body: str = "This PR adds Watchflow rule recommendations."
+    file_path: str = ".watchflow/rules.yaml"
+
+
+class RepositoryAnalysisRequest(BaseModel):
+    """Request model for repository analysis."""
+
+    repository_url: str | None = Field(default=None, description="GitHub repository URL")
+    repository_full_name: str | None = Field(default=None, description="Full repository name (owner/repo)")
+    installation_id: int | None = Field(default=None, description="GitHub App installation ID")
+    max_prs: int = Field(default=10, ge=0, le=50, description="Max PRs to sample for analysis")
+
+    @field_validator("repository_full_name", mode="before")
+    @classmethod
+    def normalize_full_name(cls, value: str | None, info) -> str:
+        if value:
+            return parse_github_repo_identifier(value)
+        raw_url = info.data.get("repository_url")
+        return parse_github_repo_identifier(raw_url or "")
+
+    @field_validator("repository_url", mode="before")
+    @classmethod
+    def strip_url(cls, value: str | None) -> str | None:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def populate_full_name(self) -> "RepositoryAnalysisRequest":
+        if not self.repository_full_name and self.repository_url:
+            self.repository_full_name = parse_github_repo_identifier(self.repository_url)
+        return self
 
 
 class RepositoryAnalysisState(BaseModel):
@@ -68,28 +122,62 @@ class RepositoryAnalysisState(BaseModel):
 
     repository_full_name: str
     installation_id: int | None
-    pr_samples: list[dict[str, Any]] = Field(default_factory=list)
-
-    # Analysis data
+    pr_samples: list[PullRequestSample] = Field(default_factory=list)
     repository_features: RepositoryFeatures = Field(default_factory=RepositoryFeatures)
     contributing_analysis: ContributingGuidelinesAnalysis = Field(default_factory=ContributingGuidelinesAnalysis)
-
-    # Processing state
-    analysis_steps: list[str] = Field(default_factory=list)
-    errors: list[str] = Field(default_factory=list)
-
-    # Results
     recommendations: list[RuleRecommendation] = Field(default_factory=list)
+    rules_yaml: str | None = None
+    pr_plan: PullRequestPlan | None = None
     analysis_summary: dict[str, Any] = Field(default_factory=dict)
+    errors: list[str] = Field(default_factory=list)
 
 
 class RepositoryAnalysisResponse(BaseModel):
-    """Response model containing rule recommendations."""
+    """Response model containing rule recommendations and PR plan."""
 
     repository_full_name: str = Field(description="Repository that was analyzed")
-    recommendations: list[RuleRecommendation] = Field(
-        description="List of recommended Watchflow rules", default_factory=list
-    )
-    analysis_summary: dict[str, Any] = Field(description="Summary of analysis findings", default_factory=dict)
-    analyzed_at: str = Field(description="Timestamp of analysis")
-    total_recommendations: int = Field(description="Total number of recommendations made")
+    rules_yaml: str = Field(description="Combined Watchflow rules YAML")
+    recommendations: list[RuleRecommendation] = Field(default_factory=list, description="Rule recommendations")
+    pr_plan: PullRequestPlan | None = Field(default=None, description="Suggested PR plan")
+    analysis_summary: dict[str, Any] = Field(default_factory=dict, description="Summary of analysis findings")
+    analyzed_at: datetime = Field(default_factory=datetime.utcnow, description="Timestamp of analysis")
+
+
+class ProceedWithPullRequestRequest(BaseModel):
+    """Request to create a PR with generated rules."""
+
+    repository_url: str | None = Field(default=None, description="GitHub repository URL")
+    repository_full_name: str | None = Field(default=None, description="Full repository name (owner/repo)")
+    installation_id: int | None = Field(default=None, description="GitHub App installation ID")
+    user_token: str | None = Field(default=None, description="User token for GitHub operations (optional)")
+    rules_yaml: str = Field(description="Rules YAML content to commit")
+    branch_name: str = Field(default="watchflow/rules", description="Branch to create or update")
+    base_branch: str = Field(default="main", description="Base branch for the PR")
+    commit_message: str = Field(default="chore: add Watchflow rules", description="Commit message")
+    pr_title: str = Field(default="Add Watchflow rules", description="Pull request title")
+    pr_body: str = Field(default="This PR adds Watchflow rule recommendations.", description="Pull request body")
+    file_path: str = Field(default=".watchflow/rules.yaml", description="Path to rules file in repo")
+
+    @field_validator("repository_full_name", mode="before")
+    @classmethod
+    def normalize_full_name(cls, value: str | None, info) -> str:
+        if value:
+            return parse_github_repo_identifier(value)
+        raw_url = info.data.get("repository_url")
+        return parse_github_repo_identifier(raw_url or "")
+
+    @model_validator(mode="after")
+    def populate_full_name(self) -> "ProceedWithPullRequestRequest":
+        if not self.repository_full_name and self.repository_url:
+            self.repository_full_name = parse_github_repo_identifier(self.repository_url)
+        return self
+
+
+class ProceedWithPullRequestResponse(BaseModel):
+    """Response after creating the PR."""
+
+    pull_request_url: str
+    branch_name: str
+    base_branch: str
+    file_path: str
+    commit_sha: str | None = None
