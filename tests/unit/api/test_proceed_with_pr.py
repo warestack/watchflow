@@ -54,4 +54,3 @@ def test_proceed_with_pr_requires_auth(monkeypatch):
 
     response = client.post("/api/v1/rules/recommend/proceed-with-pr", json=payload)
     assert response.status_code == 400
-

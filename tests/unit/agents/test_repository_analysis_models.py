@@ -9,4 +9,3 @@ def test_parse_github_repo_identifier_normalizes_url():
 def test_repository_analysis_request_normalizes_from_url():
     request = RepositoryAnalysisRequest(repository_url="https://github.com/owner/repo.git")
     assert request.repository_full_name == "owner/repo"
-

@@ -77,9 +77,9 @@ async def analyze_contributing_guidelines(state: RepositoryAnalysisState) -> Non
     repo = state.repository_full_name
     installation_id = state.installation_id
 
-    content = await github_client.get_file_content(repo, "CONTRIBUTING.md", installation_id) or await github_client.get_file_content(
-        repo, ".github/CONTRIBUTING.md", installation_id
-    )
+    content = await github_client.get_file_content(
+        repo, "CONTRIBUTING.md", installation_id
+    ) or await github_client.get_file_content(repo, ".github/CONTRIBUTING.md", installation_id)
 
     if not content:
         state.contributing_analysis = ContributingGuidelinesAnalysis(content=None)
@@ -93,9 +93,7 @@ async def analyze_contributing_guidelines(state: RepositoryAnalysisState) -> Non
         requires_tests="test" in lowered or "tests" in lowered,
         requires_docs="docs" in lowered or "documentation" in lowered,
         code_style_requirements=[
-            req
-            for req in ["lint", "format", "pep8", "flake8", "eslint", "prettier"]
-            if req in lowered
+            req for req in ["lint", "format", "pep8", "flake8", "eslint", "prettier"] if req in lowered
         ],
         review_requirements=[req for req in ["review", "approval"] if req in lowered],
     )
@@ -224,7 +222,9 @@ def validate_recommendations(state: RepositoryAnalysisState) -> None:
         yaml.safe_load(rec.yaml_rule)
 
 
-def summarize_analysis(state: RepositoryAnalysisState, request: RepositoryAnalysisRequest) -> RepositoryAnalysisResponse:
+def summarize_analysis(
+    state: RepositoryAnalysisState, request: RepositoryAnalysisRequest
+) -> RepositoryAnalysisResponse:
     """Build the final response."""
     rules_yaml = _render_rules_yaml(state.recommendations)
     pr_plan = state.pr_plan or _default_pr_plan(state)
@@ -241,4 +241,3 @@ def summarize_analysis(state: RepositoryAnalysisState, request: RepositoryAnalys
         pr_plan=pr_plan,
         analysis_summary=analysis_summary,
     )
-

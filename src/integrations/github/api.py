@@ -81,7 +81,9 @@ class GitHubClient:
         """
         Fetches the content of a file from a repository.
         """
-        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token, accept="application/vnd.github.raw")
+        headers = await self._get_auth_headers(
+            installation_id=installation_id, user_token=user_token, accept="application/vnd.github.raw"
+        )
         if not headers:
             return None
         url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{file_path}"
@@ -750,7 +752,8 @@ class GitHubClient:
         headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
         if not headers:
             return None
-        url = f"{config.github.api_base_url}/repos/{repo_full_name}/git/ref/heads/{ref.lstrip('refs/heads/')}"
+        ref_clean = ref.removeprefix("refs/heads/") if ref.startswith("refs/heads/") else ref
+        url = f"{config.github.api_base_url}/repos/{repo_full_name}/git/ref/heads/{ref_clean}"
         session = await self._get_session()
         async with session.get(url, headers=headers) as response:
             if response.status == 200:
@@ -771,7 +774,8 @@ class GitHubClient:
         if not headers:
             return False
         url = f"{config.github.api_base_url}/repos/{repo_full_name}/git/refs"
-        payload = {"ref": f"refs/heads/{ref.lstrip('refs/heads/')}", "sha": sha}
+        ref_clean = ref.removeprefix("refs/heads/") if ref.startswith("refs/heads/") else ref
+        payload = {"ref": f"refs/heads/{ref_clean}", "sha": sha}
         session = await self._get_session()
         async with session.post(url, headers=headers, json=payload) as response:
             return response.status in (200, 201)

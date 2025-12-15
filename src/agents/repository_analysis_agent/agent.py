@@ -9,12 +9,12 @@ import time
 from src.agents.base import AgentResult, BaseAgent
 from src.agents.repository_analysis_agent.models import RepositoryAnalysisRequest, RepositoryAnalysisState
 from src.agents.repository_analysis_agent.nodes import (
+    _default_recommendations,
     analyze_contributing_guidelines,
     analyze_pr_history,
     analyze_repository_structure,
     summarize_analysis,
     validate_recommendations,
-    _default_recommendations,
 )
 
 
@@ -57,4 +57,3 @@ class RepositoryAnalysisAgent(BaseAgent):
                 data={},
                 metadata={"execution_time_ms": latency_ms},
             )
-
