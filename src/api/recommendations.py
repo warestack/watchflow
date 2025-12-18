@@ -5,11 +5,14 @@ from fastapi.responses import JSONResponse
 
 from src.agents import get_agent
 from src.agents.repository_analysis_agent.models import (
+    ProceedWithPullRequestRequest,
+    ProceedWithPullRequestResponse,
     RepositoryAnalysisRequest,
     RepositoryAnalysisResponse,
 )
 from src.core.utils.caching import get_cache, set_cache
 from src.core.utils.logging import log_structured
+from src.integrations.github.api import github_client
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -114,6 +117,79 @@ async def recommend_rules(
             error=str(e),
         )
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}") from e
+
+
+@router.post(
+    "/v1/rules/recommend/proceed-with-pr",
+    response_model=ProceedWithPullRequestResponse,
+    summary="Create a PR with generated Watchflow rules",
+    description="Creates a branch, commits rules.yaml, and opens a PR using either installation or user token.",
+)
+async def proceed_with_pr(request: ProceedWithPullRequestRequest) -> ProceedWithPullRequestResponse:
+    if not request.repository_full_name:
+        raise HTTPException(status_code=400, detail="repository_full_name or repository_url is required")
+    if not request.installation_id and not request.user_token:
+        raise HTTPException(status_code=400, detail="installation_id or user_token is required")
+
+    repo = request.repository_full_name
+    auth_ctx = {"installation_id": request.installation_id, "user_token": request.user_token}
+
+    repo_data = await github_client.get_repository(repo, **auth_ctx)
+    base_branch = request.base_branch or (repo_data or {}).get("default_branch", "main")
+
+    base_sha = await github_client.get_git_ref_sha(repo, base_branch, **auth_ctx)
+    if not base_sha:
+        raise HTTPException(status_code=400, detail=f"Unable to resolve base branch '{base_branch}'")
+
+    created_ref = await github_client.create_git_ref(repo, request.branch_name, base_sha, **auth_ctx)
+    if not created_ref:
+        log_structured(
+            logger,
+            "branch_exists_or_create_failed",
+            operation="proceed_with_pr",
+            subject_ids=[repo],
+            branch=request.branch_name,
+        )
+
+    file_result = await github_client.create_or_update_file(
+        repo_full_name=repo,
+        path=request.file_path,
+        content=request.rules_yaml,
+        message=request.commit_message,
+        branch=request.branch_name,
+        **auth_ctx,
+    )
+    if not file_result:
+        raise HTTPException(status_code=400, detail="Failed to create or update rules file")
+
+    pr = await github_client.create_pull_request(
+        repo_full_name=repo,
+        title=request.pr_title,
+        head=request.branch_name,
+        base=base_branch,
+        body=request.pr_body,
+        **auth_ctx,
+    )
+    if not pr:
+        raise HTTPException(status_code=400, detail="Failed to create pull request")
+
+    log_structured(
+        logger,
+        "proceed_with_pr_completed",
+        operation="proceed_with_pr",
+        subject_ids=[repo],
+        decision="success",
+        branch=request.branch_name,
+        pr_number=pr.get("number"),
+    )
+
+    return ProceedWithPullRequestResponse(
+        pull_request_url=pr.get("html_url", ""),
+        branch_name=request.branch_name,
+        base_branch=base_branch,
+        file_path=request.file_path,
+        commit_sha=(file_result.get("commit") or {}).get("sha"),
+    )
 
 
 @router.get("/v1/rules/recommend/{repository_full_name}")

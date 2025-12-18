@@ -5,6 +5,11 @@ standards so teams can focus on building, increase trust, and move fast.
 
 ## Core Features
 
+### Repository Analysis → One-Click PR
+- Paste a repo URL, get diff-aware rule recommendations (structure, PR history, CONTRIBUTING).
+- Click “Proceed with PR” to auto-create `.watchflow/rules.yaml` on a branch with a ready-to-review PR body.
+- Supports GitHub App installations or user tokens; logs are structured and safe for ops visibility.
+
 ### Context-Aware Rule Evaluation
 
 **Intelligent Context Analysis**

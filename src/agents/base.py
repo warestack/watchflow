@@ -7,7 +7,6 @@ from abc import ABC, abstractmethod
 from typing import Any, TypeVar
 
 from src.core.utils.timeout import execute_with_timeout
-from src.integrations.providers import get_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +44,9 @@ class BaseAgent(ABC):
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.agent_name = agent_name
+        # Lazy import to avoid circular imports and heavy initialization at module load.
+        from src.integrations.providers import get_chat_model
+
         self.llm = get_chat_model(agent=agent_name)
         self.graph = self._build_graph()
         logger.info(f"🔧 {self.__class__.__name__} initialized with max_retries={max_retries}, agent_name={agent_name}")
