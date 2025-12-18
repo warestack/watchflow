@@ -29,6 +29,20 @@ class GitHubClient:
         # Cache for installation tokens (TTL: 50 minutes, GitHub tokens expire in 60)
         self._token_cache: TTLCache = TTLCache(maxsize=100, ttl=50 * 60)
 
+    async def _get_auth_headers(
+        self,
+        installation_id: int | None = None,
+        user_token: str | None = None,
+        accept: str = "application/vnd.github.v3+json",
+    ) -> dict[str, str] | None:
+        """Build auth headers using either installation token or a provided user token."""
+        token = user_token
+        if not token and installation_id is not None:
+            token = await self.get_installation_access_token(installation_id)
+        if not token:
+            return None
+        return {"Authorization": f"Bearer {token}", "Accept": accept}
+
     async def get_installation_access_token(self, installation_id: int) -> str | None:
         """
         Gets an access token for a specific installation of the GitHub App.
@@ -61,18 +75,17 @@ class GitHubClient:
                 )
                 return None
 
-    async def get_file_content(self, repo_full_name: str, file_path: str, installation_id: int) -> str | None:
+    async def get_file_content(
+        self, repo_full_name: str, file_path: str, installation_id: int | None, user_token: str | None = None
+    ) -> str | None:
         """
         Fetches the content of a file from a repository.
         """
-        token = await self.get_installation_access_token(installation_id)
-        if not token:
+        headers = await self._get_auth_headers(
+            installation_id=installation_id, user_token=user_token, accept="application/vnd.github.raw"
+        )
+        if not headers:
             return None
-
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github.raw",  # Get raw content
-        }
         url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{file_path}"
 
         session = await self._get_session()
@@ -419,7 +432,12 @@ class GitHubClient:
             return {}
 
     async def list_pull_requests(
-        self, repo: str, installation_id: int, state: str = "all", per_page: int = 20
+        self,
+        repo: str,
+        installation_id: int | None = None,
+        state: str = "all",
+        per_page: int = 20,
+        user_token: str | None = None,
     ) -> list[dict[str, Any]]:
         """
         List pull requests for a repository.
@@ -431,12 +449,10 @@ class GitHubClient:
             per_page: max items to fetch (up to 100)
         """
         try:
-            token = await self.get_installation_access_token(installation_id)
-            if not token:
-                logger.error(f"Failed to get installation token for {installation_id}")
+            headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
+            if not headers:
+                logger.error("Failed to resolve auth headers for list_pull_requests")
                 return []
-
-            headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
             url = f"{config.github.api_base_url}/repos/{repo}/pulls?state={state}&per_page={min(per_page, 100)}"
 
             session = await self._get_session()
@@ -588,18 +604,15 @@ class GitHubClient:
             logger.error(f"Error updating deployment status: {e}")
             return None
 
-    async def get_repository_contributors(self, repo: str, installation_id: int) -> list[dict[str, Any]]:
+    async def get_repository_contributors(
+        self, repo: str, installation_id: int | None = None, user_token: str | None = None
+    ) -> list[dict[str, Any]]:
         """
         Fetches repository contributors with their contribution counts.
         """
-        token = await self.get_installation_access_token(installation_id)
-        if not token:
+        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
+        if not headers:
             return []
-
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github.v3+json",
-        }
         url = f"{config.github.api_base_url}/repos/{repo}/contributors"
 
         session = await self._get_session()
@@ -703,6 +716,120 @@ class GitHubClient:
                     f"Failed to get issues by {username} in {repo}. Status: {response.status}, Response: {error_text}"
                 )
                 return []
+
+    async def get_repository(
+        self, repo_full_name: str, installation_id: int | None = None, user_token: str | None = None
+    ) -> dict[str, Any] | None:
+        """Fetch repository metadata (default branch, language, etc.)."""
+        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
+        if not headers:
+            return None
+        url = f"{config.github.api_base_url}/repos/{repo_full_name}"
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as response:
+            if response.status == 200:
+                return await response.json()
+            return None
+
+    async def list_directory_any_auth(
+        self, repo_full_name: str, path: str, installation_id: int | None = None, user_token: str | None = None
+    ) -> list[dict[str, Any]]:
+        """List directory contents using either installation or user token."""
+        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
+        if not headers:
+            return []
+        url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{path}"
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as response:
+            if response.status == 200:
+                return await response.json()
+            return []
+
+    async def get_git_ref_sha(
+        self, repo_full_name: str, ref: str, installation_id: int | None = None, user_token: str | None = None
+    ) -> str | None:
+        """Get the SHA for a branch/ref."""
+        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
+        if not headers:
+            return None
+        ref_clean = ref.removeprefix("refs/heads/") if ref.startswith("refs/heads/") else ref
+        url = f"{config.github.api_base_url}/repos/{repo_full_name}/git/ref/heads/{ref_clean}"
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data.get("object", {}).get("sha")
+            return None
+
+    async def create_git_ref(
+        self,
+        repo_full_name: str,
+        ref: str,
+        sha: str,
+        installation_id: int | None = None,
+        user_token: str | None = None,
+    ) -> bool:
+        """Create a new git ref/branch."""
+        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
+        if not headers:
+            return False
+        url = f"{config.github.api_base_url}/repos/{repo_full_name}/git/refs"
+        ref_clean = ref.removeprefix("refs/heads/") if ref.startswith("refs/heads/") else ref
+        payload = {"ref": f"refs/heads/{ref_clean}", "sha": sha}
+        session = await self._get_session()
+        async with session.post(url, headers=headers, json=payload) as response:
+            return response.status in (200, 201)
+
+    async def create_or_update_file(
+        self,
+        repo_full_name: str,
+        path: str,
+        content: str,
+        message: str,
+        branch: str,
+        installation_id: int | None = None,
+        user_token: str | None = None,
+        sha: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Create or update a file via the Contents API."""
+        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
+        if not headers:
+            return None
+        url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{path.lstrip('/')}"
+        payload: dict[str, Any] = {
+            "message": message,
+            "content": base64.b64encode(content.encode()).decode(),
+            "branch": branch,
+        }
+        if sha:
+            payload["sha"] = sha
+        session = await self._get_session()
+        async with session.put(url, headers=headers, json=payload) as response:
+            if response.status in (200, 201):
+                return await response.json()
+            return None
+
+    async def create_pull_request(
+        self,
+        repo_full_name: str,
+        title: str,
+        head: str,
+        base: str,
+        body: str,
+        installation_id: int | None = None,
+        user_token: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Open a pull request."""
+        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
+        if not headers:
+            return None
+        url = f"{config.github.api_base_url}/repos/{repo_full_name}/pulls"
+        payload = {"title": title, "head": head, "base": base, "body": body}
+        session = await self._get_session()
+        async with session.post(url, headers=headers, json=payload) as response:
+            if response.status in (200, 201):
+                return await response.json()
+            return None
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Initializes and returns the aiohttp session."""

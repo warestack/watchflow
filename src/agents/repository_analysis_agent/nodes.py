@@ -1,442 +1,243 @@
-import logging
+"""
+Workflow nodes for the RepositoryAnalysisAgent.
+
+Each node is a small, testable function that mutates the RepositoryAnalysisState.
+The nodes favor static/hybrid strategies first and avoid heavy LLM calls unless
+strictly necessary.
+"""
+
+from __future__ import annotations
+
+import textwrap
 from typing import Any
+
+import yaml
 
 from src.agents.repository_analysis_agent.models import (
     ContributingGuidelinesAnalysis,
+    PullRequestPlan,
+    PullRequestSample,
+    RepositoryAnalysisRequest,
+    RepositoryAnalysisResponse,
     RepositoryAnalysisState,
     RepositoryFeatures,
     RuleRecommendation,
 )
-from src.agents.repository_analysis_agent.prompts import (
-    CONTRIBUTING_GUIDELINES_ANALYSIS_PROMPT,
-)
 from src.integrations.github.api import github_client
 
-logger = logging.getLogger(__name__)
+
+async def analyze_repository_structure(state: RepositoryAnalysisState) -> None:
+    """Collect repository metadata and structure signals."""
+    repo = state.repository_full_name
+    installation_id = state.installation_id
+
+    repo_data = await github_client.get_repository(repo, installation_id=installation_id)
+    workflows = await github_client.list_directory_any_auth(
+        repo_full_name=repo, path=".github/workflows", installation_id=installation_id
+    )
+    contributors = await github_client.get_repository_contributors(repo, installation_id) if installation_id else []
+
+    state.repository_features = RepositoryFeatures(
+        has_contributing=False,
+        has_codeowners=bool(await github_client.get_file_content(repo, ".github/CODEOWNERS", installation_id)),
+        has_workflows=bool(workflows),
+        workflow_count=len(workflows or []),
+        language=(repo_data or {}).get("language"),
+        contributor_count=len(contributors),
+        pr_count=0,
+    )
 
 
-async def analyze_repository_structure(state: RepositoryAnalysisState) -> dict[str, Any]:
-    """
-    Analyze basic repository structure and features.
+async def analyze_pr_history(state: RepositoryAnalysisState, max_prs: int) -> None:
+    """Fetch a small sample of recent pull requests for context."""
+    repo = state.repository_full_name
+    installation_id = state.installation_id
+    prs = await github_client.list_pull_requests(repo, installation_id=installation_id, state="all", per_page=max_prs)
 
-    Gathers information about workflows, branch protection, contributors, etc.
-    """
-    try:
-        logger.info(f"Analyzing repository structure for {state.repository_full_name}")
-
-        features = RepositoryFeatures()
-        contributing_content = await github_client.get_file_content(
-            state.repository_full_name, "CONTRIBUTING.md", state.installation_id
-        )
-        features.has_contributing = contributing_content is not None
-
-        codeowners_content = await github_client.get_file_content(
-            state.repository_full_name, ".github/CODEOWNERS", state.installation_id
-        )
-        features.has_codeowners = codeowners_content is not None
-
-        workflow_content = await github_client.get_file_content(
-            state.repository_full_name, ".github/workflows/main.yml", state.installation_id
-        )
-        if workflow_content:
-            features.has_workflows = True
-            features.workflow_count = 1
-
-        contributors = await github_client.get_repository_contributors(
-            state.repository_full_name, state.installation_id
-        )
-        features.contributor_count = len(contributors) if contributors else 0
-
-        # TODO: Add more repository analysis (PR count, issues, language detection, etc.)
-
-        logger.info(f"Repository analysis complete: {features.model_dump()}")
-
-        state.repository_features = features
-        state.analysis_steps.append("repository_structure_analyzed")
-
-        return {"repository_features": features, "analysis_steps": state.analysis_steps}
-
-    except Exception as e:
-        logger.error(f"Error analyzing repository structure: {e}")
-        state.errors.append(f"Repository structure analysis failed: {str(e)}")
-        return {"errors": state.errors}
-
-
-async def analyze_pr_history(state: RepositoryAnalysisState) -> dict[str, Any]:
-    """Pull a small PR sample to inform rule recommendations."""
-    try:
-        logger.info(f"Fetching recent PRs for {state.repository_full_name}")
-        prs = await github_client.list_pull_requests(
-            state.repository_full_name, state.installation_id or 0, state="closed", per_page=20
-        )
-
-        pr_samples: list[dict[str, Any]] = []
-        for pr in prs:
-            pr_samples.append(
-                {
-                    "number": pr.get("number"),
-                    "title": pr.get("title"),
-                    "merged": pr.get("merged_at") is not None,
-                    "changed_files": pr.get("changed_files"),
-                    "additions": pr.get("additions"),
-                    "deletions": pr.get("deletions"),
-                    "user": pr.get("user", {}).get("login"),
-                }
+    samples: list[PullRequestSample] = []
+    for pr in prs or []:
+        samples.append(
+            PullRequestSample(
+                number=pr.get("number", 0),
+                title=pr.get("title", ""),
+                state=pr.get("state", ""),
+                merged=bool(pr.get("merged_at")),
+                additions=pr.get("additions"),
+                deletions=pr.get("deletions"),
+                changed_files=pr.get("changed_files"),
             )
-
-        state.pr_samples = pr_samples
-        state.analysis_steps.append("pr_history_sampled")
-        logger.info(f"Collected {len(pr_samples)} PR samples")
-        return {"pr_samples": pr_samples, "analysis_steps": state.analysis_steps}
-    except Exception as e:
-        logger.error(f"Error analyzing PR history: {e}")
-        state.errors.append(f"PR history analysis failed: {str(e)}")
-        return {"errors": state.errors}
-
-
-async def analyze_contributing_guidelines(state: RepositoryAnalysisState) -> dict[str, Any]:
-    """
-    Analyze CONTRIBUTING.md file for patterns and requirements.
-    """
-    try:
-        logger.info(f" Analyzing contributing guidelines for {state.repository_full_name}")
-
-        # Get contributing guidelines content
-        content = await github_client.get_file_content(
-            state.repository_full_name, "CONTRIBUTING.md", state.installation_id
         )
 
-        if not content:
-            logger.info("No CONTRIBUTING.md file found")
-            analysis = ContributingGuidelinesAnalysis()
-        else:
-            llm = github_client.llm if hasattr(github_client, "llm") else None
-            if llm:
-                try:
-                    prompt = CONTRIBUTING_GUIDELINES_ANALYSIS_PROMPT.format(content=content)
-                    await llm.ainvoke(prompt)
-
-                    # TODO: Parse JSON response and create ContributingGuidelinesAnalysis
-
-                    analysis = ContributingGuidelinesAnalysis(content=content)
-                except Exception as e:
-                    logger.error(f"LLM analysis failed: {e}")
-                    analysis = ContributingGuidelinesAnalysis(content=content)
-            else:
-                analysis = ContributingGuidelinesAnalysis(content=content)
-
-        state.contributing_analysis = analysis
-        state.analysis_steps.append("contributing_guidelines_analyzed")
-
-        logger.info(" Contributing guidelines analysis complete")
-
-        return {"contributing_analysis": analysis, "analysis_steps": state.analysis_steps}
-
-    except Exception as e:
-        logger.error(f"Error analyzing contributing guidelines: {e}")
-        state.errors.append(f"Contributing guidelines analysis failed: {str(e)}")
-        return {"errors": state.errors}
+    state.pr_samples = samples
+    state.repository_features.pr_count = len(samples)
 
 
-async def generate_rule_recommendations(state: RepositoryAnalysisState) -> dict[str, Any]:
-    """
-    Generate Watchflow rule recommendations based on repository analysis.
-    """
-    try:
-        logger.info(f" Generating rule recommendations for {state.repository_full_name}")
+async def analyze_contributing_guidelines(state: RepositoryAnalysisState) -> None:
+    """Fetch and parse CONTRIBUTING guidelines if present."""
+    repo = state.repository_full_name
+    installation_id = state.installation_id
 
-        recommendations = []
+    content = await github_client.get_file_content(
+        repo, "CONTRIBUTING.md", installation_id
+    ) or await github_client.get_file_content(repo, ".github/CONTRIBUTING.md", installation_id)
 
-        features = state.repository_features
-        contributing = state.contributing_analysis
+    if not content:
+        state.contributing_analysis = ContributingGuidelinesAnalysis(content=None)
+        return
 
-        # Diff-aware: enforce filter handling in core RAG/query code
+    lowered = content.lower()
+    state.contributing_analysis = ContributingGuidelinesAnalysis(
+        content=content,
+        has_pr_template="pr template" in lowered or "pull request template" in lowered,
+        has_issue_template="issue template" in lowered,
+        requires_tests="test" in lowered or "tests" in lowered,
+        requires_docs="docs" in lowered or "documentation" in lowered,
+        code_style_requirements=[
+            req for req in ["lint", "format", "pep8", "flake8", "eslint", "prettier"] if req in lowered
+        ],
+        review_requirements=[req for req in ["review", "approval"] if req in lowered],
+    )
+
+
+def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecommendation]:
+    """Return a minimal, deterministic set of diff-aware rules."""
+    recommendations: list[RuleRecommendation] = []
+
+    # Require tests when source code changes.
+    recommendations.append(
+        RuleRecommendation(
+            yaml_rule=textwrap.dedent(
+                """
+                description: "Require tests when code changes"
+                enabled: true
+                severity: medium
+                event_types:
+                  - pull_request
+                validators:
+                  - type: diff_pattern
+                    parameters:
+                      file_patterns:
+                        - "**/*.py"
+                        - "**/*.ts"
+                        - "**/*.tsx"
+                        - "**/*.js"
+                        - "**/*.go"
+                  - type: related_tests
+                    parameters:
+                      search_paths:
+                        - "**/tests/**"
+                        - "**/*_test.py"
+                        - "**/*.spec.ts"
+                        - "**/*.test.js"
+                actions:
+                  - type: warn
+                    parameters:
+                      message: "Please include or update tests for code changes."
+                """
+            ).strip(),
+            confidence=0.74,
+            reasoning="Default guardrail for code changes without tests.",
+            strategy_used="static",
+        )
+    )
+
+    # Require description and linked issue in PR body.
+    recommendations.append(
+        RuleRecommendation(
+            yaml_rule=textwrap.dedent(
+                """
+                description: "Ensure PRs include context"
+                enabled: true
+                severity: low
+                event_types:
+                  - pull_request
+                validators:
+                  - type: required_field_in_diff
+                    parameters:
+                      field: "body"
+                      pattern: "(?i)(summary|context|issue)"
+                actions:
+                  - type: warn
+                    parameters:
+                      message: "Add a short summary and linked issue in the PR body."
+                """
+            ).strip(),
+            confidence=0.68,
+            reasoning="Encourage context for reviewers; lightweight default.",
+            strategy_used="static",
+        )
+    )
+
+    # If no CODEOWNERS, suggest one for shared ownership signals.
+    if not state.repository_features.has_codeowners:
         recommendations.append(
             RuleRecommendation(
-                yaml_content="""description: "Block merges when PRs change filter validation logic without failing on invalid inputs"
-enabled: true
-severity: "high"
-event_types: ["pull_request"]
-parameters:
-  file_patterns:
-    - "packages/core/src/**/vector-query.ts"
-    - "packages/core/src/**/graph-rag.ts"
-    - "packages/core/src/**/filters/*.ts"
-  require_patterns:
-    - "throw\\\\s+new\\\\s+Error"
-    - "raise\\\\s+ValueError"
-  forbidden_patterns:
-    - "return\\\\s+.*filter\\\\s*$"
-  how_to_fix: "Ensure invalid filters raise descriptive errors instead of silently returning unfiltered results."
-""",
-                confidence=0.85,
-                reasoning="Filter handling regressions were flagged in historical fixes; enforce throws on invalid input.",
-                source_patterns=["pr_history"],
-                category="quality",
-                estimated_impact="high",
+                yaml_rule=textwrap.dedent(
+                    """
+                    description: "Flag missing CODEOWNERS entries"
+                    enabled: true
+                    severity: low
+                    event_types:
+                      - pull_request
+                    validators:
+                      - type: diff_pattern
+                        parameters:
+                          file_patterns:
+                            - "**/*"
+                    actions:
+                      - type: warn
+                        parameters:
+                          message: "Consider adding CODEOWNERS to clarify ownership."
+                    """
+                ).strip(),
+                confidence=0.6,
+                reasoning="Repository lacks CODEOWNERS; gentle nudge to add.",
+                strategy_used="static",
             )
         )
 
-        # Diff-aware: enforce test updates when core code changes
-        recommendations.append(
-            RuleRecommendation(
-                yaml_content="""description: "Require regression tests when modifying tool schema validation or client tool execution"
-enabled: true
-severity: "medium"
-event_types: ["pull_request"]
-parameters:
-  source_patterns:
-    - "packages/core/src/**/tool*.ts"
-    - "packages/core/src/agent/**"
-    - "packages/client/**"
-  test_patterns:
-    - "packages/core/tests/**"
-    - "tests/**"
-  min_test_files: 1
-  rationale: "Tool invocation changes have previously caused regressions in clientTools streaming."
-""",
-                confidence=0.8,
-                reasoning="Core tool changes often broke client tools; require at least one related test update.",
-                source_patterns=["pr_history"],
-                category="quality",
-                estimated_impact="medium",
-            )
-        )
-
-        # Diff-aware: ensure agent descriptions exist
-        recommendations.append(
-            RuleRecommendation(
-                yaml_content="""description: "Ensure every agent exposes a user-facing description for UI profiles"
-enabled: true
-severity: "low"
-event_types: ["pull_request"]
-parameters:
-  file_patterns:
-    - "packages/core/src/agent/**"
-  required_text:
-    - "description"
-  message: "Add or update the agent description so downstream UIs can render capabilities."
-""",
-                confidence=0.75,
-                reasoning="Agent profile UIs require descriptions; ensure new/updated agents include them.",
-                source_patterns=["pr_history"],
-                category="process",
-                estimated_impact="low",
-            )
-        )
-
-        # Diff-aware: preserve URL handling for supported providers
-        recommendations.append(
-            RuleRecommendation(
-                yaml_content="""description: "Block merges when URL or asset handling changes bypass provider capability checks"
-enabled: true
-severity: "high"
-event_types: ["pull_request"]
-parameters:
-  file_patterns:
-    - "packages/core/src/agent/message-list/**"
-    - "packages/core/src/llm/**"
-  require_patterns:
-    - "isUrlSupportedByModel"
-  forbidden_patterns:
-    - "downloadAssetsFromMessages\\(messages\\)"
-  how_to_fix: "Preserve remote URLs for providers that support them natively; only download assets for unsupported providers."
-""",
-                confidence=0.8,
-                reasoning="Past URL handling bugs; ensure capability checks remain intact.",
-                source_patterns=["pr_history"],
-                category="quality",
-                estimated_impact="high",
-            )
-        )
-
-        # Legacy structural signals retained for completeness
-        if features.has_workflows:
-            recommendations.append(
-                RuleRecommendation(
-                    yaml_content="""description: "Require CI checks to pass"
-enabled: true
-severity: "high"
-event_types:
-  - pull_request
-conditions:
-  - type: "ci_checks_passed"
-    parameters:
-      required_checks: []
-actions:
-  - type: "block_merge"
-    parameters:
-      message: "All CI checks must pass before merging"
-""",
-                    confidence=0.9,
-                    reasoning="Repository has CI workflows configured, so requiring checks to pass is a standard practice",
-                    source_patterns=["has_workflows"],
-                    category="quality",
-                    estimated_impact="high",
-                )
-            )
-
-        if features.has_codeowners:
-            recommendations.append(
-                RuleRecommendation(
-                    yaml_content="""description: "Require CODEOWNERS approval for changes"
-enabled: true
-severity: "medium"
-event_types:
-  - pull_request
-conditions:
-  - type: "codeowners_approved"
-    parameters: {}
-actions:
-  - type: "require_approval"
-    parameters:
-      message: "CODEOWNERS must approve changes to owned files"
-""",
-                    confidence=0.8,
-                    reasoning="CODEOWNERS file exists, indicating ownership requirements for code changes",
-                    source_patterns=["has_codeowners"],
-                    category="process",
-                    estimated_impact="medium",
-                )
-            )
-
-        if contributing.requires_tests:
-            recommendations.append(
-                RuleRecommendation(
-                    yaml_content="""description: "Require test coverage for code changes"
-enabled: true
-severity: "medium"
-event_types:
-  - pull_request
-conditions:
-  - type: "test_coverage_threshold"
-    parameters:
-      minimum_coverage: 80
-actions:
-  - type: "block_merge"
-    parameters:
-      message: "Test coverage must be at least 80%"
-""",
-                    confidence=0.7,
-                    reasoning="Contributing guidelines mention testing requirements",
-                    source_patterns=["requires_tests"],
-                    category="quality",
-                    estimated_impact="medium",
-                )
-            )
-
-        if features.contributor_count > 10:
-            recommendations.append(
-                RuleRecommendation(
-                    yaml_content="""description: "Require at least one approval for pull requests"
-enabled: true
-severity: "medium"
-event_types:
-  - pull_request
-conditions:
-  - type: "minimum_approvals"
-    parameters:
-      count: 1
-actions:
-  - type: "block_merge"
-    parameters:
-      message: "Pull requests require at least one approval"
-""",
-                    confidence=0.6,
-                    reasoning="Repository has multiple contributors, indicating collaborative development",
-                    source_patterns=["contributor_count"],
-                    category="process",
-                    estimated_impact="medium",
-                )
-            )
-
-        state.recommendations = recommendations
-        state.analysis_steps.append("recommendations_generated")
-
-        logger.info(f"Generated {len(recommendations)} rule recommendations")
-
-        return {"recommendations": recommendations, "analysis_steps": state.analysis_steps}
-
-    except Exception as e:
-        logger.error(f"Error generating recommendations: {e}")
-        state.errors.append(f"Recommendation generation failed: {str(e)}")
-        return {"errors": state.errors}
+    return recommendations
 
 
-async def validate_recommendations(state: RepositoryAnalysisState) -> dict[str, Any]:
-    """
-    Validate that generated recommendations contain valid YAML.
-    """
-    try:
-        logger.info("Validating rule recommendations")
-
-        import yaml
-
-        valid_recommendations = []
-
-        for rec in state.recommendations:
-            try:
-                # Parse YAML to validate syntax
-                parsed = yaml.safe_load(rec.yaml_content)
-                if parsed and isinstance(parsed, dict):
-                    valid_recommendations.append(rec)
-                else:
-                    logger.warning(f"Invalid rule structure: {rec.yaml_content[:100]}...")
-            except yaml.YAMLError as e:
-                logger.error(f"Invalid YAML in recommendation: {e}")
-                continue
-
-        state.recommendations = valid_recommendations
-        state.analysis_steps.append("recommendations_validated")
-
-        logger.info(f"Validated {len(valid_recommendations)} recommendations")
-
-        return {"recommendations": valid_recommendations, "analysis_steps": state.analysis_steps}
-
-    except Exception as e:
-        logger.error(f"Error validating recommendations: {e}")
-        state.errors.append(f"Recommendation validation failed: {str(e)}")
-        return {"errors": state.errors}
+def _render_rules_yaml(recommendations: list[RuleRecommendation]) -> str:
+    """Combine rule YAML snippets into a single YAML document."""
+    yaml_blocks = [rec.yaml_rule.strip() for rec in recommendations]
+    return "\n\n---\n\n".join(yaml_blocks)
 
 
-async def summarize_analysis(state: RepositoryAnalysisState) -> dict[str, Any]:
-    """
-    Create a summary of the analysis findings.
-    """
-    try:
-        logger.info("Creating analysis summary")
+def _default_pr_plan(state: RepositoryAnalysisState) -> PullRequestPlan:
+    """Create a default PR plan."""
+    return PullRequestPlan(
+        branch_name="watchflow/rules",
+        base_branch="main",
+        commit_message="chore: add Watchflow rules",
+        pr_title="Add Watchflow rules",
+        pr_body="This PR adds Watchflow rule recommendations generated by Watchflow.",
+    )
 
-        summary = {
-            "repository": state.repository_full_name,
-            "features_analyzed": {
-                "has_contributing": state.repository_features.has_contributing,
-                "has_codeowners": state.repository_features.has_codeowners,
-                "has_workflows": state.repository_features.has_workflows,
-                "contributor_count": state.repository_features.contributor_count,
-            },
-            "recommendations_count": len(state.recommendations),
-            "recommendations_by_category": {},
-            "high_confidence_count": 0,
-            "analysis_steps_completed": len(state.analysis_steps),
-            "errors_encountered": len(state.errors),
-        }
 
-        # Count recommendations by category
-        for rec in state.recommendations:
-            summary["recommendations_by_category"][rec.category] = (
-                summary["recommendations_by_category"].get(rec.category, 0) + 1
-            )
-            if rec.confidence >= 0.8:
-                summary["high_confidence_count"] += 1
+def validate_recommendations(state: RepositoryAnalysisState) -> None:
+    """Ensure generated YAML is valid."""
+    for rec in state.recommendations:
+        yaml.safe_load(rec.yaml_rule)
 
-        state.analysis_summary = summary
-        state.analysis_steps.append("analysis_summarized")
 
-        logger.info("Analysis summary created")
+def summarize_analysis(
+    state: RepositoryAnalysisState, request: RepositoryAnalysisRequest
+) -> RepositoryAnalysisResponse:
+    """Build the final response."""
+    rules_yaml = _render_rules_yaml(state.recommendations)
+    pr_plan = state.pr_plan or _default_pr_plan(state)
+    analysis_summary: dict[str, Any] = {
+        "repository_features": state.repository_features.model_dump(),
+        "contributing": state.contributing_analysis.model_dump(),
+        "pr_samples": [pr.model_dump() for pr in state.pr_samples[: request.max_prs]],
+    }
 
-        return {"analysis_summary": summary, "analysis_steps": state.analysis_steps}
-
-    except Exception as e:
-        logger.error(f"Error creating analysis summary: {e}")
-        state.errors.append(f"Analysis summary failed: {str(e)}")
-        return {"errors": state.errors}
+    return RepositoryAnalysisResponse(
+        repository_full_name=state.repository_full_name,
+        rules_yaml=rules_yaml,
+        recommendations=state.recommendations,
+        pr_plan=pr_plan,
+        analysis_summary=analysis_summary,
+    )
