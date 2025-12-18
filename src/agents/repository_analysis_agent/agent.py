@@ -4,7 +4,7 @@ RepositoryAnalysisAgent orchestrates repository signal gathering and rule genera
 
 from __future__ import annotations
 
-import time
+
 
 from src.agents.base import AgentResult, BaseAgent
 from src.agents.repository_analysis_agent.models import RepositoryAnalysisRequest, RepositoryAnalysisState
@@ -25,29 +25,16 @@ class RepositoryAnalysisAgent(BaseAgent):
         # Graph orchestration is handled procedurally in execute for clarity.
         return None
 
-    async def execute(self, **kwargs) -> AgentResult:
-        started_at = time.perf_counter()
-        request = RepositoryAnalysisRequest(**kwargs)
-        state = RepositoryAnalysisState(
-            repository_full_name=request.repository_full_name,
-            installation_id=request.installation_id,
-        )
 
         try:
             await analyze_repository_structure(state)
             await analyze_pr_history(state, request.max_prs)
             await analyze_contributing_guidelines(state)
 
-            state.recommendations = _default_recommendations(state)
-            validate_recommendations(state)
-            response = summarize_analysis(state, request)
 
             latency_ms = int((time.perf_counter() - started_at) * 1000)
             return AgentResult(
-                success=True,
-                message="Repository analysis completed",
-                data={"analysis_response": response},
-                metadata={"execution_time_ms": latency_ms},
+
             )
         except Exception as exc:  # noqa: BLE001
             latency_ms = int((time.perf_counter() - started_at) * 1000)
@@ -55,5 +42,4 @@ class RepositoryAnalysisAgent(BaseAgent):
                 success=False,
                 message=f"Repository analysis failed: {exc}",
                 data={},
-                metadata={"execution_time_ms": latency_ms},
             )
