@@ -113,26 +113,20 @@ def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecomme
                 severity: medium
                 event_types:
                   - pull_request
-                validators:
-                  - type: diff_pattern
-                    parameters:
-                      file_patterns:
-                        - "**/*.py"
-                        - "**/*.ts"
-                        - "**/*.tsx"
-                        - "**/*.js"
-                        - "**/*.go"
-                  - type: related_tests
-                    parameters:
-                      search_paths:
-                        - "**/tests/**"
-                        - "**/*_test.py"
-                        - "**/*.spec.ts"
-                        - "**/*.test.js"
-                actions:
-                  - type: warn
-                    parameters:
-                      message: "Please include or update tests for code changes."
+                parameters:
+                  source_patterns:
+                    - "**/*.py"
+                    - "**/*.ts"
+                    - "**/*.tsx"
+                    - "**/*.js"
+                    - "**/*.go"
+                  test_patterns:
+                    - "**/tests/**"
+                    - "**/*_test.py"
+                    - "**/*.spec.ts"
+                    - "**/*.test.js"
+                    - "**/*.test.ts"
+                    - "**/*.test.jsx"
                 """
             ).strip(),
             confidence=0.74,
@@ -141,7 +135,7 @@ def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecomme
         )
     )
 
-    # Require description and linked issue in PR body.
+    # Require description in PR body.
     recommendations.append(
         RuleRecommendation(
             yaml_rule=textwrap.dedent(
@@ -151,15 +145,8 @@ def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecomme
                 severity: low
                 event_types:
                   - pull_request
-                validators:
-                  - type: required_field_in_diff
-                    parameters:
-                      field: "body"
-                      pattern: "(?i)(summary|context|issue)"
-                actions:
-                  - type: warn
-                    parameters:
-                      message: "Add a short summary and linked issue in the PR body."
+                parameters:
+                  min_description_length: 50
                 """
             ).strip(),
             confidence=0.68,
@@ -169,40 +156,20 @@ def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecomme
     )
 
     # If no CODEOWNERS, suggest one for shared ownership signals.
-    if not state.repository_features.has_codeowners:
-        recommendations.append(
-            RuleRecommendation(
-                yaml_rule=textwrap.dedent(
-                    """
-                    description: "Flag missing CODEOWNERS entries"
-                    enabled: true
-                    severity: low
-                    event_types:
-                      - pull_request
-                    validators:
-                      - type: diff_pattern
-                        parameters:
-                          file_patterns:
-                            - "**/*"
-                    actions:
-                      - type: warn
-                        parameters:
-                          message: "Consider adding CODEOWNERS to clarify ownership."
-                    """
-                ).strip(),
-                confidence=0.6,
-                reasoning="Repository lacks CODEOWNERS; gentle nudge to add.",
-                strategy_used="static",
-            )
-        )
+    # Note: This is informational only - we can't enforce CODEOWNERS creation via validators
+    # but we can encourage it through the recommendation reasoning.
 
     return recommendations
 
 
 def _render_rules_yaml(recommendations: list[RuleRecommendation]) -> str:
     """Combine rule YAML snippets into a single YAML document."""
-    yaml_blocks = [rec.yaml_rule.strip() for rec in recommendations]
-    return "\n\n---\n\n".join(yaml_blocks)
+    rules_list = []
+    for rec in recommendations:
+        rule_dict = yaml.safe_load(rec.yaml_rule)
+        if rule_dict:
+            rules_list.append(rule_dict)
+    return yaml.dump({"rules": rules_list}, default_flow_style=False, sort_keys=False)
 
 
 def _default_pr_plan(state: RepositoryAnalysisState) -> PullRequestPlan:
