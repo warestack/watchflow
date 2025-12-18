@@ -789,6 +789,12 @@ class GitHubClient:
                     if existing_ref == sha:
                         logger.info(f"Branch {ref_clean} already exists with same SHA, continuing")
                         return {"ref": f"refs/heads/{ref_clean}", "object": {"sha": sha}}
+                    # Branch exists but with different SHA - log and return None
+                    logger.error(f"Failed to create branch {ref_clean}: branch exists with different SHA. {error_data}")
+                    return None
+                # 422 error but not "already exists" - log and return None
+                logger.error(f"Failed to create branch {ref_clean}: {error_data}")
+                return None
             error_text = await response.text()
             logger.error(f"Failed to create branch {ref_clean}: {response.status} - {error_text}")
             return None
