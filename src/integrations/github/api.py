@@ -768,17 +768,36 @@ class GitHubClient:
         sha: str,
         installation_id: int | None = None,
         user_token: str | None = None,
-    ) -> bool:
-        """Create a new git ref/branch."""
+    ) -> dict[str, Any] | None:
+        """Create a new git ref/branch. Returns ref data if successful, None if failed."""
         headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
         if not headers:
-            return False
+            return None
         url = f"{config.github.api_base_url}/repos/{repo_full_name}/git/refs"
         ref_clean = ref.removeprefix("refs/heads/") if ref.startswith("refs/heads/") else ref
         payload = {"ref": f"refs/heads/{ref_clean}", "sha": sha}
         session = await self._get_session()
         async with session.post(url, headers=headers, json=payload) as response:
-            return response.status in (200, 201)
+            if response.status in (200, 201):
+                return await response.json()
+            # Branch might already exist - check if it exists and points to the same SHA
+            if response.status == 422:
+                error_data = await response.json()
+                if "already exists" in error_data.get("message", "").lower():
+                    # Branch exists - verify it's the same SHA
+                    existing_ref = await self.get_git_ref_sha(repo_full_name, ref_clean, installation_id, user_token)
+                    if existing_ref == sha:
+                        logger.info(f"Branch {ref_clean} already exists with same SHA, continuing")
+                        return {"ref": f"refs/heads/{ref_clean}", "object": {"sha": sha}}
+                    # Branch exists but with different SHA - log and return None
+                    logger.error(f"Failed to create branch {ref_clean}: branch exists with different SHA. {error_data}")
+                    return None
+                # 422 error but not "already exists" - log and return None
+                logger.error(f"Failed to create branch {ref_clean}: {error_data}")
+                return None
+            error_text = await response.text()
+            logger.error(f"Failed to create branch {ref_clean}: {response.status} - {error_text}")
+            return None
 
     async def create_or_update_file(
         self,

@@ -139,17 +139,44 @@ async def proceed_with_pr(request: ProceedWithPullRequestRequest) -> ProceedWith
 
     base_sha = await github_client.get_git_ref_sha(repo, base_branch, **auth_ctx)
     if not base_sha:
-        raise HTTPException(status_code=400, detail=f"Unable to resolve base branch '{base_branch}'")
-
-    created_ref = await github_client.create_git_ref(repo, request.branch_name, base_sha, **auth_ctx)
-    if not created_ref:
         log_structured(
             logger,
-            "branch_exists_or_create_failed",
+            "base_branch_resolution_failed",
+            operation="proceed_with_pr",
+            subject_ids=[repo],
+            base_branch=base_branch,
+            error="Unable to resolve base branch SHA",
+        )
+        raise HTTPException(status_code=400, detail=f"Unable to resolve base branch '{base_branch}'")
+
+    # Check if branch already exists
+    existing_branch_sha = await github_client.get_git_ref_sha(repo, request.branch_name, **auth_ctx)
+    if existing_branch_sha:
+        # Branch exists - use it
+        log_structured(
+            logger,
+            "branch_already_exists",
             operation="proceed_with_pr",
             subject_ids=[repo],
             branch=request.branch_name,
+            existing_sha=existing_branch_sha,
         )
+    else:
+        # Create new branch
+        created_ref = await github_client.create_git_ref(repo, request.branch_name, base_sha, **auth_ctx)
+        if not created_ref:
+            log_structured(
+                logger,
+                "branch_creation_failed",
+                operation="proceed_with_pr",
+                subject_ids=[repo],
+                branch=request.branch_name,
+                base_sha=base_sha,
+                error="Failed to create branch",
+            )
+            raise HTTPException(
+                status_code=400, detail=f"Failed to create branch '{request.branch_name}'. It may already exist."
+            )
 
     file_result = await github_client.create_or_update_file(
         repo_full_name=repo,
@@ -160,6 +187,15 @@ async def proceed_with_pr(request: ProceedWithPullRequestRequest) -> ProceedWith
         **auth_ctx,
     )
     if not file_result:
+        log_structured(
+            logger,
+            "file_creation_failed",
+            operation="proceed_with_pr",
+            subject_ids=[repo],
+            branch=request.branch_name,
+            file_path=request.file_path,
+            error="Failed to create or update file",
+        )
         raise HTTPException(status_code=400, detail="Failed to create or update rules file")
 
     pr = await github_client.create_pull_request(
@@ -171,7 +207,28 @@ async def proceed_with_pr(request: ProceedWithPullRequestRequest) -> ProceedWith
         **auth_ctx,
     )
     if not pr:
+        log_structured(
+            logger,
+            "pr_creation_failed",
+            operation="proceed_with_pr",
+            subject_ids=[repo],
+            branch=request.branch_name,
+            base_branch=base_branch,
+            error="Failed to create pull request",
+        )
         raise HTTPException(status_code=400, detail="Failed to create pull request")
+
+    pr_url = pr.get("html_url", "")
+    if not pr_url:
+        log_structured(
+            logger,
+            "pr_url_missing",
+            operation="proceed_with_pr",
+            subject_ids=[repo],
+            pr_data=pr,
+            error="PR created but html_url is missing",
+        )
+        raise HTTPException(status_code=500, detail="PR was created but URL is missing")
 
     log_structured(
         logger,
