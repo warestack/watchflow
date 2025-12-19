@@ -99,15 +99,73 @@ async def analyze_contributing_guidelines(state: RepositoryAnalysisState) -> Non
     )
 
 
+def _get_language_specific_patterns(language: str | None) -> tuple[list[str], list[str]]:
+    """
+    Get source and test patterns based on repository language.
+
+    Returns:
+        Tuple of (source_patterns, test_patterns) lists
+    """
+    # Language-specific patterns
+    patterns_map: dict[str, tuple[list[str], list[str]]] = {
+        "Python": (
+            ["**/*.py"],
+            ["**/tests/**", "**/*_test.py", "**/test_*.py", "**/*.test.py"],
+        ),
+        "TypeScript": (
+            ["**/*.ts", "**/*.tsx"],
+            ["**/*.spec.ts", "**/*.test.ts", "**/tests/**"],
+        ),
+        "JavaScript": (
+            ["**/*.js", "**/*.jsx"],
+            ["**/*.test.js", "**/*.spec.js", "**/tests/**"],
+        ),
+        "Go": (
+            ["**/*.go"],
+            ["**/*_test.go", "**/*.test.go"],
+        ),
+        "Java": (
+            ["**/*.java"],
+            ["**/*Test.java", "**/*Tests.java", "**/test/**"],
+        ),
+        "Rust": (
+            ["**/*.rs"],
+            ["**/*.rs"],  # Rust tests are in same file
+        ),
+    }
+
+    if language and language in patterns_map:
+        return patterns_map[language]
+
+    # Default fallback patterns for unknown languages
+    return (
+        ["**/*.py", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.go"],
+        ["**/tests/**", "**/*_test.py", "**/*.spec.ts", "**/*.test.js", "**/*.test.ts", "**/*.test.jsx"],
+    )
+
+
 def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecommendation]:
-    """Return a minimal, deterministic set of diff-aware rules."""
+    """
+    Return a minimal, deterministic set of diff-aware rules.
+
+    Note: These recommendations use repository-specific patterns when available.
+    For more advanced use cases like restricting specific authors from specific paths
+    (e.g., preventing a member from modifying /auth), the rule engine would need:
+    1. A combined validator that checks both author AND file patterns, OR
+    2. Support for combining multiple validators with AND/OR logic in a single rule.
+
+    Currently, validators like `author_team_is` and `file_patterns` operate independently.
+    """
     recommendations: list[RuleRecommendation] = []
+
+    # Get language-specific patterns based on repository analysis
+    source_patterns, test_patterns = _get_language_specific_patterns(state.repository_features.language)
 
     # Require tests when source code changes.
     recommendations.append(
         RuleRecommendation(
             yaml_rule=textwrap.dedent(
-                """
+                f"""
                 description: "Require tests when code changes"
                 enabled: true
                 severity: medium
@@ -115,23 +173,14 @@ def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecomme
                   - pull_request
                 parameters:
                   source_patterns:
-                    - "**/*.py"
-                    - "**/*.ts"
-                    - "**/*.tsx"
-                    - "**/*.js"
-                    - "**/*.go"
+{chr(10).join(f'                    - "{pattern}"' for pattern in source_patterns)}
                   test_patterns:
-                    - "**/tests/**"
-                    - "**/*_test.py"
-                    - "**/*.spec.ts"
-                    - "**/*.test.js"
-                    - "**/*.test.ts"
-                    - "**/*.test.jsx"
+{chr(10).join(f'                    - "{pattern}"' for pattern in test_patterns)}
                 """
             ).strip(),
             confidence=0.74,
-            reasoning="Default guardrail for code changes without tests.",
-            strategy_used="static",
+            reasoning=f"Default guardrail for code changes without tests. Patterns adapted for {state.repository_features.language or 'multi-language'} repository.",
+            strategy_used="hybrid",
         )
     )
 
