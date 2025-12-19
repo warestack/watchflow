@@ -217,7 +217,7 @@ async def proceed_with_pr(request: ProceedWithPullRequestRequest) -> ProceedWith
             error="Failed to create pull request",
         )
         raise HTTPException(status_code=400, detail="Failed to create pull request")
-    
+
     pr_url = pr.get("html_url", "")
     if not pr_url:
         log_structured(
