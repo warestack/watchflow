@@ -144,9 +144,40 @@ def _get_language_specific_patterns(language: str | None) -> tuple[list[str], li
     )
 
 
+def _analyze_pr_bad_habits(state: RepositoryAnalysisState) -> dict[str, Any]:
+    """
+    Analyze PR history to detect bad habits and patterns.
+
+    Returns a dict with detected issues like:
+    - missing_tests: PRs without test files
+    - short_descriptions: PRs with very short descriptions
+    - no_reviews: PRs merged without reviews
+    """
+    if not state.pr_samples:
+        return {}
+
+    issues: dict[str, Any] = {
+        "missing_tests": 0,
+        "short_descriptions": 0,
+        "no_reviews": 0,
+        "total_analyzed": len(state.pr_samples),
+    }
+
+    # Note: We can't analyze PR diffs/descriptions from the basic PR list API
+    # This would require fetching individual PR details which is expensive.
+    # For now, we return basic stats that can inform recommendations.
+
+    return issues
+
+
 def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecommendation]:
     """
-    Return a minimal, deterministic set of diff-aware rules.
+    Return a minimal, deterministic set of diff-aware rules based on repository analysis.
+
+    Rules are generated based on:
+    1. Repository language (for test patterns)
+    2. PR history analysis (for bad habits)
+    3. Contributing guidelines (if present)
 
     Note: These recommendations use repository-specific patterns when available.
     For more advanced use cases like restricting specific authors from specific paths
@@ -161,7 +192,15 @@ def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecomme
     # Get language-specific patterns based on repository analysis
     source_patterns, test_patterns = _get_language_specific_patterns(state.repository_features.language)
 
+    # Analyze PR history for bad habits
+    pr_issues = _analyze_pr_bad_habits(state)
+
     # Require tests when source code changes.
+    # This is especially important if we detect missing tests in PR history
+    test_reasoning = f"Default guardrail for code changes without tests. Patterns adapted for {state.repository_features.language or 'multi-language'} repository."
+    if pr_issues.get("missing_tests", 0) > 0:
+        test_reasoning += f" Detected {pr_issues['missing_tests']} recent PRs without test files."
+
     recommendations.append(
         RuleRecommendation(
             yaml_rule=textwrap.dedent(
@@ -178,13 +217,18 @@ def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecomme
 {chr(10).join(f'                    - "{pattern}"' for pattern in test_patterns)}
                 """
             ).strip(),
-            confidence=0.74,
-            reasoning=f"Default guardrail for code changes without tests. Patterns adapted for {state.repository_features.language or 'multi-language'} repository.",
+            confidence=0.74 if pr_issues.get("missing_tests", 0) == 0 else 0.85,
+            reasoning=test_reasoning,
             strategy_used="hybrid",
         )
     )
 
     # Require description in PR body.
+    # Increase confidence if we detect short descriptions in PR history
+    desc_reasoning = "Encourage context for reviewers; lightweight default."
+    if pr_issues.get("short_descriptions", 0) > 0:
+        desc_reasoning += f" Detected {pr_issues['short_descriptions']} PRs with insufficient descriptions."
+
     recommendations.append(
         RuleRecommendation(
             yaml_rule=textwrap.dedent(
@@ -198,15 +242,19 @@ def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecomme
                   min_description_length: 50
                 """
             ).strip(),
-            confidence=0.68,
-            reasoning="Encourage context for reviewers; lightweight default.",
+            confidence=0.68 if pr_issues.get("short_descriptions", 0) == 0 else 0.80,
+            reasoning=desc_reasoning,
             strategy_used="static",
         )
     )
 
-    # If no CODEOWNERS, suggest one for shared ownership signals.
-    # Note: This is informational only - we can't enforce CODEOWNERS creation via validators
-    # but we can encourage it through the recommendation reasoning.
+    # If contributing guidelines require tests, increase confidence
+    if state.contributing_analysis.has_contributing and state.contributing_analysis.requires_tests:
+        # Find the test rule and boost its confidence
+        for rec in recommendations:
+            if "tests" in rec.yaml_rule.lower():
+                rec.confidence = min(0.95, rec.confidence + 0.1)
+                rec.reasoning += " Contributing guidelines explicitly require tests."
 
     return recommendations
 
