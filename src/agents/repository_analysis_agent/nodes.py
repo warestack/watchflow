@@ -34,7 +34,7 @@ async def analyze_repository_structure(state: RepositoryAnalysisState) -> None:
     repo_data = await github_client.get_repository(repo, installation_id=installation_id)
     workflows = await github_client.list_directory_any_auth(
         repo_full_name=repo, path=".github/workflows", installation_id=installation_id
-        )
+    )
     contributors = await github_client.get_repository_contributors(repo, installation_id) if installation_id else []
 
     state.repository_features = RepositoryFeatures(
@@ -77,7 +77,7 @@ async def analyze_contributing_guidelines(state: RepositoryAnalysisState) -> Non
     repo = state.repository_full_name
     installation_id = state.installation_id
 
-        content = await github_client.get_file_content(
+    content = await github_client.get_file_content(
         repo, "CONTRIBUTING.md", installation_id
     ) or await github_client.get_file_content(repo, ".github/CONTRIBUTING.md", installation_id)
 
@@ -206,11 +206,11 @@ def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecomme
             yaml_rule=textwrap.dedent(
                 f"""
                 description: "Require tests when code changes"
-enabled: true
+                enabled: true
                 severity: medium
-event_types:
-  - pull_request
-    parameters:
+                event_types:
+                  - pull_request
+                parameters:
                   source_patterns:
 {chr(10).join(f'                    - "{pattern}"' for pattern in source_patterns)}
                   test_patterns:
@@ -234,11 +234,11 @@ event_types:
             yaml_rule=textwrap.dedent(
                 """
                 description: "Ensure PRs include context"
-enabled: true
+                enabled: true
                 severity: low
-event_types:
-  - pull_request
-    parameters:
+                event_types:
+                  - pull_request
+                parameters:
                   min_description_length: 50
                 """
             ).strip(),
@@ -282,7 +282,7 @@ def _default_pr_plan(state: RepositoryAnalysisState) -> PullRequestPlan:
 
 def validate_recommendations(state: RepositoryAnalysisState) -> None:
     """Ensure generated YAML is valid."""
-        for rec in state.recommendations:
+    for rec in state.recommendations:
         yaml.safe_load(rec.yaml_rule)
 
 

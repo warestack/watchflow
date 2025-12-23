@@ -13,7 +13,7 @@ def test_proceed_with_pr_happy_path(monkeypatch):
         return "base-sha"
 
     async def _fake_create_ref(repo_full_name, ref, sha, installation_id=None, user_token=None):
-        return True
+        return {"ref": f"refs/heads/{ref}", "object": {"sha": sha}}
 
     async def _fake_create_or_update_file(
         repo_full_name, path, content, message, branch, installation_id=None, user_token=None, sha=None
