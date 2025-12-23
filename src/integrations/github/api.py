@@ -860,8 +860,7 @@ class GitHubClient:
                 pr_number = result.get("number")
                 pr_url = result.get("html_url", "")
                 logger.info(
-                    f"Successfully created PR #{pr_number} in {repo_full_name}: {pr_url} "
-                    f"(head: {head}, base: {base})"
+                    f"Successfully created PR #{pr_number} in {repo_full_name}: {pr_url} (head: {head}, base: {base})"
                 )
                 return result
             error_text = await response.text()
