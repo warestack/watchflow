@@ -31,15 +31,25 @@ async def analyze_repository_structure(state: RepositoryAnalysisState) -> None:
     repo = state.repository_full_name
     installation_id = state.installation_id
 
-    repo_data = await github_client.get_repository(repo, installation_id=installation_id)
+    repo_data = await github_client.get_repository(
+        repo, installation_id=installation_id
+    )
     workflows = await github_client.list_directory_any_auth(
         repo_full_name=repo, path=".github/workflows", installation_id=installation_id
     )
-    contributors = await github_client.get_repository_contributors(repo, installation_id) if installation_id else []
+    contributors = (
+        await github_client.get_repository_contributors(repo, installation_id)
+        if installation_id
+        else []
+    )
 
     state.repository_features = RepositoryFeatures(
         has_contributing=False,
-        has_codeowners=bool(await github_client.get_file_content(repo, ".github/CODEOWNERS", installation_id)),
+        has_codeowners=bool(
+            await github_client.get_file_content(
+                repo, ".github/CODEOWNERS", installation_id
+            )
+        ),
         has_workflows=bool(workflows),
         workflow_count=len(workflows or []),
         language=(repo_data or {}).get("language"),
@@ -52,7 +62,9 @@ async def analyze_pr_history(state: RepositoryAnalysisState, max_prs: int) -> No
     """Fetch a small sample of recent pull requests for context."""
     repo = state.repository_full_name
     installation_id = state.installation_id
-    prs = await github_client.list_pull_requests(repo, installation_id=installation_id, state="all", per_page=max_prs)
+    prs = await github_client.list_pull_requests(
+        repo, installation_id=installation_id, state="all", per_page=max_prs
+    )
 
     samples: list[PullRequestSample] = []
     for pr in prs or []:
@@ -79,7 +91,9 @@ async def analyze_contributing_guidelines(state: RepositoryAnalysisState) -> Non
 
     content = await github_client.get_file_content(
         repo, "CONTRIBUTING.md", installation_id
-    ) or await github_client.get_file_content(repo, ".github/CONTRIBUTING.md", installation_id)
+    ) or await github_client.get_file_content(
+        repo, ".github/CONTRIBUTING.md", installation_id
+    )
 
     if not content:
         state.contributing_analysis = ContributingGuidelinesAnalysis(content=None)
@@ -93,13 +107,17 @@ async def analyze_contributing_guidelines(state: RepositoryAnalysisState) -> Non
         requires_tests="test" in lowered or "tests" in lowered,
         requires_docs="docs" in lowered or "documentation" in lowered,
         code_style_requirements=[
-            req for req in ["lint", "format", "pep8", "flake8", "eslint", "prettier"] if req in lowered
+            req
+            for req in ["lint", "format", "pep8", "flake8", "eslint", "prettier"]
+            if req in lowered
         ],
         review_requirements=[req for req in ["review", "approval"] if req in lowered],
     )
 
 
-def _get_language_specific_patterns(language: str | None) -> tuple[list[str], list[str]]:
+def _get_language_specific_patterns(
+    language: str | None,
+) -> tuple[list[str], list[str]]:
     """
     Get source and test patterns based on repository language.
 
@@ -140,7 +158,14 @@ def _get_language_specific_patterns(language: str | None) -> tuple[list[str], li
     # Default fallback patterns for unknown languages
     return (
         ["**/*.py", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.go"],
-        ["**/tests/**", "**/*_test.py", "**/*.spec.ts", "**/*.test.js", "**/*.test.ts", "**/*.test.jsx"],
+        [
+            "**/tests/**",
+            "**/*_test.py",
+            "**/*.spec.ts",
+            "**/*.test.js",
+            "**/*.test.ts",
+            "**/*.test.jsx",
+        ],
     )
 
 
@@ -170,7 +195,9 @@ def _analyze_pr_bad_habits(state: RepositoryAnalysisState) -> dict[str, Any]:
     return issues
 
 
-def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecommendation]:
+def _default_recommendations(
+    state: RepositoryAnalysisState,
+) -> list[RuleRecommendation]:
     """
     Return a minimal, deterministic set of diff-aware rules based on repository analysis.
 
@@ -190,7 +217,9 @@ def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecomme
     recommendations: list[RuleRecommendation] = []
 
     # Get language-specific patterns based on repository analysis
-    source_patterns, test_patterns = _get_language_specific_patterns(state.repository_features.language)
+    source_patterns, test_patterns = _get_language_specific_patterns(
+        state.repository_features.language
+    )
 
     # Analyze PR history for bad habits
     pr_issues = _analyze_pr_bad_habits(state)
@@ -199,7 +228,9 @@ def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecomme
     # This is especially important if we detect missing tests in PR history
     test_reasoning = f"Default guardrail for code changes without tests. Patterns adapted for {state.repository_features.language or 'multi-language'} repository."
     if pr_issues.get("missing_tests", 0) > 0:
-        test_reasoning += f" Detected {pr_issues['missing_tests']} recent PRs without test files."
+        test_reasoning += (
+            f" Detected {pr_issues['missing_tests']} recent PRs without test files."
+        )
 
     recommendations.append(
         RuleRecommendation(
@@ -249,7 +280,10 @@ def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecomme
     )
 
     # If contributing guidelines require tests, increase confidence
-    if state.contributing_analysis.has_contributing and state.contributing_analysis.requires_tests:
+    if (
+        state.contributing_analysis.has_contributing
+        and state.contributing_analysis.requires_tests
+    ):
         # Find the test rule and boost its confidence
         for rec in recommendations:
             if "tests" in rec.yaml_rule.lower():
