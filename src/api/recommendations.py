@@ -171,11 +171,16 @@ async def proceed_with_pr(request: ProceedWithPullRequestRequest) -> ProceedWith
                 operation="proceed_with_pr",
                 subject_ids=[repo],
                 branch=request.branch_name,
+                base_branch=base_branch,
                 base_sha=base_sha,
-                error="Failed to create branch",
+                error="Failed to create branch - check logs for GitHub API error details",
             )
             raise HTTPException(
-                status_code=400, detail=f"Failed to create branch '{request.branch_name}'. It may already exist."
+                status_code=400,
+                detail=(
+                    f"Failed to create branch '{request.branch_name}' from '{base_branch}'. "
+                    "The branch may already exist or you may not have permission to create branches."
+                ),
             )
 
     file_result = await github_client.create_or_update_file(
@@ -194,9 +199,15 @@ async def proceed_with_pr(request: ProceedWithPullRequestRequest) -> ProceedWith
             subject_ids=[repo],
             branch=request.branch_name,
             file_path=request.file_path,
-            error="Failed to create or update file",
+            error="Failed to create or update file - check logs for GitHub API error details",
         )
-        raise HTTPException(status_code=400, detail="Failed to create or update rules file")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Failed to create or update file '{request.file_path}' on branch '{request.branch_name}'. "
+                "Check server logs for detailed error information."
+            ),
+        )
 
     pr = await github_client.create_pull_request(
         repo_full_name=repo,
@@ -214,9 +225,16 @@ async def proceed_with_pr(request: ProceedWithPullRequestRequest) -> ProceedWith
             subject_ids=[repo],
             branch=request.branch_name,
             base_branch=base_branch,
-            error="Failed to create pull request",
+            pr_title=request.pr_title,
+            error="Failed to create pull request - check logs for GitHub API error details",
         )
-        raise HTTPException(status_code=400, detail="Failed to create pull request")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Failed to create pull request from '{request.branch_name}' to '{base_branch}'. "
+                "The PR may already exist, or you may not have permission to create PRs. Check server logs for details."
+            ),
+        )
 
     pr_url = pr.get("html_url", "")
     if not pr_url:

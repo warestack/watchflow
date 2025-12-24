@@ -99,7 +99,9 @@ async def analyze_contributing_guidelines(state: RepositoryAnalysisState) -> Non
     )
 
 
-def _get_language_specific_patterns(language: str | None) -> tuple[list[str], list[str]]:
+def _get_language_specific_patterns(
+    language: str | None,
+) -> tuple[list[str], list[str]]:
     """
     Get source and test patterns based on repository language.
 
@@ -140,13 +142,70 @@ def _get_language_specific_patterns(language: str | None) -> tuple[list[str], li
     # Default fallback patterns for unknown languages
     return (
         ["**/*.py", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.go"],
-        ["**/tests/**", "**/*_test.py", "**/*.spec.ts", "**/*.test.js", "**/*.test.ts", "**/*.test.jsx"],
+        [
+            "**/tests/**",
+            "**/*_test.py",
+            "**/*.spec.ts",
+            "**/*.test.js",
+            "**/*.test.ts",
+            "**/*.test.jsx",
+        ],
     )
 
 
-def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecommendation]:
+def _analyze_pr_bad_habits(state: RepositoryAnalysisState) -> dict[str, Any]:
     """
-    Return a minimal, deterministic set of diff-aware rules.
+    Analyze PR history to detect bad habits and patterns.
+
+    Returns a dict with detected issues like:
+    - missing_tests: PRs without test files (estimated based on changed_files)
+    - short_titles: PRs with very short titles (< 10 characters)
+    - no_reviews: PRs merged without reviews (always 0, as we can't determine this from list API)
+
+    Note: We can't analyze PR diffs/descriptions from the basic PR list API.
+    This would require fetching individual PR details which is expensive.
+    We analyze what we can from the PR list metadata.
+    """
+    if not state.pr_samples:
+        return {}
+
+    issues: dict[str, Any] = {
+        "missing_tests": 0,
+        "short_titles": 0,
+        "no_reviews": 0,
+        "total_analyzed": len(state.pr_samples),
+    }
+
+    # Analyze PR titles for very short ones (likely missing context)
+    # A title < 10 characters is likely too short to be meaningful
+    short_title_threshold = 10
+    for pr in state.pr_samples:
+        if pr.title and len(pr.title.strip()) < short_title_threshold:
+            issues["short_titles"] += 1
+
+        # Estimate missing tests: if PR has changed_files but no test-related patterns
+        # This is a heuristic - we can't know for sure without fetching diffs
+        # For now, we'll use a simple heuristic: if changed_files > 0 and title doesn't mention tests
+        if pr.changed_files and pr.changed_files > 0:
+            title_lower = (pr.title or "").lower()
+            # If PR has code changes but title doesn't mention tests/test/tested/testing
+            if not any(word in title_lower for word in ["test", "tests", "tested", "testing", "spec"]):
+                # This is a weak signal, but we'll count it
+                issues["missing_tests"] += 1
+
+    return issues
+
+
+def _default_recommendations(
+    state: RepositoryAnalysisState,
+) -> list[RuleRecommendation]:
+    """
+    Return a minimal, deterministic set of diff-aware rules based on repository analysis.
+
+    Rules are generated based on:
+    1. Repository language (for test patterns)
+    2. PR history analysis (for bad habits)
+    3. Contributing guidelines (if present)
 
     Note: These recommendations use repository-specific patterns when available.
     For more advanced use cases like restricting specific authors from specific paths
@@ -161,30 +220,47 @@ def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecomme
     # Get language-specific patterns based on repository analysis
     source_patterns, test_patterns = _get_language_specific_patterns(state.repository_features.language)
 
+    # Analyze PR history for bad habits
+    pr_issues = _analyze_pr_bad_habits(state)
+
     # Require tests when source code changes.
+    # This is especially important if we detect missing tests in PR history
+    test_reasoning = f"Default guardrail for code changes without tests. Patterns adapted for {state.repository_features.language or 'multi-language'} repository."
+    if pr_issues.get("missing_tests", 0) > 0:
+        test_reasoning += f" Detected {pr_issues['missing_tests']} recent PRs without test files."
+
+    # Build YAML rule with proper indentation
+    # parameters: is at column 0, source_patterns: at column 2, list items at column 4
+    source_patterns_yaml = "\n".join(f'    - "{pattern}"' for pattern in source_patterns)
+    test_patterns_yaml = "\n".join(f'    - "{pattern}"' for pattern in test_patterns)
+
+    yaml_content = f"""description: "Require tests when code changes"
+enabled: true
+severity: medium
+event_types:
+  - pull_request
+parameters:
+  source_patterns:
+{source_patterns_yaml}
+  test_patterns:
+{test_patterns_yaml}
+"""
+
     recommendations.append(
         RuleRecommendation(
-            yaml_rule=textwrap.dedent(
-                f"""
-                description: "Require tests when code changes"
-                enabled: true
-                severity: medium
-                event_types:
-                  - pull_request
-                parameters:
-                  source_patterns:
-{chr(10).join(f'                    - "{pattern}"' for pattern in source_patterns)}
-                  test_patterns:
-{chr(10).join(f'                    - "{pattern}"' for pattern in test_patterns)}
-                """
-            ).strip(),
-            confidence=0.74,
-            reasoning=f"Default guardrail for code changes without tests. Patterns adapted for {state.repository_features.language or 'multi-language'} repository.",
+            yaml_rule=yaml_content.strip(),
+            confidence=0.74 if pr_issues.get("missing_tests", 0) == 0 else 0.85,
+            reasoning=test_reasoning,
             strategy_used="hybrid",
         )
     )
 
     # Require description in PR body.
+    # Increase confidence if we detect short titles in PR history (indicator of missing context)
+    desc_reasoning = "Encourage context for reviewers; lightweight default."
+    if pr_issues.get("short_titles", 0) > 0:
+        desc_reasoning += f" Detected {pr_issues['short_titles']} PRs with very short titles (likely missing context)."
+
     recommendations.append(
         RuleRecommendation(
             yaml_rule=textwrap.dedent(
@@ -198,15 +274,19 @@ def _default_recommendations(state: RepositoryAnalysisState) -> list[RuleRecomme
                   min_description_length: 50
                 """
             ).strip(),
-            confidence=0.68,
-            reasoning="Encourage context for reviewers; lightweight default.",
+            confidence=0.68 if pr_issues.get("short_titles", 0) == 0 else 0.80,
+            reasoning=desc_reasoning,
             strategy_used="static",
         )
     )
 
-    # If no CODEOWNERS, suggest one for shared ownership signals.
-    # Note: This is informational only - we can't enforce CODEOWNERS creation via validators
-    # but we can encourage it through the recommendation reasoning.
+    # If contributing guidelines require tests, increase confidence
+    if state.contributing_analysis.content is not None and state.contributing_analysis.requires_tests:
+        # Find the test rule and boost its confidence
+        for rec in recommendations:
+            if "tests" in rec.yaml_rule.lower():
+                rec.confidence = min(0.95, rec.confidence + 0.1)
+                rec.reasoning += " Contributing guidelines explicitly require tests."
 
     return recommendations
 

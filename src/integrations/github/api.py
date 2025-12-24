@@ -813,6 +813,7 @@ class GitHubClient:
         """Create or update a file via the Contents API."""
         headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
         if not headers:
+            logger.error(f"Failed to get auth headers for create_or_update_file in {repo_full_name}")
             return None
         url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{path.lstrip('/')}"
         payload: dict[str, Any] = {
@@ -825,7 +826,14 @@ class GitHubClient:
         session = await self._get_session()
         async with session.put(url, headers=headers, json=payload) as response:
             if response.status in (200, 201):
-                return await response.json()
+                result = await response.json()
+                logger.info(f"Successfully created/updated file {path} in {repo_full_name} on branch {branch}")
+                return result
+            error_text = await response.text()
+            logger.error(
+                f"Failed to create/update file {path} in {repo_full_name} on branch {branch}. "
+                f"Status: {response.status}, Response: {error_text}"
+            )
             return None
 
     async def create_pull_request(
@@ -841,13 +849,25 @@ class GitHubClient:
         """Open a pull request."""
         headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
         if not headers:
+            logger.error(f"Failed to get auth headers for create_pull_request in {repo_full_name}")
             return None
         url = f"{config.github.api_base_url}/repos/{repo_full_name}/pulls"
         payload = {"title": title, "head": head, "base": base, "body": body}
         session = await self._get_session()
         async with session.post(url, headers=headers, json=payload) as response:
             if response.status in (200, 201):
-                return await response.json()
+                result = await response.json()
+                pr_number = result.get("number")
+                pr_url = result.get("html_url", "")
+                logger.info(
+                    f"Successfully created PR #{pr_number} in {repo_full_name}: {pr_url} (head: {head}, base: {base})"
+                )
+                return result
+            error_text = await response.text()
+            logger.error(
+                f"Failed to create PR in {repo_full_name} (head: {head}, base: {base}). "
+                f"Status: {response.status}, Response: {error_text}"
+            )
             return None
 
     async def _get_session(self) -> aiohttp.ClientSession:
