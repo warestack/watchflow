@@ -281,7 +281,7 @@ parameters:
     )
 
     # If contributing guidelines require tests, increase confidence
-    if state.contributing_analysis.has_contributing and state.contributing_analysis.requires_tests:
+    if state.contributing_analysis.content is not None and state.contributing_analysis.requires_tests:
         # Find the test rule and boost its confidence
         for rec in recommendations:
             if "tests" in rec.yaml_rule.lower():
