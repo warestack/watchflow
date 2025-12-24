@@ -32,6 +32,9 @@ async def analyze_repository_structure(state: RepositoryAnalysisState) -> None:
     installation_id = state.installation_id
 
     repo_data = await github_client.get_repository(repo, installation_id=installation_id)
+    if not repo_data:
+        raise ValueError(f"Could not fetch repository data for {repo}")
+
     workflows = await github_client.list_directory_any_auth(
         repo_full_name=repo, path=".github/workflows", installation_id=installation_id
     )
@@ -42,7 +45,7 @@ async def analyze_repository_structure(state: RepositoryAnalysisState) -> None:
         has_codeowners=bool(await github_client.get_file_content(repo, ".github/CODEOWNERS", installation_id)),
         has_workflows=bool(workflows),
         workflow_count=len(workflows or []),
-        language=(repo_data or {}).get("language"),
+        language=repo_data.get("language"),
         contributor_count=len(contributors),
         pr_count=0,
     )
@@ -54,8 +57,14 @@ async def analyze_pr_history(state: RepositoryAnalysisState, max_prs: int) -> No
     installation_id = state.installation_id
     prs = await github_client.list_pull_requests(repo, installation_id=installation_id, state="all", per_page=max_prs)
 
+    if prs is None:
+        # If PR listing fails, continue with empty samples rather than failing
+        state.pr_samples = []
+        state.repository_features.pr_count = 0
+        return
+
     samples: list[PullRequestSample] = []
-    for pr in prs or []:
+    for pr in prs:
         samples.append(
             PullRequestSample(
                 number=pr.get("number", 0),
@@ -215,19 +224,27 @@ def _default_recommendations(
 
     Currently, validators like `author_team_is` and `file_patterns` operate independently.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     recommendations: list[RuleRecommendation] = []
 
     # Get language-specific patterns based on repository analysis
-    source_patterns, test_patterns = _get_language_specific_patterns(state.repository_features.language)
+    language = state.repository_features.language
+    source_patterns, test_patterns = _get_language_specific_patterns(language)
+
+    logger.info(f"Generating recommendations for {state.repository_full_name}: language={language}, pr_count={state.repository_features.pr_count}")
 
     # Analyze PR history for bad habits
     pr_issues = _analyze_pr_bad_habits(state)
 
     # Require tests when source code changes.
     # This is especially important if we detect missing tests in PR history
-    test_reasoning = f"Default guardrail for code changes without tests. Patterns adapted for {state.repository_features.language or 'multi-language'} repository."
+    test_reasoning = f"Repository analysis for {state.repository_full_name}. Language: {language or 'unknown'}. Patterns adapted for {language or 'multi-language'} repository."
     if pr_issues.get("missing_tests", 0) > 0:
         test_reasoning += f" Detected {pr_issues['missing_tests']} recent PRs without test files."
+    if state.contributing_analysis.content and state.contributing_analysis.requires_tests:
+        test_reasoning += " Contributing guidelines explicitly require tests."
 
     # Build YAML rule with proper indentation
     # parameters: is at column 0, source_patterns: at column 2, list items at column 4
@@ -246,10 +263,16 @@ parameters:
 {test_patterns_yaml}
 """
 
+    confidence = 0.74
+    if pr_issues.get("missing_tests", 0) > 0:
+        confidence = 0.85
+    if state.contributing_analysis.content and state.contributing_analysis.requires_tests:
+        confidence = min(0.95, confidence + 0.1)
+
     recommendations.append(
         RuleRecommendation(
             yaml_rule=yaml_content.strip(),
-            confidence=0.74 if pr_issues.get("missing_tests", 0) == 0 else 0.85,
+            confidence=confidence,
             reasoning=test_reasoning,
             strategy_used="hybrid",
         )
@@ -257,9 +280,15 @@ parameters:
 
     # Require description in PR body.
     # Increase confidence if we detect short titles in PR history (indicator of missing context)
-    desc_reasoning = "Encourage context for reviewers; lightweight default."
+    desc_reasoning = f"Repository analysis for {state.repository_full_name}."
     if pr_issues.get("short_titles", 0) > 0:
         desc_reasoning += f" Detected {pr_issues['short_titles']} PRs with very short titles (likely missing context)."
+    else:
+        desc_reasoning += " Encourages context for reviewers; lightweight default."
+
+    desc_confidence = 0.68
+    if pr_issues.get("short_titles", 0) > 0:
+        desc_confidence = 0.80
 
     recommendations.append(
         RuleRecommendation(
@@ -274,20 +303,37 @@ parameters:
                   min_description_length: 50
                 """
             ).strip(),
-            confidence=0.68 if pr_issues.get("short_titles", 0) == 0 else 0.80,
+            confidence=desc_confidence,
             reasoning=desc_reasoning,
             strategy_used="static",
         )
     )
 
-    # If contributing guidelines require tests, increase confidence
-    if state.contributing_analysis.content is not None and state.contributing_analysis.requires_tests:
-        # Find the test rule and boost its confidence
-        for rec in recommendations:
-            if "tests" in rec.yaml_rule.lower():
-                rec.confidence = min(0.95, rec.confidence + 0.1)
-                rec.reasoning += " Contributing guidelines explicitly require tests."
+    # Add a repository-specific rule if we detect specific patterns
+    if state.repository_features.has_workflows:
+        workflow_rule = textwrap.dedent(
+            f"""
+            description: "Protect CI/CD workflows"
+            enabled: true
+            severity: high
+            event_types:
+              - pull_request
+            parameters:
+              file_patterns:
+                - ".github/workflows/**"
+            """
+        ).strip()
 
+        recommendations.append(
+            RuleRecommendation(
+                yaml_rule=workflow_rule,
+                confidence=0.90,
+                reasoning=f"Repository {state.repository_full_name} has {state.repository_features.workflow_count} workflows that should be protected.",
+                strategy_used="static",
+            )
+        )
+
+    logger.info(f"Generated {len(recommendations)} recommendations for {state.repository_full_name}")
     return recommendations
 
 
