@@ -89,7 +89,7 @@ async def recommend_rules(
                 error=result.message,
             )
             # Clear any cached results for this repository to ensure fresh analysis on retry
-            await set_cache(cache_key, None, ttl=0)
+            await set_cache(cache_key, None, ttl=1)  # Use 1 second TTL to effectively clear cache
             raise HTTPException(status_code=500, detail=result.message)
 
         analysis_response = result.data.get("analysis_response")
@@ -314,21 +314,17 @@ async def proceed_with_pr(request: ProceedWithPullRequestRequest) -> ProceedWith
         )
         raise HTTPException(status_code=500, detail="PR was created but returned invalid PR number")
 
-    # Final validation before returning success
-    final_pr_url = pr.get("html_url", "")
-    final_pr_number = pr.get("number")
-
     # Double-check URL format one more time
-    expected_url_pattern = f"https://github.com/{repo}/pull/{final_pr_number}"
-    if final_pr_url != expected_url_pattern:
+    expected_url_pattern = f"https://github.com/{repo}/pull/{pr_number}"
+    if pr_url != expected_url_pattern:
         log_structured(
             logger,
             "pr_url_mismatch",
             operation="proceed_with_pr",
             subject_ids=[repo],
             expected_url=expected_url_pattern,
-            actual_url=final_pr_url,
-            pr_number=final_pr_number,
+            actual_url=pr_url,
+            pr_number=pr_number,
             warning="PR URL doesn't match expected pattern",
         )
 
@@ -339,12 +335,12 @@ async def proceed_with_pr(request: ProceedWithPullRequestRequest) -> ProceedWith
         subject_ids=[repo],
         decision="success",
         branch=request.branch_name,
-        pr_number=final_pr_number,
-        pr_url=final_pr_url,
+        pr_number=pr_number,
+        pr_url=pr_url,
     )
 
     return ProceedWithPullRequestResponse(
-        pull_request_url=final_pr_url,
+        pull_request_url=pr_url,
         branch_name=request.branch_name,
         base_branch=base_branch,
         file_path=request.file_path,

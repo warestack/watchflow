@@ -8,6 +8,7 @@ strictly necessary.
 
 from __future__ import annotations
 
+import logging
 import textwrap
 from typing import Any
 
@@ -224,8 +225,6 @@ def _default_recommendations(
 
     Currently, validators like `author_team_is` and `file_patterns` operate independently.
     """
-    import logging
-
     logger = logging.getLogger(__name__)
 
     recommendations: list[RuleRecommendation] = []
