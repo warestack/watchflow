@@ -38,6 +38,10 @@ class RepositoryAnalysisAgent(BaseAgent):
             await analyze_pr_history(state, request.max_prs)
             await analyze_contributing_guidelines(state)
 
+            # Only generate recommendations if we have basic repository data
+            if not state.repository_features.language:
+                raise ValueError("Unable to determine repository language - cannot generate appropriate rules")
+
             state.recommendations = _default_recommendations(state)
             validate_recommendations(state)
             response = summarize_analysis(state, request)

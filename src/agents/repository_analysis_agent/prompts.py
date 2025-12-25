@@ -83,14 +83,8 @@ enabled: true
 severity: "medium"
 event_types:
   - pull_request
-conditions:
-  - type: "condition_type"
-    parameters:
-      key: "value"
-actions:
-  - type: "action_type"
-    parameters:
-      key: "value"
+parameters:
+  key: "value"
 ```
 
 Make sure the rule is functional and follows best practices.
