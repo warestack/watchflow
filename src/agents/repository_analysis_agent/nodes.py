@@ -38,7 +38,7 @@ async def analyze_repository_structure(state: RepositoryAnalysisState) -> None:
 
     workflows = await github_client.list_directory_any_auth(
         repo_full_name=repo, path=".github/workflows", installation_id=installation_id
-        )
+    )
     contributors = await github_client.get_repository_contributors(repo, installation_id) if installation_id else []
 
     state.repository_features = RepositoryFeatures(
