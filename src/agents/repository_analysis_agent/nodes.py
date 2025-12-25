@@ -225,6 +225,7 @@ def _default_recommendations(
     Currently, validators like `author_team_is` and `file_patterns` operate independently.
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     recommendations: list[RuleRecommendation] = []
@@ -233,7 +234,9 @@ def _default_recommendations(
     language = state.repository_features.language
     source_patterns, test_patterns = _get_language_specific_patterns(language)
 
-    logger.info(f"Generating recommendations for {state.repository_full_name}: language={language}, pr_count={state.repository_features.pr_count}")
+    logger.info(
+        f"Generating recommendations for {state.repository_full_name}: language={language}, pr_count={state.repository_features.pr_count}"
+    )
 
     # Analyze PR history for bad habits
     pr_issues = _analyze_pr_bad_habits(state)
@@ -312,7 +315,7 @@ parameters:
     # Add a repository-specific rule if we detect specific patterns
     if state.repository_features.has_workflows:
         workflow_rule = textwrap.dedent(
-            f"""
+            """
             description: "Protect CI/CD workflows"
             enabled: true
             severity: high
