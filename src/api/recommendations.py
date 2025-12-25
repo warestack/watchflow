@@ -325,7 +325,10 @@ async def proceed_with_pr(request: ProceedWithPullRequestRequest) -> ProceedWith
             expected_url=expected_url_pattern,
             actual_url=pr_url,
             pr_number=pr_number,
-            warning="PR URL doesn't match expected pattern",
+            error="PR URL doesn't match expected pattern",
+        )
+        raise HTTPException(
+            status_code=500, detail=f"PR URL mismatch: expected {expected_url_pattern} but got {pr_url}"
         )
 
     log_structured(

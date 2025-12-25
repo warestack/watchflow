@@ -38,7 +38,7 @@ async def analyze_repository_structure(state: RepositoryAnalysisState) -> None:
 
     workflows = await github_client.list_directory_any_auth(
         repo_full_name=repo, path=".github/workflows", installation_id=installation_id
-    )
+        )
     contributors = await github_client.get_repository_contributors(repo, installation_id) if installation_id else []
 
     state.repository_features = RepositoryFeatures(
@@ -258,7 +258,7 @@ enabled: true
 severity: medium
 event_types:
   - pull_request
-parameters:
+    parameters:
   source_patterns:
 {source_patterns_yaml}
   test_patterns:
@@ -297,11 +297,11 @@ parameters:
             yaml_rule=textwrap.dedent(
                 """
                 description: "Ensure PRs include context"
-                enabled: true
+enabled: true
                 severity: low
-                event_types:
-                  - pull_request
-                parameters:
+event_types:
+  - pull_request
+    parameters:
                   min_description_length: 50
                 """
             ).strip(),
@@ -316,11 +316,11 @@ parameters:
         workflow_rule = textwrap.dedent(
             """
             description: "Protect CI/CD workflows"
-            enabled: true
+enabled: true
             severity: high
-            event_types:
-              - pull_request
-            parameters:
+event_types:
+  - pull_request
+    parameters:
               file_patterns:
                 - ".github/workflows/**"
             """
