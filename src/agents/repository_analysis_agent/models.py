@@ -95,6 +95,7 @@ class RepositoryAnalysisRequest(BaseModel):
     repository_url: str | None = Field(default=None, description="GitHub repository URL")
     repository_full_name: str | None = Field(default=None, description="Full repository name (owner/repo)")
     installation_id: int | None = Field(default=None, description="GitHub App installation ID")
+    user_token: str | None = Field(default=None, description="User token for GitHub operations (optional)")
     max_prs: int = Field(default=10, ge=0, le=50, description="Max PRs to sample for analysis")
 
     @field_validator("repository_full_name", mode="before")
