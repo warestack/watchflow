@@ -9,7 +9,6 @@ strictly necessary.
 from __future__ import annotations
 
 import logging
-import textwrap
 from typing import Any
 
 import yaml
@@ -258,7 +257,7 @@ enabled: true
 severity: medium
 event_types:
   - pull_request
-    parameters:
+parameters:
   source_patterns:
 {source_patterns_yaml}
   test_patterns:
@@ -294,17 +293,14 @@ event_types:
 
     recommendations.append(
         RuleRecommendation(
-            yaml_rule=textwrap.dedent(
-                """
-                description: "Ensure PRs include context"
+            yaml_rule="""description: "Ensure PRs include context"
 enabled: true
-                severity: low
+severity: low
 event_types:
   - pull_request
-    parameters:
-                  min_description_length: 50
-                """
-            ).strip(),
+parameters:
+  min_description_length: 50
+""".strip(),
             confidence=desc_confidence,
             reasoning=desc_reasoning,
             strategy_used="static",
@@ -313,18 +309,15 @@ event_types:
 
     # Add a repository-specific rule if we detect specific patterns
     if state.repository_features.has_workflows:
-        workflow_rule = textwrap.dedent(
-            """
-            description: "Protect CI/CD workflows"
+        workflow_rule = """description: "Protect CI/CD workflows"
 enabled: true
-            severity: high
+severity: high
 event_types:
   - pull_request
-    parameters:
-              file_patterns:
-                - ".github/workflows/**"
-            """
-        ).strip()
+parameters:
+  file_patterns:
+    - ".github/workflows/**"
+""".strip()
 
         recommendations.append(
             RuleRecommendation(
