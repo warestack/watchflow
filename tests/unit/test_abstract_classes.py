@@ -70,11 +70,10 @@ def verify_code_changes_direct():
     print("Verifying code changes by inspecting source files...")
     print()
     
-    base_path = Path(__file__).parent / "src"
+    base_path = Path(__file__).parent.parent.parent / "src"
     all_passed = True
     all_issues = []
     
-    # Files and their abstract methods to check
     files_to_check = [
         ("integrations/providers/base.py", "BaseProvider", 
          ["get_chat_model", "supports_structured_output", "get_provider_name"]),
@@ -113,7 +112,7 @@ def verify_with_grep():
     print("Alternative verification: Checking for remaining 'pass' in abstract methods...")
     print()
     
-    base_path = Path(__file__).parent / "src"
+    base_path = Path(__file__).parent.parent.parent / "src"
     
     # Find all Python files
     python_files = list(base_path.rglob("*.py"))
