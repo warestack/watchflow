@@ -54,7 +54,7 @@ class BaseAgent(ABC):
     @abstractmethod
     def _build_graph(self):
         """Build the LangGraph workflow for this agent."""
-        pass
+        raise NotImplementedError("Subclasses must implement _build_graph")
 
     async def _retry_structured_output(self, llm, output_model, prompt, **kwargs) -> T:
         """
@@ -110,4 +110,4 @@ class BaseAgent(ABC):
     @abstractmethod
     async def execute(self, **kwargs) -> AgentResult:
         """Execute the agent with given parameters."""
-        pass
+        raise NotImplementedError("Subclasses must implement execute")

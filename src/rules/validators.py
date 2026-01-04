@@ -101,7 +101,7 @@ class Condition(ABC):
         Returns:
             True if the condition is met, False otherwise
         """
-        pass
+        raise NotImplementedError("Subclasses must implement validate")
 
     def get_description(self) -> dict[str, Any]:
         """Get validator description for dynamic strategy selection."""

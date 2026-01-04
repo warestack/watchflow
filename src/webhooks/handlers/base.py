@@ -23,4 +23,4 @@ class EventHandler(ABC):
         Returns:
             A dictionary containing the results of the handling logic.
         """
-        pass
+        raise NotImplementedError("Subclasses must implement handle")

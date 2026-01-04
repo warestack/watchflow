@@ -20,17 +20,17 @@ class BaseProvider(ABC):
     @abstractmethod
     def get_chat_model(self) -> Any:
         """Get the chat model instance."""
-        pass
+        raise NotImplementedError("Subclasses must implement get_chat_model")
 
     @abstractmethod
     def supports_structured_output(self) -> bool:
         """Check if this provider supports structured output."""
-        pass
+        raise NotImplementedError("Subclasses must implement supports_structured_output")
 
     @abstractmethod
     def get_provider_name(self) -> str:
         """Get the provider name."""
-        pass
+        raise NotImplementedError("Subclasses must implement get_provider_name")
 
     def get_model_info(self) -> dict[str, Any]:
         """Get model information."""

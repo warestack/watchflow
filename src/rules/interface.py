@@ -23,4 +23,4 @@ class RuleLoader(ABC):
         Returns:
             list of Rule objects for the repository
         """
-        pass
+        raise NotImplementedError("Subclasses must implement get_rules")

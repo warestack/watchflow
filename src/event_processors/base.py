@@ -33,22 +33,22 @@ class BaseEventProcessor(ABC):
     @abstractmethod
     async def process(self, task: Task) -> ProcessingResult:
         """Process the event task."""
-        pass
+        raise NotImplementedError("Subclasses must implement process")
 
     @abstractmethod
     def get_event_type(self) -> str:
         """Get the event type this processor handles."""
-        pass
+        raise NotImplementedError("Subclasses must implement get_event_type")
 
     @abstractmethod
     async def prepare_webhook_data(self, task: Task) -> dict[str, Any]:
         """Prepare data from webhook payload."""
-        pass
+        raise NotImplementedError("Subclasses must implement prepare_webhook_data")
 
     @abstractmethod
     async def prepare_api_data(self, task: Task) -> dict[str, Any]:
         """Prepare data from GitHub API calls."""
-        pass
+        raise NotImplementedError("Subclasses must implement prepare_api_data")
 
     def _get_rule_provider(self) -> RuleLoader:
         """Get the rule provider for this processor."""
