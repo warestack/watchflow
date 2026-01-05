@@ -17,7 +17,7 @@ Can be run in two ways:
 
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -396,19 +396,17 @@ class TestRuleConditionEvaluation:
     @pytest.mark.asyncio
     async def test_evaluate_rule_with_condition_expression(self):
         """Test evaluating a rule with condition expression."""
+        from src.core.models import EventType
         from src.rules.condition_evaluator import ConditionExpression
         from src.rules.evaluator import evaluate_rule_conditions
         from src.rules.models import Rule, RuleSeverity
-        from src.core.models import EventType
 
         # Mock validator
         mock_validator = AsyncMock()
         mock_validator.validate = AsyncMock(return_value=True)
 
         with patch("src.rules.condition_evaluator.VALIDATOR_REGISTRY", {"author_team_is": mock_validator}):
-            condition = ConditionExpression.from_dict(
-                {"type": "author_team_is", "parameters": {"team": "devops"}}
-            )
+            condition = ConditionExpression.from_dict({"type": "author_team_is", "parameters": {"team": "devops"}})
 
             rule = Rule(
                 description="Test rule",
@@ -427,9 +425,9 @@ class TestRuleConditionEvaluation:
     @pytest.mark.asyncio
     async def test_evaluate_rule_with_legacy_conditions(self):
         """Test evaluating a rule with legacy conditions."""
+        from src.core.models import EventType
         from src.rules.evaluator import evaluate_rule_conditions
         from src.rules.models import Rule, RuleCondition, RuleSeverity
-        from src.core.models import EventType
 
         # Mock validators
         mock_validator = AsyncMock()
@@ -455,9 +453,9 @@ class TestRuleConditionEvaluation:
     @pytest.mark.asyncio
     async def test_evaluate_rule_without_conditions(self):
         """Test evaluating a rule without conditions."""
+        from src.core.models import EventType
         from src.rules.evaluator import evaluate_rule_conditions
         from src.rules.models import Rule, RuleSeverity
-        from src.core.models import EventType
 
         rule = Rule(
             description="Test rule",
@@ -485,12 +483,12 @@ def run_standalone_verification():
     # Test 1: ConditionExpression exists
     print("1. Checking ConditionExpression exists...")
     try:
-        from src.rules.condition_evaluator import ConditionExpression, ConditionEvaluator
+        from src.rules.condition_evaluator import ConditionEvaluator, ConditionExpression
         from src.rules.models import RuleCondition
 
         condition = RuleCondition(type="author_team_is", parameters={"team": "devops"})
         expr = ConditionExpression(condition=condition)
-        print(f"   ✅ ConditionExpression created successfully")
+        print("   ✅ ConditionExpression created successfully")
     except Exception as e:
         print(f"   ❌ Failed to import ConditionExpression: {e}")
         all_passed = False
@@ -501,8 +499,8 @@ def run_standalone_verification():
     try:
         from src.rules.condition_evaluator import ConditionEvaluator
 
-        evaluator = ConditionEvaluator()
-        print(f"   ✅ ConditionEvaluator created successfully")
+        _evaluator = ConditionEvaluator()
+        print("   ✅ ConditionEvaluator created successfully")
     except Exception as e:
         print(f"   ❌ Failed to import ConditionEvaluator: {e}")
         all_passed = False
@@ -516,9 +514,9 @@ def run_standalone_verification():
         # Check if Rule has condition field
         rule_fields = Rule.model_fields.keys()
         if "condition" in rule_fields:
-            print(f"   ✅ Rule model has 'condition' field")
+            print("   ✅ Rule model has 'condition' field")
         else:
-            print(f"   ❌ Rule model missing 'condition' field")
+            print("   ❌ Rule model missing 'condition' field")
             all_passed = False
     except Exception as e:
         print(f"   ❌ Failed to check Rule model: {e}")
@@ -540,7 +538,7 @@ def run_standalone_verification():
         expr = ConditionExpression.from_dict(data)
         assert expr.operator == "AND"
         assert len(expr.conditions) == 2
-        print(f"   ✅ from_dict works correctly")
+        print("   ✅ from_dict works correctly")
     except Exception as e:
         print(f"   ❌ from_dict test failed: {e}")
         all_passed = False
@@ -560,4 +558,3 @@ if __name__ == "__main__":
     # Run standalone verification when executed directly
     success = run_standalone_verification()
     sys.exit(0 if success else 1)
-

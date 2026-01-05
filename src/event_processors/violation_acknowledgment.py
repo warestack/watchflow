@@ -211,11 +211,15 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
                 )
 
             # Filter out duplicate violations before evaluation
-            context = {
-                "pr_number": pr_number,
-                "commit_sha": pr_data.get("head", {}).get("sha"),
-                "branch": pr_data.get("head", {}).get("ref"),
-            } if pr_number else {}
+            context = (
+                {
+                    "pr_number": pr_number,
+                    "commit_sha": pr_data.get("head", {}).get("sha"),
+                    "branch": pr_data.get("head", {}).get("ref"),
+                }
+                if pr_number
+                else {}
+            )
 
             violation_tracker = get_violation_tracker()
             # Note: We don't filter here because we want to evaluate all violations
@@ -300,11 +304,9 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
                 state = ProcessingState.FAIL
             else:
                 state = ProcessingState.ERROR
-            
+
             # Use filtered violations for the result
-            require_fixes_for_result = (
-                new_require_fixes if not evaluation_result["valid"] else []
-            )
+            require_fixes_for_result = new_require_fixes if not evaluation_result["valid"] else []
 
             return ProcessingResult(
                 state=state,

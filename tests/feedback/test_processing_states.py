@@ -65,7 +65,7 @@ def verify_implementation_structure():
         print("✅ ERROR value found")
 
         # Check for ProcessingResult with state field
-        if 'state: ProcessingState' not in content:
+        if "state: ProcessingState" not in content:
             print("❌ ERROR: ProcessingResult.state field not found")
             return False
         print("✅ ProcessingResult.state field found")
@@ -94,6 +94,7 @@ def verify_implementation_structure():
 # Try to import pytest and the actual classes for full testing
 try:
     import pytest
+
     from src.event_processors.base import ProcessingResult, ProcessingState
 
     HAS_DEPENDENCIES = True

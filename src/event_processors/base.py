@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class ProcessingState(str, Enum):
     """
     Processing state for event processing results.
-    
+
     - PASS: Rules passed - everything is good, no violations found
     - FAIL: Rules failed - violations found, action required
     - ERROR: Error occurred - couldn't check, need to investigate
@@ -41,7 +41,7 @@ class ProcessingResult(BaseModel):
     def success(self) -> bool:
         """
         Legacy property for backward compatibility.
-        
+
         Returns True only for PASS state, False for FAIL or ERROR.
         Note: This doesn't distinguish between FAIL and ERROR.
         Use .state instead for explicit state checking.

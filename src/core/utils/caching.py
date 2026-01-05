@@ -25,6 +25,7 @@ def _get_config():
     global _config
     if _config is None:
         from src.core.config.settings import config
+
         _config = config
     return _config
 

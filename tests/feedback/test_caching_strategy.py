@@ -47,7 +47,6 @@ class TestCacheConfig:
 
     def test_cache_config_from_env(self):
         """Test that cache config loads from environment variables."""
-        from src.core.config.cache_config import CacheConfig
         from src.core.config.settings import Config
 
         with patch.dict(
@@ -190,10 +189,10 @@ class TestGlobalCache:
     @pytest.mark.asyncio
     async def test_global_cache_uses_config(self):
         """Test that global cache uses config values."""
-        from src.core.utils.caching import _get_global_cache, get_cache, set_cache
-
         # Reset global cache to force re-initialization
         import src.core.utils.caching as caching_module
+        from src.core.utils.caching import _get_global_cache
+
         caching_module._GLOBAL_CACHE = None
 
         with patch("src.core.utils.caching._get_config") as mock_get_config:
@@ -210,10 +209,10 @@ class TestGlobalCache:
     @pytest.mark.asyncio
     async def test_get_cache_respects_enable_flag(self):
         """Test that get_cache respects CACHE_ENABLE setting."""
-        from src.core.utils.caching import get_cache, set_cache
-
         # Reset global cache
         import src.core.utils.caching as caching_module
+        from src.core.utils.caching import get_cache
+
         caching_module._GLOBAL_CACHE = None
 
         with patch("src.core.utils.caching._get_config") as mock_get_config:
@@ -228,10 +227,10 @@ class TestGlobalCache:
     @pytest.mark.asyncio
     async def test_set_cache_respects_enable_flag(self):
         """Test that set_cache respects CACHE_ENABLE setting."""
-        from src.core.utils.caching import get_cache, set_cache
-
         # Reset global cache
         import src.core.utils.caching as caching_module
+        from src.core.utils.caching import get_cache, set_cache
+
         caching_module._GLOBAL_CACHE = None
 
         with patch("src.core.utils.caching._get_config") as mock_get_config:
@@ -247,10 +246,10 @@ class TestGlobalCache:
     @pytest.mark.asyncio
     async def test_get_cache_and_set_cache_integration(self):
         """Test integration of get_cache and set_cache."""
-        from src.core.utils.caching import get_cache, set_cache
-
         # Reset global cache
         import src.core.utils.caching as caching_module
+        from src.core.utils.caching import get_cache, set_cache
+
         caching_module._GLOBAL_CACHE = None
 
         with patch("src.core.utils.caching._get_config") as mock_get_config:
@@ -268,10 +267,10 @@ class TestGlobalCache:
     @pytest.mark.asyncio
     async def test_set_cache_ttl_override(self):
         """Test that set_cache can override TTL."""
-        from src.core.utils.caching import _get_global_cache, get_cache, set_cache
-
         # Reset global cache
         import src.core.utils.caching as caching_module
+        from src.core.utils.caching import _get_global_cache, set_cache
+
         caching_module._GLOBAL_CACHE = None
 
         with patch("src.core.utils.caching._get_config") as mock_get_config:
@@ -438,7 +437,7 @@ def run_standalone_verification():
         from src.core.config.cache_config import CacheConfig
 
         config = CacheConfig()
-        print(f"   ✅ CacheConfig created with defaults")
+        print("   ✅ CacheConfig created with defaults")
         print(f"      - global_maxsize: {config.global_maxsize}")
         print(f"      - global_ttl: {config.global_ttl}")
         print(f"      - default_maxsize: {config.default_maxsize}")
@@ -456,7 +455,7 @@ def run_standalone_verification():
 
         config = Config()
         assert hasattr(config, "cache")
-        print(f"   ✅ CacheConfig included in main Config")
+        print("   ✅ CacheConfig included in main Config")
         print(f"      - config.cache.global_maxsize: {config.cache.global_maxsize}")
     except Exception as e:
         print(f"   ❌ Failed to access cache config: {e}")
@@ -472,7 +471,7 @@ def run_standalone_verification():
         cache.set("test", "value")
         assert cache.get("test") == "value"
         assert cache.size() == 1
-        print(f"   ✅ AsyncCache basic operations work")
+        print("   ✅ AsyncCache basic operations work")
     except Exception as e:
         print(f"   ❌ AsyncCache test failed: {e}")
         all_passed = False
@@ -484,11 +483,11 @@ def run_standalone_verification():
     if caching_file.exists():
         content = caching_file.read_text()
         if "Caching Strategy" in content:
-            print(f"   ✅ Caching strategy documentation found")
+            print("   ✅ Caching strategy documentation found")
         else:
-            print(f"   ⚠️  Caching strategy documentation may be incomplete")
+            print("   ⚠️  Caching strategy documentation may be incomplete")
     else:
-        print(f"   ❌ Caching file not found")
+        print("   ❌ Caching file not found")
         all_passed = False
 
     print()
@@ -506,4 +505,3 @@ if __name__ == "__main__":
     # Run standalone verification when executed directly
     success = run_standalone_verification()
     sys.exit(0 if success else 1)
-

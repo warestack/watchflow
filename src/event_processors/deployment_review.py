@@ -80,7 +80,10 @@ class DeploymentReviewProcessor(BaseEventProcessor):
         if not deployment_review_rules:
             logger.info("📋 No deployment_review rules found")
             return ProcessingResult(
-                state=ProcessingState.PASS, violations=[], api_calls_made=1, processing_time_ms=int((time.time() - start_time) * 1000)
+                state=ProcessingState.PASS,
+                violations=[],
+                api_calls_made=1,
+                processing_time_ms=int((time.time() - start_time) * 1000),
             )
 
         logger.info(f"📋 Found {len(deployment_review_rules)} applicable rules for deployment_review")

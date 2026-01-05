@@ -31,7 +31,10 @@ class CheckRunProcessor(BaseEventProcessor):
         if "watchflow" in check_run.get("name", "").lower():
             logger.info("Ignoring Watchflow's own check run to prevent recursive loops.")
             return ProcessingResult(
-                state=ProcessingState.PASS, violations=[], api_calls_made=0, processing_time_ms=int((time.time() - start_time) * 1000)
+                state=ProcessingState.PASS,
+                violations=[],
+                api_calls_made=0,
+                processing_time_ms=int((time.time() - start_time) * 1000),
             )
 
         logger.info("=" * 80)

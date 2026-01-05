@@ -1,4 +1,4 @@
-# Watchflow Improvements 
+# Watchflow Improvements
 
 ## I THINK these are ISSUES (Must Fix Soon)
 
@@ -44,7 +44,7 @@
 
 **What needs to happen:** Clearly distinguish between:
 - ✅ "Rule passed - everything is good"
-- ❌ "Rule failed - violation found"  
+- ❌ "Rule failed - violation found"
 - ⚠️ "Error - couldn't check, need to investigate"
 
 ---
@@ -122,7 +122,7 @@
 
 **Why it matters:** AI calls are expensive. If you're checking 100 PRs per day, costs add up quickly.
 
-**What needs to happen:** 
+**What needs to happen:**
 - Track how much each AI call costs
 - Cache similar rule evaluations (if we checked this before, reuse the result)
 - Batch multiple rules together when possible
@@ -142,7 +142,7 @@
 - How many errors are happening?
 - How much is this costing?
 
-**What needs to happen:** 
+**What needs to happen:**
 - Add Prometheus metrics endpoint (exposes metrics)
 - Create Grafana dashboards (visualize metrics)
 - Track: response times, error rates, AI costs, cache performance
@@ -216,7 +216,7 @@
 
 **Why it matters:** Limits market reach. Many companies use GitLab or Azure DevOps.
 
-**What needs to happen:** 
+**What needs to happen:**
 - Abstract the provider interface (make it easy to add new platforms)
 - Implement GitLab support
 - Implement Azure DevOps support
@@ -403,4 +403,3 @@
 13. **Agent Specialization** - Specialized agents
 14. **Rule Versioning** - Track rule changes
 15. **Performance** - Optimize costs and speed
-

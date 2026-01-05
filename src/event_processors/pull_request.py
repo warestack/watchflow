@@ -148,16 +148,18 @@ class PullRequestProcessor(BaseEventProcessor):
             # Filter out duplicate violations before posting
             pr_data = task.payload.get("pull_request", {})
             pr_number = pr_data.get("number")
-            context = {
-                "pr_number": pr_number,
-                "commit_sha": pr_data.get("head", {}).get("sha"),
-                "branch": pr_data.get("head", {}).get("ref"),
-            } if pr_number else {}
+            context = (
+                {
+                    "pr_number": pr_number,
+                    "commit_sha": pr_data.get("head", {}).get("sha"),
+                    "branch": pr_data.get("head", {}).get("ref"),
+                }
+                if pr_number
+                else {}
+            )
 
             violation_tracker = get_violation_tracker()
-            new_violations = violation_tracker.filter_new_violations(
-                violations, task.repo_full_name, context
-            )
+            new_violations = violation_tracker.filter_new_violations(violations, task.repo_full_name, context)
 
             if len(new_violations) < len(violations):
                 logger.info(

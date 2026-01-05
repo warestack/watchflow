@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class ConditionExpression:
     """
     Represents a condition expression with logical operators.
-    
+
     Supports:
     - Simple conditions: single condition evaluation
     - AND: all conditions must be true
@@ -92,9 +92,7 @@ class ConditionExpression:
             operator = data["operator"].upper()
             if operator == "NOT":
                 condition_data = data["condition"]
-                condition = RuleCondition(
-                    type=condition_data["type"], parameters=condition_data.get("parameters", {})
-                )
+                condition = RuleCondition(type=condition_data["type"], parameters=condition_data.get("parameters", {}))
                 return cls(operator="NOT", condition=condition)
             else:
                 # AND or OR
@@ -109,7 +107,7 @@ class ConditionExpression:
 class ConditionEvaluator:
     """
     Evaluates condition expressions against event data.
-    
+
     Handles:
     - Simple conditions using validators
     - AND/OR/NOT logical operators
@@ -202,9 +200,7 @@ class ConditionEvaluator:
             # Fail closed: if we can't evaluate, assume violation
             return False, metadata
 
-    async def _evaluate_simple_condition(
-        self, condition: RuleCondition, event_data: dict[str, Any]
-    ) -> bool:
+    async def _evaluate_simple_condition(self, condition: RuleCondition, event_data: dict[str, Any]) -> bool:
         """
         Evaluate a simple condition using a validator.
 
@@ -222,10 +218,7 @@ class ConditionEvaluator:
 
         try:
             result = await validator.validate(condition.parameters, event_data)
-            logger.debug(
-                f"Condition {condition.type} evaluated: {result} "
-                f"(parameters: {condition.parameters})"
-            )
+            logger.debug(f"Condition {condition.type} evaluated: {result} (parameters: {condition.parameters})")
             return result
         except Exception as e:
             logger.error(f"Error evaluating condition {condition.type}: {e}")
@@ -294,4 +287,3 @@ class ConditionEvaluator:
                 "results": results,
                 "sub_conditions": metadata_list,
             }
-

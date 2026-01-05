@@ -92,9 +92,7 @@ class GitHubRuleLoader(RuleLoader):
         conditions = []
         if "conditions" in rule_data:
             for cond_data in rule_data["conditions"]:
-                condition = RuleCondition(
-                    type=cond_data["type"], parameters=cond_data.get("parameters", {})
-                )
+                condition = RuleCondition(type=cond_data["type"], parameters=cond_data.get("parameters", {}))
                 conditions.append(condition)
 
         # Parse condition expression (new format: AND/OR/NOT)
@@ -104,18 +102,14 @@ class GitHubRuleLoader(RuleLoader):
                 condition_expr = ConditionExpression.from_dict(rule_data["condition"])
                 logger.debug(f"Parsed condition expression for rule: {rule_data['description']}")
             except Exception as e:
-                logger.warning(
-                    f"Failed to parse condition expression for rule '{rule_data['description']}': {e}"
-                )
+                logger.warning(f"Failed to parse condition expression for rule '{rule_data['description']}': {e}")
                 # Fall back to legacy format if condition expression parsing fails
 
         # Actions are optional and not mapped
         actions = []
         if "actions" in rule_data:
             for action_data in rule_data["actions"]:
-                action = RuleAction(
-                    type=action_data["type"], parameters=action_data.get("parameters", {})
-                )
+                action = RuleAction(type=action_data["type"], parameters=action_data.get("parameters", {}))
                 actions.append(action)
 
         rule = Rule(

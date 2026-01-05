@@ -94,7 +94,9 @@ class RuleCreationProcessor(BaseEventProcessor):
 
             logger.info("=" * 80)
 
-            return ProcessingResult(state=ProcessingState.PASS, violations=[], api_calls_made=1, processing_time_ms=processing_time)
+            return ProcessingResult(
+                state=ProcessingState.PASS, violations=[], api_calls_made=1, processing_time_ms=processing_time
+            )
 
         except Exception as e:
             logger.error(f"❌ Error processing rule creation: {e}")

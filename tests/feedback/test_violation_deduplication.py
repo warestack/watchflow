@@ -18,8 +18,6 @@ import sys
 import time
 from pathlib import Path
 
-import pytest
-
 # Add project root to path for imports when running directly
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
@@ -371,7 +369,7 @@ def run_standalone_verification():
         from src.core.utils.violation_tracker import ViolationTracker, get_violation_tracker
 
         tracker = ViolationTracker()
-        print(f"   ✅ ViolationTracker created successfully")
+        print("   ✅ ViolationTracker created successfully")
         print(f"      - TTL: {tracker.ttl_seconds}s")
     except Exception as e:
         print(f"   ❌ Failed to import ViolationTracker: {e}")
@@ -394,7 +392,7 @@ def run_standalone_verification():
         fingerprint1 = tracker.generate_fingerprint(violation, "owner/repo")
         fingerprint2 = tracker.generate_fingerprint(violation, "owner/repo")
         assert fingerprint1 == fingerprint2
-        print(f"   ✅ Fingerprinting works correctly")
+        print("   ✅ Fingerprinting works correctly")
         print(f"      - Fingerprint length: {len(fingerprint1)}")
     except Exception as e:
         print(f"   ❌ Fingerprinting test failed: {e}")
@@ -422,7 +420,7 @@ def run_standalone_verification():
         new2 = tracker.filter_new_violations([violation], "owner/repo")
         assert len(new2) == 0
 
-        print(f"   ✅ Deduplication works correctly")
+        print("   ✅ Deduplication works correctly")
         print(f"      - First batch: {len(new1)} new violation(s)")
         print(f"      - Second batch: {len(new2)} new violation(s) (duplicates filtered)")
     except Exception as e:
@@ -437,7 +435,7 @@ def run_standalone_verification():
 
         tracker = get_violation_tracker()
         stats = tracker.get_stats()
-        print(f"   ✅ Global tracker works")
+        print("   ✅ Global tracker works")
         print(f"      - Total tracked: {stats['total_tracked']}")
         print(f"      - Active: {stats['active']}")
     except Exception as e:
@@ -451,8 +449,8 @@ def run_standalone_verification():
         from src.event_processors.pull_request import PullRequestProcessor
 
         # Just check that the import works (actual integration tested in unit tests)
-        processor = PullRequestProcessor()
-        print(f"   ✅ PullRequestProcessor imports violation tracker")
+        _processor = PullRequestProcessor()
+        print("   ✅ PullRequestProcessor imports violation tracker")
     except Exception as e:
         print(f"   ⚠️  Integration check: {e}")
         # Not a failure, might be missing dependencies
@@ -472,4 +470,3 @@ if __name__ == "__main__":
     # Run standalone verification when executed directly
     success = run_standalone_verification()
     sys.exit(0 if success else 1)
-

@@ -8,7 +8,7 @@ Uses fingerprinting to identify unique violations based on rule, context, and ev
 import hashlib
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from src.core.config.settings import config
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class ViolationTracker:
     """
     Tracks reported violations to prevent duplicates.
-    
+
     Uses in-memory storage with TTL-based expiration. Each violation is
     fingerprinted based on its content and context to identify duplicates.
     """
@@ -183,7 +183,9 @@ class ViolationTracker:
                 self.mark_reported(fingerprint, violation)
 
         if duplicate_count > 0:
-            logger.info(f"Filtered out {duplicate_count} duplicate violation(s), {len(new_violations)} new violation(s) remain")
+            logger.info(
+                f"Filtered out {duplicate_count} duplicate violation(s), {len(new_violations)} new violation(s) remain"
+            )
 
         return new_violations
 
@@ -210,11 +212,7 @@ class ViolationTracker:
             Dictionary with statistics
         """
         now = datetime.now().timestamp()
-        active = sum(
-            1
-            for entry in self._reported.values()
-            if (now - entry.get("reported_at", 0)) < self.ttl_seconds
-        )
+        active = sum(1 for entry in self._reported.values() if (now - entry.get("reported_at", 0)) < self.ttl_seconds)
 
         total_reports = sum(entry.get("count", 0) for entry in self._reported.values())
 
@@ -258,4 +256,3 @@ def get_violation_tracker() -> ViolationTracker:
         logger.info(f"Initialized violation tracker with TTL: {ttl_seconds}s")
 
     return _global_tracker
-

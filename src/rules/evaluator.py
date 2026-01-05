@@ -5,7 +5,7 @@ Rule evaluation utilities including condition expression evaluation.
 import logging
 from typing import Any
 
-from src.rules.condition_evaluator import ConditionEvaluator, ConditionExpression
+from src.rules.condition_evaluator import ConditionEvaluator
 from src.rules.models import Rule
 
 logger = logging.getLogger(__name__)
@@ -43,4 +43,3 @@ async def evaluate_rule_conditions(rule: Rule, event_data: dict[str, Any]) -> tu
     # No conditions = rule passes (no restrictions)
     logger.debug(f"No conditions for rule: {rule.description}")
     return True, {"message": "No conditions to evaluate", "format": "none"}
-

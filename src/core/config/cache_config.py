@@ -23,4 +23,3 @@ class CacheConfig:
     # Cache behavior settings
     enable_cache: bool = True  # Master switch to disable all caching
     enable_metrics: bool = False  # Track cache hit/miss rates (future feature)
-

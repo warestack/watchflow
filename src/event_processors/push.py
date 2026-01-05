@@ -58,7 +58,10 @@ class PushProcessor(BaseEventProcessor):
         if not rules:
             logger.info("No rules found for this repository")
             return ProcessingResult(
-                state=ProcessingState.PASS, violations=[], api_calls_made=1, processing_time_ms=int((time.time() - start_time) * 1000)
+                state=ProcessingState.PASS,
+                violations=[],
+                api_calls_made=1,
+                processing_time_ms=int((time.time() - start_time) * 1000),
             )
 
         logger.info(f"📋 Loaded {len(rules)} rules for evaluation")
@@ -94,15 +97,17 @@ class PushProcessor(BaseEventProcessor):
 
         # Filter out duplicate violations before creating check run
         commit_sha = payload.get("after")
-        context = {
-            "commit_sha": commit_sha,
-            "branch": ref.replace("refs/heads/", "") if ref.startswith("refs/heads/") else ref,
-        } if commit_sha else {}
+        context = (
+            {
+                "commit_sha": commit_sha,
+                "branch": ref.replace("refs/heads/", "") if ref.startswith("refs/heads/") else ref,
+            }
+            if commit_sha
+            else {}
+        )
 
         violation_tracker = get_violation_tracker()
-        new_violations = violation_tracker.filter_new_violations(
-            violations, task.repo_full_name, context
-        )
+        new_violations = violation_tracker.filter_new_violations(violations, task.repo_full_name, context)
 
         if len(new_violations) < len(violations):
             logger.info(
