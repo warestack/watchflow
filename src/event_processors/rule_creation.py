@@ -3,11 +3,21 @@ import re
 import time
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 from src.agents import get_agent
 from src.event_processors.base import BaseEventProcessor, ProcessingResult, ProcessingState
 from src.tasks.task_queue import Task
 
 logger = logging.getLogger(__name__)
+
+
+class FeasibilityResult(BaseModel):
+    """Result from feasibility analysis for rule creation."""
+
+    is_feasible: bool = Field(description="Whether the rule is feasible to implement")
+    yaml_content: str = Field(description="Generated YAML configuration for the rule", default="")
+    feedback: str = Field(description="Feedback about the rule feasibility", default="")
 
 
 class RuleCreationProcessor(BaseEventProcessor):
@@ -67,14 +77,9 @@ class RuleCreationProcessor(BaseEventProcessor):
             yaml_content = feasibility_data.get("yaml_content", "")
             feedback = agent_result.message  # Feedback is in the message field
 
-            # Create a simple object-like structure for compatibility with existing code
-            class FeasibilityResult:
-                def __init__(self, is_feasible: bool, yaml_content: str, feedback: str):
-                    self.is_feasible = is_feasible
-                    self.yaml_content = yaml_content
-                    self.feedback = feedback
-
-            feasibility_result = FeasibilityResult(is_feasible, yaml_content, feedback)
+            feasibility_result = FeasibilityResult(
+                is_feasible=is_feasible, yaml_content=yaml_content, feedback=feedback
+            )
 
             processing_time = int((time.time() - start_time) * 1000)
 
@@ -126,7 +131,7 @@ class RuleCreationProcessor(BaseEventProcessor):
 
         return ""
 
-    async def _post_result_to_comment(self, task: Task, feasibility_result):
+    async def _post_result_to_comment(self, task: Task, feasibility_result: FeasibilityResult):
         """Post the feasibility result as a reply to the original comment."""
         try:
             # Get issue/PR number from the webhook payload
@@ -152,7 +157,7 @@ class RuleCreationProcessor(BaseEventProcessor):
         except Exception as e:
             logger.error(f"Error posting feasibility reply: {e}")
 
-    def _format_feasibility_reply(self, feasibility_result) -> str:
+    def _format_feasibility_reply(self, feasibility_result: FeasibilityResult) -> str:
         """Format the feasibility result as a comment reply."""
         if feasibility_result.is_feasible:
             reply = "## ✅ Rule Creation Successful!\n\n"

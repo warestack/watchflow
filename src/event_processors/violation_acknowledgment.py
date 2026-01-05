@@ -297,13 +297,11 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             logger.info(f"    Status: {'accepted' if evaluation_result['valid'] else 'rejected'}")
             logger.info("=" * 80)
 
-            # Determine state: PASS if valid acknowledgment, FAIL if violations require fixes, ERROR if invalid
+            # If the acknowledgment is valid, the process passes. Otherwise, it fails.
             if evaluation_result["valid"]:
                 state = ProcessingState.PASS
-            elif evaluation_result.get("require_fixes"):
-                state = ProcessingState.FAIL
             else:
-                state = ProcessingState.ERROR
+                state = ProcessingState.FAIL
 
             # Use filtered violations for the result
             require_fixes_for_result = new_require_fixes if not evaluation_result["valid"] else []
