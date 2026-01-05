@@ -7,6 +7,7 @@ import os
 
 from dotenv import load_dotenv
 
+from src.core.config.cache_config import CacheConfig
 from src.core.config.cors_config import CORSConfig
 from src.core.config.github_config import GitHubConfig
 from src.core.config.langsmith_config import LangSmithConfig
@@ -105,6 +106,16 @@ class Config:
             level=os.getenv("LOG_LEVEL", "INFO"),
             format=os.getenv("LOG_FORMAT", "%(asctime)s - %(name)s - %(levelname)s - %(message)s"),
             file_path=os.getenv("LOG_FILE_PATH"),
+        )
+
+        # Cache configuration
+        self.cache = CacheConfig(
+            global_maxsize=int(os.getenv("CACHE_GLOBAL_MAXSIZE", "1024")),
+            global_ttl=int(os.getenv("CACHE_GLOBAL_TTL", "3600")),
+            default_maxsize=int(os.getenv("CACHE_DEFAULT_MAXSIZE", "100")),
+            default_ttl=int(os.getenv("CACHE_DEFAULT_TTL", "3600")),
+            enable_cache=os.getenv("CACHE_ENABLE", "true").lower() == "true",
+            enable_metrics=os.getenv("CACHE_ENABLE_METRICS", "false").lower() == "true",
         )
 
         # Development settings
