@@ -12,8 +12,9 @@ import yaml
 from src.core.config import config
 from src.core.models import EventType
 from src.integrations.github import GitHubClient, github_client
+from src.rules.condition_evaluator import ConditionExpression
 from src.rules.interface import RuleLoader
-from src.rules.models import Rule, RuleAction, RuleSeverity
+from src.rules.models import Rule, RuleAction, RuleCondition, RuleSeverity
 
 logger = logging.getLogger(__name__)
 
@@ -87,11 +88,34 @@ class GitHubRuleLoader(RuleLoader):
         # No mapping: just pass parameters as-is
         parameters = rule_data.get("parameters", {})
 
+        # Parse conditions (legacy format: list of conditions)
+        conditions = []
+        if "conditions" in rule_data:
+            for cond_data in rule_data["conditions"]:
+                condition = RuleCondition(
+                    type=cond_data["type"], parameters=cond_data.get("parameters", {})
+                )
+                conditions.append(condition)
+
+        # Parse condition expression (new format: AND/OR/NOT)
+        condition_expr = None
+        if "condition" in rule_data:
+            try:
+                condition_expr = ConditionExpression.from_dict(rule_data["condition"])
+                logger.debug(f"Parsed condition expression for rule: {rule_data['description']}")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to parse condition expression for rule '{rule_data['description']}': {e}"
+                )
+                # Fall back to legacy format if condition expression parsing fails
+
         # Actions are optional and not mapped
         actions = []
         if "actions" in rule_data:
             for action_data in rule_data["actions"]:
-                action = RuleAction(type=action_data["type"], parameters=action_data.get("parameters", {}))
+                action = RuleAction(
+                    type=action_data["type"], parameters=action_data.get("parameters", {})
+                )
                 actions.append(action)
 
         rule = Rule(
@@ -99,8 +123,8 @@ class GitHubRuleLoader(RuleLoader):
             enabled=rule_data.get("enabled", True),
             severity=RuleSeverity(rule_data.get("severity", "medium")),
             event_types=event_types,
-            # No conditions: parameters are passed as-is
-            conditions=[],
+            conditions=conditions,  # Legacy format
+            condition=condition_expr,  # New format
             actions=actions,
             parameters=parameters,
         )

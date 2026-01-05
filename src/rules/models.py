@@ -1,9 +1,12 @@
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
 from src.core.models import EventType
+
+if TYPE_CHECKING:
+    from src.rules.condition_evaluator import ConditionExpression
 
 
 class RuleSeverity(str, Enum):
@@ -32,12 +35,24 @@ class RuleAction(BaseModel):
 
 
 class Rule(BaseModel):
-    """Represents a rule that can be evaluated against repository events."""
+    """
+    Represents a rule that can be evaluated against repository events.
+    
+    Supports both legacy conditions (list of RuleCondition) and new condition expressions
+    (ConditionExpression with AND/OR/NOT operators).
+    """
 
     description: str = Field(description="Primary identifier and description of the rule")
     enabled: bool = True
     severity: RuleSeverity = RuleSeverity.MEDIUM
     event_types: list[EventType] = Field(default_factory=list)
-    conditions: list[RuleCondition] = Field(default_factory=list)
+    conditions: list[RuleCondition] = Field(
+        default_factory=list, description="Legacy conditions (treated as AND)"
+    )
+    condition: "ConditionExpression | None" = Field(
+        default=None, description="New condition expression with AND/OR/NOT support"
+    )
     actions: list[RuleAction] = Field(default_factory=list)
-    parameters: dict[str, Any] = Field(default_factory=dict)  # Store parameters as-is from YAML
+    parameters: dict[str, Any] = Field(
+        default_factory=dict, description="Store parameters as-is from YAML"
+    )
