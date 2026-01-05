@@ -5,6 +5,7 @@ from typing import Any
 
 from src.agents import get_agent
 from src.core.models import EventType
+from src.core.utils.violation_tracker import get_violation_tracker
 from src.event_processors.base import BaseEventProcessor, ProcessingResult, ProcessingState
 from src.tasks.task_queue import Task
 
@@ -209,6 +210,17 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
                     processing_time_ms=int((time.time() - start_time) * 1000),
                 )
 
+            # Filter out duplicate violations before evaluation
+            context = {
+                "pr_number": pr_number,
+                "commit_sha": pr_data.get("head", {}).get("sha"),
+                "branch": pr_data.get("head", {}).get("ref"),
+            } if pr_number else {}
+
+            violation_tracker = get_violation_tracker()
+            # Note: We don't filter here because we want to evaluate all violations
+            # But we'll filter before posting comments to avoid duplicate messages
+
             # Evaluate acknowledgment against ALL violations
             evaluation_result = await self._evaluate_acknowledgment(
                 acknowledgment_reason=acknowledgment_reason,
@@ -218,13 +230,32 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
                 rules=formatted_rules,  # Pass the formatted rules
             )
 
+            # Filter duplicates from violations that will be posted in comments
+            new_acknowledgable = violation_tracker.filter_new_violations(
+                evaluation_result["acknowledgable_violations"], repo, context
+            )
+            new_require_fixes = violation_tracker.filter_new_violations(
+                evaluation_result["require_fixes"], repo, context
+            )
+
+            if len(new_acknowledgable) < len(evaluation_result["acknowledgable_violations"]):
+                logger.info(
+                    f"🔍 Deduplication: {len(evaluation_result['acknowledgable_violations']) - len(new_acknowledgable)} "
+                    f"duplicate acknowledged violation(s) filtered out"
+                )
+            if len(new_require_fixes) < len(evaluation_result["require_fixes"]):
+                logger.info(
+                    f"🔍 Deduplication: {len(evaluation_result['require_fixes']) - len(new_require_fixes)} "
+                    f"duplicate required-fix violation(s) filtered out"
+                )
+
             if evaluation_result["valid"]:
                 # Acknowledgment is valid - selectively approve violations and provide guidance
                 await self._approve_violations_selectively(
                     repo=repo,
                     pr_number=pr_number,
-                    acknowledgable_violations=evaluation_result["acknowledgable_violations"],
-                    require_fixes=evaluation_result["require_fixes"],
+                    acknowledgable_violations=new_acknowledgable,
+                    require_fixes=new_require_fixes,
                     reason=acknowledgment_reason,
                     commenter=commenter,
                     installation_id=installation_id,
@@ -235,8 +266,8 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
                 await self._update_check_run(
                     repo=repo,
                     pr_number=pr_number,
-                    acknowledgable_violations=evaluation_result["acknowledgable_violations"],
-                    require_fixes=evaluation_result["require_fixes"],
+                    acknowledgable_violations=new_acknowledgable,
+                    require_fixes=new_require_fixes,
                     installation_id=installation_id,
                 )
                 api_calls += 1
@@ -249,7 +280,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
                     pr_number=pr_number,
                     reason=evaluation_result["reason"],
                     commenter=commenter,
-                    require_fixes=evaluation_result["require_fixes"],
+                    require_fixes=new_require_fixes,
                     installation_id=installation_id,
                 )
                 api_calls += 1
@@ -270,9 +301,14 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             else:
                 state = ProcessingState.ERROR
             
+            # Use filtered violations for the result
+            require_fixes_for_result = (
+                new_require_fixes if not evaluation_result["valid"] else []
+            )
+
             return ProcessingResult(
                 state=state,
-                violations=evaluation_result["require_fixes"] if not evaluation_result["valid"] else [],
+                violations=require_fixes_for_result,
                 api_calls_made=api_calls,
                 processing_time_ms=processing_time,
             )

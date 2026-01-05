@@ -3,6 +3,7 @@ import time
 from typing import Any
 
 from src.agents import get_agent
+from src.core.utils.violation_tracker import get_violation_tracker
 from src.event_processors.base import BaseEventProcessor, ProcessingResult, ProcessingState
 from src.tasks.task_queue import Task
 
@@ -80,36 +81,67 @@ class PushProcessor(BaseEventProcessor):
                 error=f"Agent execution failed: {result.message}",
             )
 
-        violations = result.data.get("violations", [])
+        # Extract violations from engine result (same pattern as PullRequestProcessor)
+        violations = []
+        if result.data and "evaluation_result" in result.data:
+            eval_result = result.data["evaluation_result"]
+            if hasattr(eval_result, "violations"):
+                # Convert RuleViolation objects to dictionaries
+                violations = [v.__dict__ for v in eval_result.violations]
+        else:
+            # Fallback to old format if evaluation_result not present
+            violations = result.data.get("violations", [])
+
+        # Filter out duplicate violations before creating check run
+        commit_sha = payload.get("after")
+        context = {
+            "commit_sha": commit_sha,
+            "branch": ref.replace("refs/heads/", "") if ref.startswith("refs/heads/") else ref,
+        } if commit_sha else {}
+
+        violation_tracker = get_violation_tracker()
+        new_violations = violation_tracker.filter_new_violations(
+            violations, task.repo_full_name, context
+        )
+
+        if len(new_violations) < len(violations):
+            logger.info(
+                f"🔍 Deduplication: {len(violations) - len(new_violations)} duplicate violation(s) filtered out, "
+                f"{len(new_violations)} new violation(s) to report"
+            )
 
         processing_time = int((time.time() - start_time) * 1000)
 
         # Post results to GitHub (create check run)
         api_calls = 1  # Initial rule fetch
-        if violations:
-            await self._create_check_run(task, violations)
+        if new_violations:
+            await self._create_check_run(task, new_violations)
             api_calls += 1
 
         # Summary
         logger.info("=" * 80)
         logger.info(f"🏁 PUSH processing completed in {processing_time}ms")
         logger.info(f"   Rules evaluated: {len(formatted_rules)}")
-        logger.info(f"   Violations found: {len(violations)}")
+        logger.info(f"   Violations found: {len(new_violations)}")
         logger.info(f"   API calls made: {api_calls}")
 
-        if violations:
+        if new_violations:
             logger.warning("🚨 VIOLATION SUMMARY:")
-            for i, violation in enumerate(violations, 1):
-                logger.warning(f"   {i}. {violation.get('rule', 'Unknown')} ({violation.get('severity', 'medium')})")
+            for i, violation in enumerate(new_violations, 1):
+                rule_desc = violation.get("rule_description") or violation.get("rule", "Unknown")
+                logger.warning(f"   {i}. {rule_desc} ({violation.get('severity', 'medium')})")
                 logger.warning(f"      {violation.get('message', '')}")
         else:
-            logger.info("✅ All rules passed - no violations detected!")
+            if violations:
+                logger.info(f"✅ All {len(violations)} violations were already reported, skipping check run")
+            else:
+                logger.info("✅ All rules passed - no violations detected!")
 
         logger.info("=" * 80)
 
         return ProcessingResult(
-            state=ProcessingState.PASS if not violations else ProcessingState.FAIL,
-            violations=violations,
+            state=ProcessingState.PASS if not new_violations else ProcessingState.FAIL,
+            violations=new_violations,
             api_calls_made=api_calls,
             processing_time_ms=processing_time,
         )

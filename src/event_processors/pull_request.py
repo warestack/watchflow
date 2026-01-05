@@ -4,6 +4,7 @@ import time
 from typing import Any
 
 from src.agents import get_agent
+from src.core.utils.violation_tracker import get_violation_tracker
 from src.event_processors.base import BaseEventProcessor, ProcessingResult, ProcessingState
 from src.rules.loaders.github_loader import RulesFileNotFoundError
 from src.tasks.task_queue import Task
@@ -144,25 +145,48 @@ class PullRequestProcessor(BaseEventProcessor):
             # Use violations requiring fixes for final result
             violations = require_acknowledgment_violations
 
+            # Filter out duplicate violations before posting
+            pr_data = task.payload.get("pull_request", {})
+            pr_number = pr_data.get("number")
+            context = {
+                "pr_number": pr_number,
+                "commit_sha": pr_data.get("head", {}).get("sha"),
+                "branch": pr_data.get("head", {}).get("ref"),
+            } if pr_number else {}
+
+            violation_tracker = get_violation_tracker()
+            new_violations = violation_tracker.filter_new_violations(
+                violations, task.repo_full_name, context
+            )
+
+            if len(new_violations) < len(violations):
+                logger.info(
+                    f"🔍 Deduplication: {len(violations) - len(new_violations)} duplicate violation(s) filtered out, "
+                    f"{len(new_violations)} new violation(s) to report"
+                )
+
             # Create check run based on whether we have acknowledgments
             if previous_acknowledgments and original_violations:
                 # Create check run with acknowledgment context
                 await self._create_check_run_with_acknowledgment(
-                    task, acknowledgable_violations, violations, previous_acknowledgments
+                    task, acknowledgable_violations, new_violations, previous_acknowledgments
                 )
             else:
                 # No acknowledgments or no violations - create normal check run
-                await self._create_check_run(task, violations)
+                await self._create_check_run(task, new_violations)
 
             processing_time = int((time.time() - start_time) * 1000)
 
-            # Post violations as comments (if any)
-            if violations:
-                logger.info(f"🚨 Found {len(violations)} violations, posting to PR...")
-                await self._post_violations_to_github(task, violations)
+            # Post violations as comments (if any new violations)
+            if new_violations:
+                logger.info(f"🚨 Found {len(new_violations)} new violations, posting to PR...")
+                await self._post_violations_to_github(task, new_violations)
                 api_calls += 1
             else:
-                logger.info("✅ No violations found, skipping PR comment")
+                if violations:
+                    logger.info(f"✅ All {len(violations)} violations were already reported, skipping PR comment")
+                else:
+                    logger.info("✅ No violations found, skipping PR comment")
 
             # Summary
             logger.info("=" * 80)
@@ -171,10 +195,10 @@ class PullRequestProcessor(BaseEventProcessor):
             logger.info(f"   Violations found: {len(violations)}")
             logger.info(f"   API calls made: {api_calls}")
 
-            if violations:
+            if new_violations:
                 logger.warning("🚨 VIOLATION SUMMARY:")
                 # Format violations for logging
-                for i, violation in enumerate(violations, 1):
+                for i, violation in enumerate(new_violations, 1):
                     logger.info(
                         f"   {i}. {violation.get('rule_description', 'Unknown')} ({violation.get('severity', 'medium')})"
                     )
@@ -185,8 +209,8 @@ class PullRequestProcessor(BaseEventProcessor):
             logger.info("=" * 80)
 
             return ProcessingResult(
-                state=ProcessingState.PASS if not violations else ProcessingState.FAIL,
-                violations=violations,
+                state=ProcessingState.PASS if not new_violations else ProcessingState.FAIL,
+                violations=new_violations,
                 api_calls_made=api_calls,
                 processing_time_ms=processing_time,
             )
