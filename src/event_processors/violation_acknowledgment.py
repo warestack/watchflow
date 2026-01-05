@@ -5,7 +5,7 @@ from typing import Any
 
 from src.agents import get_agent
 from src.core.models import EventType
-from src.event_processors.base import BaseEventProcessor, ProcessingResult
+from src.event_processors.base import BaseEventProcessor, ProcessingResult, ProcessingState
 from src.tasks.task_queue import Task
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
                 api_calls += 1
 
                 return ProcessingResult(
-                    success=True,
+                    state=ProcessingState.PASS,
                     violations=[],
                     api_calls_made=api_calls,
                     processing_time_ms=int((time.time() - start_time) * 1000),
@@ -87,7 +87,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             if not github_token:
                 logger.error(f"❌ Failed to get installation token for {installation_id}")
                 return ProcessingResult(
-                    success=False,
+                    state=ProcessingState.ERROR,
                     violations=[],
                     api_calls_made=api_calls,
                     processing_time_ms=int((time.time() - start_time) * 1000),
@@ -178,7 +178,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
                 )
                 api_calls += 1
                 return ProcessingResult(
-                    success=False,
+                    state=ProcessingState.ERROR,
                     violations=[],
                     api_calls_made=api_calls,
                     processing_time_ms=int((time.time() - start_time) * 1000),
@@ -203,7 +203,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
                 api_calls += 1
 
                 return ProcessingResult(
-                    success=True,
+                    state=ProcessingState.PASS,
                     violations=[],
                     api_calls_made=api_calls,
                     processing_time_ms=int((time.time() - start_time) * 1000),
@@ -262,8 +262,16 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             logger.info(f"    Status: {'accepted' if evaluation_result['valid'] else 'rejected'}")
             logger.info("=" * 80)
 
+            # Determine state: PASS if valid acknowledgment, FAIL if violations require fixes, ERROR if invalid
+            if evaluation_result["valid"]:
+                state = ProcessingState.PASS
+            elif evaluation_result.get("require_fixes"):
+                state = ProcessingState.FAIL
+            else:
+                state = ProcessingState.ERROR
+            
             return ProcessingResult(
-                success=True,
+                state=state,
                 violations=evaluation_result["require_fixes"] if not evaluation_result["valid"] else [],
                 api_calls_made=api_calls,
                 processing_time_ms=processing_time,
@@ -272,7 +280,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
         except Exception as e:
             logger.error(f"❌ Error processing violation acknowledgment: {str(e)}")
             return ProcessingResult(
-                success=False,
+                state=ProcessingState.ERROR,
                 violations=[],
                 api_calls_made=api_calls,
                 processing_time_ms=int((time.time() - start_time) * 1000),

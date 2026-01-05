@@ -4,7 +4,7 @@ import time
 from typing import Any
 
 from src.agents import get_agent
-from src.event_processors.base import BaseEventProcessor, ProcessingResult
+from src.event_processors.base import BaseEventProcessor, ProcessingResult, ProcessingState
 from src.rules.loaders.github_loader import RulesFileNotFoundError
 from src.tasks.task_queue import Task
 
@@ -59,7 +59,7 @@ class PullRequestProcessor(BaseEventProcessor):
                     error="Rules not configured. Please create `.watchflow/rules.yaml` in your repository.",
                 )
                 return ProcessingResult(
-                    success=True,  # Not a failure, just needs setup
+                    state=ProcessingState.PASS,  # Not a failure, just needs setup
                     violations=[],
                     api_calls_made=api_calls,
                     processing_time_ms=int((time.time() - start_time) * 1000),
@@ -98,6 +98,19 @@ class PullRequestProcessor(BaseEventProcessor):
             result = await self.engine_agent.execute(
                 event_type="pull_request", event_data=event_data, rules=formatted_rules
             )
+
+            # Check if agent execution failed
+            if not result.success:
+                processing_time = int((time.time() - start_time) * 1000)
+                logger.error(f"❌ Agent execution failed: {result.message}")
+                await self._create_check_run(task, [], "failure", error=result.message)
+                return ProcessingResult(
+                    state=ProcessingState.ERROR,
+                    violations=[],
+                    api_calls_made=api_calls,
+                    processing_time_ms=processing_time,
+                    error=f"Agent execution failed: {result.message}",
+                )
 
             # Extract violations from engine result
             violations = []
@@ -172,7 +185,7 @@ class PullRequestProcessor(BaseEventProcessor):
             logger.info("=" * 80)
 
             return ProcessingResult(
-                success=(not violations),
+                state=ProcessingState.PASS if not violations else ProcessingState.FAIL,
                 violations=violations,
                 api_calls_made=api_calls,
                 processing_time_ms=processing_time,
@@ -183,7 +196,7 @@ class PullRequestProcessor(BaseEventProcessor):
             # Create a failing check run for errors
             await self._create_check_run(task, [], "failure", error=str(e))
             return ProcessingResult(
-                success=False,
+                state=ProcessingState.ERROR,
                 violations=[],
                 api_calls_made=api_calls,
                 processing_time_ms=int((time.time() - start_time) * 1000),

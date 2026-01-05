@@ -3,7 +3,7 @@ import time
 from typing import Any
 
 from src.agents import get_agent
-from src.event_processors.base import BaseEventProcessor, ProcessingResult
+from src.event_processors.base import BaseEventProcessor, ProcessingResult, ProcessingState
 from src.tasks.scheduler.deployment_scheduler import get_deployment_scheduler
 from src.tasks.task_queue import Task
 
@@ -50,7 +50,7 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                         deployment_callback_url, environment, "No rules configured", installation_id
                     )
                 return ProcessingResult(
-                    success=True,
+                    state=ProcessingState.PASS,
                     violations=[],
                     api_calls_made=1,
                     processing_time_ms=int((time.time() - start_time) * 1000),
@@ -76,7 +76,7 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                         deployment_callback_url, environment, "No deployment rules configured", installation_id
                     )
                 return ProcessingResult(
-                    success=True,
+                    state=ProcessingState.PASS,
                     violations=[],
                     api_calls_made=1,
                     processing_time_ms=int((time.time() - start_time) * 1000),
@@ -102,6 +102,18 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                 event_data=event_data,
                 rules=formatted_rules,
             )
+
+            # Check if agent execution failed
+            if not analysis_result.success:
+                processing_time = int((time.time() - start_time) * 1000)
+                logger.error(f"❌ Agent execution failed: {analysis_result.message}")
+                return ProcessingResult(
+                    state=ProcessingState.ERROR,
+                    violations=[],
+                    api_calls_made=1,
+                    processing_time_ms=processing_time,
+                    error=f"Agent execution failed: {analysis_result.message}",
+                )
 
             # Extract violations from AgentResult - same pattern as acknowledgment processor
             violations = []
@@ -166,13 +178,16 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
             logger.info("=" * 80)
 
             return ProcessingResult(
-                success=(not violations), violations=violations, api_calls_made=1, processing_time_ms=processing_time
+                state=ProcessingState.PASS if not violations else ProcessingState.FAIL,
+                violations=violations,
+                api_calls_made=1,
+                processing_time_ms=processing_time,
             )
 
         except Exception as e:
             logger.error(f"❌ Error processing deployment protection rule: {str(e)}")
             return ProcessingResult(
-                success=False,
+                state=ProcessingState.ERROR,
                 violations=[],
                 api_calls_made=0,
                 processing_time_ms=int((time.time() - start_time) * 1000),

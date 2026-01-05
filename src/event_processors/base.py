@@ -1,5 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -13,14 +14,39 @@ from src.tasks.task_queue import Task
 logger = logging.getLogger(__name__)
 
 
+class ProcessingState(str, Enum):
+    """
+    Processing state for event processing results.
+    
+    - PASS: Rules passed - everything is good, no violations found
+    - FAIL: Rules failed - violations found, action required
+    - ERROR: Error occurred - couldn't check, need to investigate
+    """
+
+    PASS = "pass"
+    FAIL = "fail"
+    ERROR = "error"
+
+
 class ProcessingResult(BaseModel):
     """Result of event processing."""
 
-    success: bool
+    state: ProcessingState
     violations: list[dict[str, Any]] = Field(default_factory=list)
     api_calls_made: int
     processing_time_ms: int
     error: str | None = None
+
+    @property
+    def success(self) -> bool:
+        """
+        Legacy property for backward compatibility.
+        
+        Returns True only for PASS state, False for FAIL or ERROR.
+        Note: This doesn't distinguish between FAIL and ERROR.
+        Use .state instead for explicit state checking.
+        """
+        return self.state == ProcessingState.PASS
 
 
 class BaseEventProcessor(ABC):

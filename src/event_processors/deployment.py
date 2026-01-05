@@ -2,7 +2,7 @@ import logging
 import time
 from typing import Any
 
-from src.event_processors.base import BaseEventProcessor, ProcessingResult
+from src.event_processors.base import BaseEventProcessor, ProcessingResult, ProcessingState
 from src.tasks.task_queue import Task
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ class DeploymentProcessor(BaseEventProcessor):
         logger.info("=" * 80)
 
         return ProcessingResult(
-            success=True, violations=[], api_calls_made=0, processing_time_ms=int((time.time() - start_time) * 1000)
+            state=ProcessingState.PASS, violations=[], api_calls_made=0, processing_time_ms=int((time.time() - start_time) * 1000)
         )
 
     async def prepare_webhook_data(self, task: Task) -> dict[str, Any]:

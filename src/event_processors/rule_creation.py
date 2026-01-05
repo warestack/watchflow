@@ -4,7 +4,7 @@ import time
 from typing import Any
 
 from src.agents import get_agent
-from src.event_processors.base import BaseEventProcessor, ProcessingResult
+from src.event_processors.base import BaseEventProcessor, ProcessingResult, ProcessingState
 from src.tasks.task_queue import Task
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ class RuleCreationProcessor(BaseEventProcessor):
 
             if not rule_description:
                 return ProcessingResult(
-                    success=False,
+                    state=ProcessingState.ERROR,
                     violations=[],
                     api_calls_made=0,
                     processing_time_ms=int((time.time() - start_time) * 1000),
@@ -47,7 +47,34 @@ class RuleCreationProcessor(BaseEventProcessor):
             logger.info(f"📝 Rule description: {rule_description}")
 
             # Use the feasibility agent to check if the rule is supported
-            feasibility_result = await self.feasibility_agent.check_feasibility(rule_description)
+            agent_result = await self.feasibility_agent.execute(rule_description)
+
+            # Check if agent execution failed
+            if not agent_result.success:
+                processing_time = int((time.time() - start_time) * 1000)
+                logger.error(f"❌ Feasibility agent failed: {agent_result.message}")
+                return ProcessingResult(
+                    state=ProcessingState.ERROR,
+                    violations=[],
+                    api_calls_made=0,
+                    processing_time_ms=processing_time,
+                    error=f"Feasibility agent failed: {agent_result.message}",
+                )
+
+            # Extract feasibility data from AgentResult
+            feasibility_data = agent_result.data
+            is_feasible = feasibility_data.get("is_feasible", False)
+            yaml_content = feasibility_data.get("yaml_content", "")
+            feedback = agent_result.message  # Feedback is in the message field
+
+            # Create a simple object-like structure for compatibility with existing code
+            class FeasibilityResult:
+                def __init__(self, is_feasible: bool, yaml_content: str, feedback: str):
+                    self.is_feasible = is_feasible
+                    self.yaml_content = yaml_content
+                    self.feedback = feedback
+
+            feasibility_result = FeasibilityResult(is_feasible, yaml_content, feedback)
 
             processing_time = int((time.time() - start_time) * 1000)
 
@@ -67,12 +94,12 @@ class RuleCreationProcessor(BaseEventProcessor):
 
             logger.info("=" * 80)
 
-            return ProcessingResult(success=True, violations=[], api_calls_made=1, processing_time_ms=processing_time)
+            return ProcessingResult(state=ProcessingState.PASS, violations=[], api_calls_made=1, processing_time_ms=processing_time)
 
         except Exception as e:
             logger.error(f"❌ Error processing rule creation: {e}")
             return ProcessingResult(
-                success=False,
+                state=ProcessingState.ERROR,
                 violations=[],
                 api_calls_made=0,
                 processing_time_ms=int((time.time() - start_time) * 1000),
