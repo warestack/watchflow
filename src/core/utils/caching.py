@@ -1,8 +1,26 @@
 """
 Caching utilities for async operations.
 
-Provides async-friendly caching with TTL support and decorators
+Provides async-friendly caching with TTL (Time To Live) support and decorators
 for caching function results.
+
+Caching Strategy
+----------------
+This module implements a caching strategy with the following features:
+
+1. **TTL (Time To Live)**: Automatic expiration of cached entries after a configurable time period
+2. **Eviction Policy**: Uses LRU (Least Recently Used) eviction when cache reaches max size
+3. **Configuration**: Configurable via environment variables and CacheConfig
+4. **Async Support**: Designed for async operations with proper async/await support
+
+Configuration
+-------------
+Cache behavior can be configured via environment variables:
+- CACHE_GLOBAL_MAXSIZE: Maximum number of entries in global cache (default: 1024)
+- CACHE_GLOBAL_TTL: Global cache TTL in seconds (default: 3600)
+- CACHE_DEFAULT_MAXSIZE: Default max size for new cache instances (default: 100)
+- CACHE_DEFAULT_TTL: Default TTL for new cache instances (default: 3600)
+- CACHE_ENABLE: Master switch to enable/disable caching (default: true)
 
 """
 

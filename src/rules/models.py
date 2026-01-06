@@ -42,6 +42,8 @@ class Rule(BaseModel):
     (ConditionExpression with AND/OR/NOT operators).
     """
 
+    model_config = {"arbitrary_types_allowed": True}
+
     description: str = Field(description="Primary identifier and description of the rule")
     enabled: bool = True
     severity: RuleSeverity = RuleSeverity.MEDIUM
