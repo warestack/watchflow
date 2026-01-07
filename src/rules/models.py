@@ -56,7 +56,6 @@ class Rule(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict, description="Store parameters as-is from YAML")
 
 
-# Resolve forward reference after ConditionExpression is defined
 def _rebuild_rule_model() -> None:
     """Rebuild Rule model to resolve forward references."""
     from src.rules.condition_evaluator import ConditionExpression  # noqa: F401
