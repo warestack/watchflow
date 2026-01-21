@@ -58,10 +58,11 @@ class ContributorAnalyzer:
                 username = contributor.get("login", "")
                 contributions = contributor.get("contributions", 0)
 
-                if contributions >= min_contributions:
-                    # Check if they have recent activity
-                    if await self._has_recent_activity(repo, username, installation_id, cutoff_date):
-                        past_contributors.add(username)
+                # SIM102: Combined nested if statements
+                if contributions >= min_contributions and await self._has_recent_activity(
+                    repo, username, installation_id, cutoff_date
+                ):
+                    past_contributors.add(username)
 
             # Cache the results
             self._contributors_cache.set(cache_key, list(past_contributors))

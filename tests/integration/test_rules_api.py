@@ -25,7 +25,7 @@ class TestRulesAPIIntegration:
     def test_evaluate_feasible_rule_integration(self, client):
         """Test successful rule evaluation through the complete stack (mocked OpenAI)."""
         # Mock OpenAI unless real API testing is explicitly enabled
-        if not os.getenv("INTEGRATION_TEST_REAL_API", "false").lower() == "true":
+        if os.getenv("INTEGRATION_TEST_REAL_API", "false").lower() != "true":
             with patch("src.api.rules.get_agent") as mock_get_agent:
                 # Mock the agent instance
                 mock_agent = MagicMock()
@@ -68,7 +68,7 @@ class TestRulesAPIIntegration:
     def test_evaluate_unfeasible_rule_integration(self, client):
         """Test unfeasible rule evaluation through the complete stack (mocked OpenAI)."""
         # Mock OpenAI unless real API testing is explicitly enabled
-        if not os.getenv("INTEGRATION_TEST_REAL_API", "false").lower() == "true":
+        if os.getenv("INTEGRATION_TEST_REAL_API", "false").lower() != "true":
             with patch("src.api.rules.get_agent") as mock_get_agent:
                 # Mock the agent instance
                 mock_agent = MagicMock()
@@ -103,7 +103,7 @@ class TestRulesAPIIntegration:
         assert response.status_code == 200
         data = response.json()
         # Note: For mocked tests, we control the response, for real API this might vary
-        if not os.getenv("INTEGRATION_TEST_REAL_API", "false").lower() == "true":
+        if os.getenv("INTEGRATION_TEST_REAL_API", "false").lower() != "true":
             assert data["supported"] is False
             assert data["snippet"] == ""
         assert len(data["feedback"]) > 0

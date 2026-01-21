@@ -5,12 +5,17 @@ Provides context managers and decorators for structured operation logging
 with timing, error tracking, and metadata.
 """
 
+from __future__ import annotations
+
+import inspect
 import logging
 import time
-from collections.abc import Callable
 from contextlib import asynccontextmanager
 from functools import wraps
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -118,8 +123,6 @@ def log_function_call(operation: str | None = None):
                 raise
 
         # Return appropriate wrapper based on whether function is async
-        import inspect
-
         if inspect.iscoroutinefunction(func):
             return async_wrapper
         return sync_wrapper
@@ -142,5 +145,6 @@ def log_structured(
         level: Logging level (info|warning|error).
         **context: Arbitrary key/value metadata.
     """
+    # Callable is now only needed for typing, so it's safe to use the string name or handled by __future__
     log_fn: Callable[..., Any] = getattr(logger_obj, level, logger_obj.info)
     log_fn(event, extra=context)

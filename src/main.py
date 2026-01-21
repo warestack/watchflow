@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -8,14 +7,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.api.recommendations import router as recommendations_api_router
 from src.api.rules import router as rules_api_router
 from src.api.scheduler import router as scheduler_api_router
-from src.core.config import config
 from src.core.models import EventType
 from src.tasks.scheduler.deployment_scheduler import get_deployment_scheduler
 from src.tasks.task_queue import task_queue
 from src.webhooks.dispatcher import dispatcher
 from src.webhooks.handlers.check_run import CheckRunEventHandler
 from src.webhooks.handlers.deployment import DeploymentEventHandler
-from src.webhooks.handlers.deployment_protection_rule import DeploymentProtectionRuleEventHandler
+from src.webhooks.handlers.deployment_protection_rule import (
+    DeploymentProtectionRuleEventHandler,
+)
 from src.webhooks.handlers.deployment_review import DeploymentReviewEventHandler
 from src.webhooks.handlers.deployment_status import DeploymentStatusEventHandler
 from src.webhooks.handlers.issue_comment import IssueCommentEventHandler
@@ -35,7 +35,7 @@ logging.basicConfig(
 async def lifespan(_app: FastAPI):
     """Application lifespan manager for startup and shutdown logic."""
     # Startup logic
-    print("Watchflow application starting up...")
+    logging.info("Watchflow application starting up...")
 
     # Start background task workers
     await task_queue.start_workers(num_workers=5)
@@ -62,16 +62,12 @@ async def lifespan(_app: FastAPI):
     dispatcher.register_handler(EventType.DEPLOYMENT_REVIEW, deployment_review_handler)
     dispatcher.register_handler(EventType.DEPLOYMENT_PROTECTION_RULE, deployment_protection_rule_handler)
 
-    print("Event handlers registered, background workers started, and deployment scheduler started.")
-
-    # Start the deployment scheduler
-    asyncio.create_task(get_deployment_scheduler().start_background_scheduler())
-    logging.info("🚀 Deployment scheduler started")
+    logging.info("Event handlers registered, background workers started, and deployment scheduler started.")
 
     yield
 
     # Shutdown logic
-    print("Watchflow application shutting down...")
+    logging.info("Watchflow application shutting down...")
 
     # Stop deployment scheduler
     await get_deployment_scheduler().stop()
@@ -79,7 +75,7 @@ async def lifespan(_app: FastAPI):
     # Stop background workers
     await task_queue.stop_workers()
 
-    print("Background workers and deployment scheduler stopped.")
+    logging.info("Background workers and deployment scheduler stopped.")
 
 
 app = FastAPI(
@@ -89,21 +85,22 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# --- CORS Configuration ---
+# We explicitly allow all origins ("*") to prevent the browser from blocking requests
+# from your local file system or different localhost ports.
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=config.cors.origins,
+    allow_origins=["*"],  # Explicitly allow all for development
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=config.cors.headers,
+    allow_headers=["*"],
 )
 
 # --- Include Routers ---
 
 app.include_router(webhook_router, prefix="/webhooks", tags=["GitHub Webhooks"])
 app.include_router(rules_api_router, prefix="/api/v1", tags=["Public API"])
-app.include_router(recommendations_api_router, prefix="/api", tags=["Recommendations API"])
+app.include_router(recommendations_api_router, prefix="/api/rules", tags=["Recommendations API"])
 app.include_router(scheduler_api_router, prefix="/api/v1/scheduler", tags=["Scheduler API"])
 
 # --- Root Endpoint ---
@@ -121,10 +118,11 @@ async def read_root():
 @app.get("/health/tasks", tags=["Health Check"])
 async def health_tasks():
     """Check the status of background tasks."""
-    pending_count = len([t for t in task_queue.tasks.values() if t.status.value == "pending"])
-    running_count = len([t for t in task_queue.tasks.values() if t.status.value == "running"])
-    completed_count = len([t for t in task_queue.tasks.values() if t.status.value == "completed"])
-    failed_count = len([t for t in task_queue.tasks.values() if t.status.value == "failed"])
+    tasks = task_queue.tasks.values()
+    pending_count = sum(1 for t in tasks if t.status.value == "pending")
+    running_count = sum(1 for t in tasks if t.status.value == "running")
+    completed_count = sum(1 for t in tasks if t.status.value == "completed")
+    failed_count = sum(1 for t in tasks if t.status.value == "failed")
 
     return {
         "task_queue_status": "running",
@@ -134,7 +132,7 @@ async def health_tasks():
             "running": running_count,
             "completed": completed_count,
             "failed": failed_count,
-            "total": len(task_queue.tasks),
+            "total": len(tasks),
         },
     }
 

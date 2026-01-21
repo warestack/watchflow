@@ -1,63 +1,62 @@
-"""
-RepositoryAnalysisAgent orchestrates repository signal gathering and rule generation.
-"""
+# File: src/agents/repository_analysis_agent/agent.py
+import logging
 
-from __future__ import annotations
-
-import time
+from langgraph.graph import END, StateGraph
 
 from src.agents.base import AgentResult, BaseAgent
-from src.agents.repository_analysis_agent.models import RepositoryAnalysisRequest, RepositoryAnalysisState
-from src.agents.repository_analysis_agent.nodes import (
-    _default_recommendations,
-    analyze_contributing_guidelines,
-    analyze_pr_history,
-    analyze_repository_structure,
-    summarize_analysis,
-    validate_recommendations,
-)
+from src.agents.repository_analysis_agent import nodes
+from src.agents.repository_analysis_agent.models import AnalysisState
+
+logger = logging.getLogger(__name__)
 
 
 class RepositoryAnalysisAgent(BaseAgent):
-    """Agent that inspects a repository and proposes Watchflow rules."""
+    """
+    Agent responsible for inspecting a repository and suggesting Watchflow rules.
+    """
 
-    def _build_graph(self):
-        # Graph orchestration is handled procedurally in execute for clarity.
-        return None
+    def __init__(self):
+        # We use 'repository_analysis' to look up config like max_tokens
+        super().__init__(agent_name="repository_analysis")
 
-    async def execute(self, **kwargs) -> AgentResult:
-        started_at = time.perf_counter()
-        request = RepositoryAnalysisRequest(**kwargs)
-        state = RepositoryAnalysisState(
-            repository_full_name=request.repository_full_name,
-            installation_id=request.installation_id,
-        )
+    def _build_graph(self) -> StateGraph:
+        """
+        Flow: Fetch Metadata -> Generate Rules -> END
+        """
+        workflow = StateGraph(AnalysisState)
+
+        # Register Nodes
+        workflow.add_node("fetch_metadata", nodes.fetch_repository_metadata)
+        workflow.add_node("generate_rules", nodes.generate_rule_recommendations)
+
+        # Define Edges
+        workflow.set_entry_point("fetch_metadata")
+        workflow.add_edge("fetch_metadata", "generate_rules")
+        workflow.add_edge("generate_rules", END)
+
+        return workflow.compile()
+
+    async def execute(self, repo_full_name: str, is_public: bool = False) -> AgentResult:
+        """
+        Public entry point for the API.
+        """
+        initial_state = AnalysisState(repo_full_name=repo_full_name, is_public=is_public)
 
         try:
-            await analyze_repository_structure(state)
-            await analyze_pr_history(state, request.max_prs)
-            await analyze_contributing_guidelines(state)
+            # Execute Graph
+            # .model_dump() is required because LangGraph expects a dict input
+            result_dict = await self.graph.ainvoke(initial_state.model_dump())
 
-            # Only generate recommendations if we have basic repository data
-            if not state.repository_features.language:
-                raise ValueError("Unable to determine repository language - cannot generate appropriate rules")
+            # Rehydrate State
+            final_state = AnalysisState(**result_dict)
 
-            state.recommendations = _default_recommendations(state)
-            validate_recommendations(state)
-            response = summarize_analysis(state, request)
+            if final_state.error:
+                return AgentResult(success=False, message=final_state.error)
 
-            latency_ms = int((time.perf_counter() - started_at) * 1000)
             return AgentResult(
-                success=True,
-                message="Repository analysis completed",
-                data={"analysis_response": response},
-                metadata={"execution_time_ms": latency_ms},
+                success=True, message="Analysis complete", data={"recommendations": final_state.recommendations}
             )
-        except Exception as exc:  # noqa: BLE001
-            latency_ms = int((time.perf_counter() - started_at) * 1000)
-            return AgentResult(
-                success=False,
-                message=f"Repository analysis failed: {exc}",
-                data={},
-                metadata={"execution_time_ms": latency_ms},
-            )
+
+        except Exception as e:
+            logger.exception("RepositoryAnalysisAgent execution failed")
+            return AgentResult(success=False, message=str(e))

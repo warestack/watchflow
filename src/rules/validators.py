@@ -82,7 +82,7 @@ def _matches_any(path: str, patterns: list[str]) -> bool:
 class Condition(ABC):
     """Abstract base class for all condition validators."""
 
-    # Class attributes for validator descriptions
+    # Validator metadata—used for dynamic selection, keep concise.
     name: str = ""
     description: str = ""
     parameter_patterns: list[str] = []
@@ -129,16 +129,16 @@ class AuthorTeamCondition(Condition):
             logger.warning("AuthorTeamCondition: No team specified in parameters")
             return False
 
-        # Get author from event
+        # Extract author—fragile if event schema changes.
         author_login = event.get("sender", {}).get("login", "")
         if not author_login:
             logger.warning("AuthorTeamCondition: No sender login found in event")
             return False
 
-        # Placeholder logic - replace with actual GitHub API call
+        # TODO: Replace with real GitHub API call—current logic for test/demo only.
         logger.debug(f"Checking if {author_login} is in team {team_name}")
 
-        # For testing purposes, let's assume certain users are in certain teams
+        # Test memberships—hardcoded, not production safe.
         team_memberships = {
             "devops": ["devops-user", "admin-user"],
             "codeowners": ["senior-dev", "tech-lead"],
@@ -165,21 +165,20 @@ class FilePatternCondition(Condition):
             logger.warning("FilePatternCondition: No pattern specified in parameters")
             return False
 
-        # Get the list of changed files from the event
+        # Changed files—source varies by event type, brittle if GitHub changes payload.
         changed_files = self._get_changed_files(event)
 
         if not changed_files:
             logger.debug("No files to check against pattern")
             return False
 
-        # Convert glob pattern to regex
+        # Glob→regex—simple, not robust. TODO: improve for edge cases.
         regex_pattern = FilePatternCondition._glob_to_regex(pattern)
 
-        # Check if any files match the pattern
+        # Pattern match—performance: optimize if file count high.
         matching_files = [file for file in changed_files if re.match(regex_pattern, file)]
 
-        # For "files_not_match_pattern", we want True if NO files match
-        # For "files_match_pattern", we want True if ANY files match
+        # Logic: True if ANY match (files_match_pattern), True if NONE match (files_not_match_pattern).
         condition_type = parameters.get("condition_type", "files_match_pattern")
 
         if condition_type == "files_not_match_pattern":
@@ -191,11 +190,10 @@ class FilePatternCondition(Condition):
         """Extracts the list of changed files from the event."""
         event_type = event.get("event_type", "")
         if event_type == "pull_request":
-            # For pull requests, we'd need to get this from the GitHub API
-            # For now, return a placeholder
+            # TODO: Pull request—fetch changed files via GitHub API. Placeholder for now.
             return []
         elif event_type == "push":
-            # For push events, the files are in the commits
+            # Push event—files in commits, not implemented.
             return []
         else:
             return []
@@ -203,7 +201,7 @@ class FilePatternCondition(Condition):
     @staticmethod
     def _glob_to_regex(glob_pattern: str) -> str:
         """Converts a glob pattern to a regex pattern."""
-        # Simple conversion - in production, you'd want a more robust implementation
+        # Simple glob→regex—fragile, production needs better.
         regex = glob_pattern.replace(".", "\\.").replace("*", ".*").replace("?", ".")
         return f"^{regex}$"
 
@@ -222,8 +220,7 @@ class NewContributorCondition(Condition):
         if not author_login:
             return False
 
-        # Placeholder logic - in production, this would check the user's contribution history
-        # For now, we'll use a simple list of "new contributors"
+        # TODO: Check real contribution history. For now, hardcoded list—fragile, demo only.
         new_contributors = ["new-user-1", "new-user-2", "intern-dev"]
 
         return author_login in new_contributors
@@ -239,15 +236,15 @@ class ApprovalCountCondition(Condition):
     examples = [{"min_approvals": 1}, {"min_approvals": 2}]
 
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
-        # Remove unused variable assignment
+        # Unused: min_approvals—left for future logic.
         # min_approvals = parameters.get("min_approvals", 1)
 
-        # Placeholder logic - in production, this would check the actual PR reviews
+        # TODO: Check actual PR reviews. Always returns True—demo only.
         return True
 
 
 class WeekendCondition(Condition):
-    """Validates if the current time is during a weekend."""
+    """Validates if the current time is during a weekend."""  # Time-based logic—fragile if timezone not handled.
 
     name = "is_weekend"
     description = "Validates if the current time is during a weekend"

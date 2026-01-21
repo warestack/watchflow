@@ -11,7 +11,6 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
@@ -150,18 +149,22 @@ class BedrockProvider(BaseProvider):
             profiles = response.get("inferenceProfiles", [])
 
             for profile in profiles:
-                profile_name = profile.get("name", "")
+                profile_name = profile.get("name", "").lower()
                 profile_arn = profile.get("arn", "")
+                model_lower = model_id.lower()
 
-                if any(keyword in profile_name.lower() for keyword in ["claude", "anthropic", "general", "default"]):
-                    if "anthropic" in model_id.lower() or "claude" in model_id.lower():
-                        return profile_arn
-                elif any(keyword in profile_name.lower() for keyword in ["amazon", "titan", "nova"]):
-                    if "amazon" in model_id.lower() or "titan" in model_id.lower() or "nova" in model_id.lower():
-                        return profile_arn
-                elif any(keyword in profile_name.lower() for keyword in ["meta", "llama"]):
-                    if "meta" in model_id.lower() or "llama" in model_id.lower():
-                        return profile_arn
+                # SIM102: Combined nested if statements
+                is_anthropic = any(k in profile_name for k in ["claude", "anthropic", "general", "default"])
+                if is_anthropic and ("anthropic" in model_lower or "claude" in model_lower):
+                    return profile_arn
+
+                is_amazon = any(k in profile_name for k in ["amazon", "titan", "nova"])
+                if is_amazon and ("amazon" in model_lower or "titan" in model_lower or "nova" in model_lower):
+                    return profile_arn
+
+                is_meta = any(k in profile_name for k in ["meta", "llama"])
+                if is_meta and ("meta" in model_lower or "llama" in model_lower):
+                    return profile_arn
 
             return None
         except Exception:
@@ -174,6 +177,7 @@ class BedrockProvider(BaseProvider):
 
     def _wrap_anthropic_client(self, client: Any, model_id: str) -> Any:
         """Wrap Anthropic Bedrock client to be langchain-compatible."""
+        from langchain_core.language_models.chat_models import BaseChatModel
 
         class AnthropicBedrockWrapper(BaseChatModel):
             """Wrapper for Anthropic Bedrock client to be langchain-compatible."""

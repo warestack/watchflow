@@ -32,7 +32,7 @@ class Task(BaseModel):
     completed_at: datetime | None = None
     error: str | None = None
     result: dict[str, Any] | None = None
-    event_hash: str | None = None  # For deduplication
+    event_hash: str | None = None  # Deduplication—avoid double-processing same event.
 
 
 class TaskQueue:
@@ -40,13 +40,13 @@ class TaskQueue:
 
     def __init__(self):
         self.tasks: dict[str, Task] = {}
-        self.event_hashes: dict[str, str] = {}  # event_hash -> task_id
+        self.event_hashes: dict[str, str] = {}  # Maps event_hash to task_id—fast lookup for dedup.
         self.running = False
         self.workers = []
 
     def _create_event_hash(self, event_type: str, repo_full_name: str, payload: dict[str, Any]) -> str:
         """Create a unique hash for the event to enable deduplication."""
-        # Create a stable identifier based on event type, repo, and key payload fields
+        # Stable hash—prevents duplicate work if GitHub retries webhook.
         event_data = {
             "event_type": event_type,
             "repo_full_name": repo_full_name,
@@ -54,7 +54,7 @@ class TaskQueue:
             "sender": payload.get("sender", {}).get("login"),
         }
 
-        # Add event-specific identifiers
+        # Event-specific fields—catch subtle changes (e.g., PR body edit).
         if event_type == "pull_request":
             pr_data = payload.get("pull_request", {})
             event_data.update(
@@ -62,8 +62,10 @@ class TaskQueue:
                     "pr_number": pr_data.get("number"),
                     "pr_title": pr_data.get("title"),
                     "pr_state": pr_data.get("state"),
-                    "pr_body": pr_data.get("body"),  # Include body for description changes
-                    "pr_updated_at": pr_data.get("updated_at"),  # Include update timestamp
+                    "pr_body": pr_data.get("body"),  # PR body—detect description edits, not just state.
+                    "pr_updated_at": pr_data.get(
+                        "updated_at"
+                    ),  # Timestamp—GitHub sometimes sends duplicate events with minor changes.
                 }
             )
         elif event_type == "push":
@@ -84,8 +86,7 @@ class TaskQueue:
                 }
             )
         elif event_type == "issue_comment":
-            # For issue comments (including acknowledgments), include the comment content
-            # to allow multiple acknowledgments with different reasons
+            # Issue comments: include content—lets user acknowledge same rule for different reasons.
             comment = payload.get("comment", {})
             event_data.update(
                 {

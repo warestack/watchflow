@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 from datetime import datetime, timedelta
 from typing import Any
@@ -41,10 +42,9 @@ class DeploymentScheduler:
         self.running = False
         if self.scheduler_task:
             self.scheduler_task.cancel()
-            try:
+            # SIM105: Use contextlib.suppress instead of try-except-pass
+            with contextlib.suppress(asyncio.CancelledError):
                 await self.scheduler_task
-            except asyncio.CancelledError:
-                pass
         logger.info("🛑 Deployment scheduler stopped")
 
     async def add_pending_deployment(self, deployment_data: dict[str, Any]):

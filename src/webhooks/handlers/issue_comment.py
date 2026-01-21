@@ -32,7 +32,7 @@ class IssueCommentEventHandler(EventHandler):
 
             logger.info(f"🔄 Processing comment from {commenter}: {comment_body[:50]}...")
 
-            # Ignore comments from the bot itself to prevent infinite loops
+            # Bot self-reply guard—avoids infinite loop, spam.
             bot_usernames = ["watchflow[bot]", "watchflow-bot", "watchflow", "watchflowbot", "watchflow_bot"]
             if commenter and any(bot_name.lower() in commenter.lower() for bot_name in bot_usernames):
                 logger.info(f"🤖 Ignoring comment from bot user: {commenter}")
@@ -40,7 +40,7 @@ class IssueCommentEventHandler(EventHandler):
 
             logger.info(f"👤 Processing comment from human user: {commenter}")
 
-            # Check if this is a help command
+            # Help command—user likely lost/confused.
             if self._is_help_comment(comment_body):
                 help_message = (
                     "Here are the available Watchflow commands:\n"
@@ -69,7 +69,7 @@ class IssueCommentEventHandler(EventHandler):
                     logger.warning("Could not determine PR or issue number to post help message.")
                     return {"status": "help", "message": help_message}
 
-            # Check if this is an acknowledgment comment
+            # Acknowledgment—user wants to mark violation as known/accepted.
             ack_reason = self._extract_acknowledgment_reason(comment_body)
             if ack_reason is not None:
                 task_id = await task_queue.enqueue(
@@ -81,7 +81,7 @@ class IssueCommentEventHandler(EventHandler):
                 logger.info(f"✅ Acknowledgment comment enqueued with task ID: {task_id}")
                 return {"status": "acknowledgment_queued", "task_id": task_id, "reason": ack_reason}
 
-            # Check if this is an evaluate command
+            # Evaluate—user wants feasibility check for rule idea.
             eval_rule = self._extract_evaluate_rule(comment_body)
             if eval_rule is not None:
                 agent = get_agent("feasibility")
@@ -115,7 +115,7 @@ class IssueCommentEventHandler(EventHandler):
                     logger.warning("Could not determine PR or issue number to post feasibility evaluation result.")
                     return {"status": "feasibility_evaluation", "message": comment}
 
-            # Check if this is a validate command
+            # Validate—user wants rules.yaml sanity check.
             if self._is_validate_comment(comment_body):
                 logger.info("🔍 Processing validate command.")
                 validation_result = await _validate_rules_yaml(repo, installation_id)
@@ -138,6 +138,7 @@ class IssueCommentEventHandler(EventHandler):
                     return {"status": "validation", "message": validation_result}
 
             else:
+                # No match—ignore, avoid noise.
                 logger.info("📋 Comment does not match any known patterns - ignoring")
                 return {"status": "ignored", "reason": "No matching patterns"}
 
@@ -151,21 +152,20 @@ class IssueCommentEventHandler(EventHandler):
 
         logger.info(f"🔍 Extracting acknowledgment reason from: '{comment_body}'")
 
-        # Try different patterns for flexibility
+        # Regex flexibility—users type commands in unpredictable ways.
         patterns = [
-            r'@watchflow\s+(acknowledge|ack)\s+"([^"]+)"',  # Double quotes
-            r"@watchflow\s+(acknowledge|ack)\s+'([^']+)'",  # Single quotes
-            r"@watchflow\s+(acknowledge|ack)\s+([^\n\r]+)",  # No quotes, until end of line
+            r'@watchflow\s+(acknowledge|ack)\s+"([^"]+)"',  # Double quotes—most common
+            r"@watchflow\s+(acknowledge|ack)\s+'([^']+)'",  # Single quotes—fallback
+            r"@watchflow\s+(acknowledge|ack)\s+([^\n\r]+)",  # No quotes—last resort
         ]
 
         for i, pattern in enumerate(patterns):
             match = re.search(pattern, comment_body, re.IGNORECASE | re.DOTALL)
             if match:
-                # For patterns with quotes, group 2 contains the reason
-                # For pattern without quotes, group 2 contains the reason
+                # All patterns: group 2 = reason. Brittle if GitHub changes format.
                 reason = match.group(2).strip()
                 logger.info(f"✅ Pattern {i + 1} matched! Reason: '{reason}'")
-                if reason:  # Make sure we got a non-empty reason
+                if reason:  # Defensive: skip empty reasons—user typo, bot spam.
                     return reason
             else:
                 logger.info(f"❌ Pattern {i + 1} did not match")
@@ -190,7 +190,5 @@ class IssueCommentEventHandler(EventHandler):
         patterns = [
             r"@watchflow\s+help",
         ]
-        for pattern in patterns:
-            if re.search(pattern, comment_body, re.IGNORECASE):
-                return True
-        return False
+        # Pythonic: use any() for pattern match—cleaner, faster.
+        return any(re.search(pattern, comment_body, re.IGNORECASE) for pattern in patterns)

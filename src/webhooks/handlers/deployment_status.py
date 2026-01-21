@@ -24,7 +24,7 @@ class DeploymentStatusEventHandler(EventHandler):
             logger.error(f"No installation ID found in deployment_status event for {repo_full_name}")
             return {"status": "error", "message": "Missing installation ID"}
 
-        # Extract deployment status info
+        # Extract status—fragile if GitHub changes payload structure.
         deployment_status = payload.get("deployment_status", {})
         deployment = payload.get("deployment", {})
         state = deployment_status.get("state", "")
@@ -33,7 +33,7 @@ class DeploymentStatusEventHandler(EventHandler):
         logger.info(f"   State: {state}")
         logger.info(f"   Environment: {deployment.get('environment', 'unknown')}")
 
-        # Enqueue the task using the global task_queue
+        # Enqueue: async, may fail if queue overloaded.
         task_id = await task_queue.enqueue(
             event_type="deployment_status",
             repo_full_name=repo_full_name,

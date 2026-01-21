@@ -13,7 +13,7 @@ class WebhookDispatcher:
     """
 
     def __init__(self):
-        # The registry now maps an EventType to an instance of an EventHandler class
+        # Registry: EventType → EventHandler instance. Allows hot-swap, test injection.
         self._handlers: dict[EventType, EventHandler] = {}
 
     def register_handler(self, event_type: EventType, handler: EventHandler):
@@ -49,7 +49,7 @@ class WebhookDispatcher:
         try:
             handler_name = handler_instance.__class__.__name__
             logger.info(f"Dispatching event {event.event_type.name} to handler {handler_name}.")
-            # Call the 'handle' method on the registered handler instance
+            # Core dispatch—async call, handler may throw. Brittle if handler signature changes.
             result = await handler_instance.handle(event)
             return {"status": "processed", "handler": handler_name, "result": result}
         except Exception as e:
@@ -57,5 +57,4 @@ class WebhookDispatcher:
             return {"status": "error", "reason": str(e)}
 
 
-# The shared instance remains the same
-dispatcher = WebhookDispatcher()
+dispatcher = WebhookDispatcher()  # Singleton—shared for app lifetime. Thread safety: not guaranteed.

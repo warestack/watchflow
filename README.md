@@ -235,3 +235,11 @@ This format allows for intelligent, context-aware rule evaluation while maintain
 ## Contributing & Development
 
 For instructions on running tests, local development, and contributing, see [DEVELOPMENT.md](DEVELOPMENT.md).
+
+## Unauthenticated Analysis & Rate Limiting
+
+- The repository analysis endpoint `/v1/rules/recommend` now supports unauthenticated access for public GitHub repositories.
+- Anonymous users are limited to 5 requests per hour per IP. Authenticated users are limited to 100 requests per hour.
+- Exceeding the limit returns a 429 error with a `Retry-After` header.
+- For private repositories, authentication is required.
+- The frontend is now fully connected to the backend and no longer uses mock data.

@@ -276,3 +276,12 @@ standards so teams can focus on building, increase trust, and move fast.
 - Error rate monitoring
 - Capacity planning insights
 - Predictive maintenance
+
+---
+
+## Unauthenticated Analysis & Rate Limiting
+
+- The repository analysis endpoint allows public repo analysis without authentication (5 requests/hour/IP for anonymous users).
+- Authenticated users can analyze up to 100 repos/hour.
+- Exceeding limits returns a 429 error with a Retry-After header.
+- Private repo analysis requires authentication.

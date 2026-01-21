@@ -10,8 +10,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# Dependency provider for the dispatcher instance.
-# This makes it easy to manage its lifecycle and use it in tests.
+# DI for dispatcher—testability, lifecycle control.
 def get_dispatcher() -> WebhookDispatcher:
     """Returns the shared WebhookDispatcher instance."""
     return dispatcher
@@ -22,18 +21,16 @@ def _create_event_from_request(event_name: str | None, payload: dict) -> Webhook
     if not event_name:
         raise HTTPException(status_code=400, detail="Missing X-GitHub-Event header")
 
-    # Normalize event name for events like deployment_review.requested
+    # GitHub sometimes sends event names with dot suffixes—strip for enum match.
     normalized_event_name = event_name.split(".")[0]
     logger.info(f"Received event: {event_name}, normalized: {normalized_event_name}")
 
     try:
-        # Map the string from the header (e.g., "pull_request") to our enum
+        # Enum mapping—fail if GitHub adds new event type we don't support.
         event_type = EventType(normalized_event_name)
     except ValueError as e:
         logger.warning(f"Received an unsupported event type: {event_name} - {e}")
-        # If the event isn't in our enum, we can't process it.
-        # We'll return a success response to GitHub to acknowledge receipt
-        # but won't do any work.
+        # Defensive: Accept unknown events, but don't process—avoids GitHub retries/spam.
         raise HTTPException(status_code=202, detail=f"Event type '{event_name}' is received but not supported.") from e
 
     return WebhookEvent(event_type=event_type, payload=payload)
@@ -53,8 +50,7 @@ async def github_webhook_endpoint(
     - Finally, it passes the event to a dispatcher to be routed to the
       correct application service.
     """
-    # The 'is_verified' dependency handles raising an error on failure,
-    # so we don't need to check its return value here.
+    # Signature check handled by dependency—fail fast if invalid.
 
     payload = await request.json()
     event_name = request.headers.get("X-GitHub-Event")
@@ -64,8 +60,7 @@ async def github_webhook_endpoint(
         result = await dispatcher_instance.dispatch(event)
         return {"status": "event dispatched successfully", "result": result}
     except HTTPException as e:
-        # This allows us to gracefully handle unsupported events without
-        # treating them as server errors.
+        # Don't 500 on unknown event—keeps GitHub happy, avoids alert noise.
         if e.status_code == 202:
             return {"status": "event received but not supported", "detail": e.detail}
         raise e

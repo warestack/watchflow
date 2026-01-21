@@ -1,9 +1,31 @@
 from enum import Enum
 from typing import Any
 
+from pydantic import BaseModel, Field
 
-class EventType(Enum):
-    """Supported GitHub event types."""
+
+class User(BaseModel):
+    """
+    Represents an authenticated user in the system.
+    Used for dependency injection in API endpoints.
+    """
+
+    id: int
+    username: str
+    email: str | None = None
+    avatar_url: str | None = None
+    # storing the token allows the service layer to make requests on behalf of the user
+    github_token: str | None = Field(None, description="OAuth token for GitHub API access")
+
+
+# --- Event Definitions (Legacy/Core Architecture) ---
+
+
+class EventType(str, Enum):
+    """
+    Supported GitHub Event Types.
+    Reference: project_detail_med.md [cite: 32]
+    """
 
     PUSH = "push"
     ISSUE_COMMENT = "issue_comment"
@@ -14,13 +36,13 @@ class EventType(Enum):
     DEPLOYMENT_REVIEW = "deployment_review"
     DEPLOYMENT_PROTECTION_RULE = "deployment_protection_rule"
     WORKFLOW_RUN = "workflow_run"
-    # Add other event types here as we support them
 
 
 class WebhookEvent:
     """
-    A representation of an incoming webhook event, before it has been
-    fully prepared and enriched by our integration logic.
+    Encapsulates a GitHub webhook event.
+    Currently a plain Python class for efficiency, but validates against EventType.
+    Reference: project_detail_med.md [cite: 33]
     """
 
     def __init__(self, event_type: EventType, payload: dict[str, Any]):
@@ -32,10 +54,10 @@ class WebhookEvent:
 
     @property
     def repo_full_name(self) -> str:
-        """The full name of the repository (e.g., 'owner/repo')."""
+        """Helper to safely get 'owner/repo' string."""
         return self.repository.get("full_name", "")
 
     @property
     def sender_login(self) -> str:
-        """The GitHub username of the user who triggered the event."""
+        """Helper to safely get the username of the event sender."""
         return self.sender.get("login", "")

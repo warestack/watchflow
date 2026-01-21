@@ -4,7 +4,6 @@ import time
 from typing import Any
 
 import aiohttp
-import httpx
 import jwt
 from cachetools import TTLCache
 
@@ -20,6 +19,11 @@ class GitHubClient:
     This client handles the authentication flow for a GitHub App, including
     generating a JWT and exchanging it for an installation access token.
     Tokens are cached to improve performance and avoid rate limiting.
+
+    Architectural Note:
+    - Implements strict typing for arguments.
+    - Handles 'Anonymous' access for public repository analysis (Phase 1 requirement).
+    - Centralizes auth header logic to prevent token leakage.
     """
 
     def __init__(self):
@@ -34,14 +38,30 @@ class GitHubClient:
         installation_id: int | None = None,
         user_token: str | None = None,
         accept: str = "application/vnd.github.v3+json",
+        allow_anonymous: bool = False,  # <--- NEW: Support for Phase 1 Public Analysis
     ) -> dict[str, str] | None:
-        """Build auth headers using either installation token or a provided user token."""
+        """
+        Build auth headers using either installation token, user token, or anonymous mode.
+        """
         token = user_token
-        if not token and installation_id is not None:
+
+        # Priority 1: User Token (Explicit)
+        if token:
+            return {"Authorization": f"Bearer {token}", "Accept": accept}
+
+        # Priority 2: Installation Token (App Context)
+        if installation_id is not None:
             token = await self.get_installation_access_token(installation_id)
-        if not token:
-            return None
-        return {"Authorization": f"Bearer {token}", "Accept": accept}
+            if token:
+                return {"Authorization": f"Bearer {token}", "Accept": accept}
+
+        # Priority 3: Anonymous Access (Public Repos)
+        if allow_anonymous:
+            # Public access (Subject to 60 req/hr rate limit per IP)
+            return {"Accept": accept, "User-Agent": "Watchflow-Analyzer/1.0"}
+
+        # Access Denied
+        return None
 
     async def get_installation_access_token(self, installation_id: int) -> str | None:
         """
@@ -75,14 +95,50 @@ class GitHubClient:
                 )
                 return None
 
+    async def get_repository(
+        self, repo_full_name: str, installation_id: int | None = None, user_token: str | None = None
+    ) -> dict[str, Any] | None:
+        """Fetch repository metadata (default branch, language, etc.). Supports public access."""
+        headers = await self._get_auth_headers(
+            installation_id=installation_id, user_token=user_token, allow_anonymous=True
+        )
+        if not headers:
+            return None
+        url = f"{config.github.api_base_url}/repos/{repo_full_name}"
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as response:
+            if response.status == 200:
+                return await response.json()
+            return None
+
+    async def list_directory_any_auth(
+        self, repo_full_name: str, path: str, installation_id: int | None = None, user_token: str | None = None
+    ) -> list[dict[str, Any]]:
+        """List directory contents using either installation or user token."""
+        headers = await self._get_auth_headers(
+            installation_id=installation_id, user_token=user_token, allow_anonymous=True
+        )
+        if not headers:
+            return []
+        url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{path}"
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data if isinstance(data, list) else [data]
+            return []
+
     async def get_file_content(
         self, repo_full_name: str, file_path: str, installation_id: int | None, user_token: str | None = None
     ) -> str | None:
         """
-        Fetches the content of a file from a repository.
+        Fetches the content of a file from a repository. Supports anonymous access for public analysis.
         """
         headers = await self._get_auth_headers(
-            installation_id=installation_id, user_token=user_token, accept="application/vnd.github.raw"
+            installation_id=installation_id,
+            user_token=user_token,
+            accept="application/vnd.github.raw",
+            allow_anonymous=True,
         )
         if not headers:
             return None
@@ -109,6 +165,92 @@ class GitHubClient:
         if self._session and not self._session.closed:
             await self._session.close()
 
+    async def create_check_run(
+        self, repo: str, sha: str, name: str, status: str, conclusion: str, output: dict, installation_id: int
+    ) -> dict:
+        """Create a check run."""
+        try:
+            headers = await self._get_auth_headers(installation_id=installation_id)
+            if not headers:
+                return {}
+
+            url = f"{config.github.api_base_url}/repos/{repo}/check-runs"
+            data = {"name": name, "head_sha": sha, "status": status, "conclusion": conclusion, "output": output}
+
+            session = await self._get_session()
+            async with session.post(url, headers=headers, json=data) as response:
+                if response.status == 201:
+                    return await response.json()
+                return {}
+        except Exception as e:
+            logger.error(f"Error creating check run: {e}")
+            return {}
+
+    async def get_pull_request(self, repo: str, pr_number: int, installation_id: int) -> dict[str, Any] | None:
+        """Get pull request details."""
+        try:
+            headers = await self._get_auth_headers(installation_id=installation_id)
+            if not headers:
+                return None
+
+            url = f"{config.github.api_base_url}/repos/{repo}/pulls/{pr_number}"
+            session = await self._get_session()
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    return await response.json()
+                return None
+        except Exception as e:
+            logger.error(f"Error getting PR #{pr_number}: {e}")
+            return None
+
+    async def list_pull_requests(
+        self,
+        repo: str,
+        installation_id: int | None = None,
+        state: str = "all",
+        per_page: int = 20,
+        user_token: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List pull requests for a repository."""
+        try:
+            headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
+            if not headers:
+                return []
+            url = f"{config.github.api_base_url}/repos/{repo}/pulls?state={state}&per_page={min(per_page, 100)}"
+
+            session = await self._get_session()
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    return await response.json()
+                return []
+        except Exception as e:
+            logger.error(f"Error listing PRs for {repo}: {e}")
+            return []
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Initializes and returns the aiohttp session."""
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    def _generate_jwt(self) -> str:
+        """Generates a JSON Web Token (JWT) to authenticate as the GitHub App."""
+        payload = {
+            "iat": int(time.time()),
+            "exp": int(time.time()) + (1 * 60),
+            "iss": self._app_id,
+        }
+        return jwt.encode(payload, self._private_key, algorithm="RS256")
+
+    @staticmethod
+    def _decode_private_key() -> str:
+        try:
+            decoded_key = base64.b64decode(config.github.private_key).decode("utf-8")
+            return decoded_key
+        except Exception as e:
+            logger.error(f"Failed to decode private key: {e}")
+            raise ValueError("Invalid private key format.") from e
+
     async def get_pr_files(self, repo_full_name: str, pr_number: int, installation_id: int) -> list[dict[str, Any]]:
         """
         Fetch the list of files changed in a pull request.
@@ -123,10 +265,9 @@ class GitHubClient:
 
     async def get_pr_checks(self, repo_full_name: str, pr_number: int, installation_id: int) -> list[dict[str, Any]]:
         """
-        Fetch the list of checks/statuses for a pull request.
+        Fetch the list of checks/statuses for a pull request by finding the head SHA first.
         """
         try:
-            # First get the PR to get the head SHA
             pr_data = await self.get_pull_request(repo_full_name, pr_number, installation_id)
             if not pr_data:
                 return []
@@ -135,22 +276,37 @@ class GitHubClient:
             if not head_sha:
                 return []
 
-            # Then get check runs for that SHA
-            return await self.get_check_runs(repo_full_name, head_sha, installation_id)
+            # We need to fetch from the check-runs endpoint for this SHA
+            headers = await self._get_auth_headers(installation_id=installation_id)
+            if not headers:
+                return []
+
+            url = f"{config.github.api_base_url}/repos/{repo_full_name}/commits/{head_sha}/check-runs"
+            session = await self._get_session()
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data.get("check_runs", [])
+                return []
         except Exception as e:
-            logger.error(f"Error getting checks for PR #{pr_number} in {repo_full_name}: {e}")
+            logger.error(f"Error getting checks for PR #{pr_number}: {e}")
             return []
 
     async def get_user_teams(self, repo: str, username: str, installation_id: int) -> list:
         """Fetch the teams a user belongs to in a repo's org."""
-        token = await self.get_installation_access_token(installation_id)
-        headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+        headers = await self._get_auth_headers(installation_id=installation_id)
+        if not headers:
+            return []
+
         org = repo.split("/")[0]
-        url = f"https://api.github.com/orgs/{org}/memberships/{username}/teams"
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url, headers=headers)
-            if resp.status_code == 200:
-                return [team["slug"] for team in resp.json()]
+        # Use config base URL instead of hardcoded string
+        url = f"{config.github.api_base_url}/orgs/{org}/memberships/{username}/teams"
+
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as response:
+            if response.status == 200:
+                data = await response.json()
+                return [team["slug"] for team in data]
             return []
 
     async def get_user_team_membership(self, repo: str, username: str, installation_id: int) -> dict[str, Any]:
@@ -195,37 +351,6 @@ class GitHubClient:
                     return {}
         except Exception as e:
             logger.error(f"Error creating comment on PR #{pr_number} in {repo}: {e}")
-            return {}
-
-    async def create_check_run(
-        self, repo: str, sha: str, name: str, status: str, conclusion: str, output: dict, installation_id: int
-    ) -> dict:
-        """Create a check run."""
-        try:
-            token = await self.get_installation_access_token(installation_id)
-            if not token:
-                logger.error(f"Failed to get installation token for {installation_id}")
-                return {}
-
-            headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
-
-            url = f"{config.github.api_base_url}/repos/{repo}/check-runs"
-            data = {"name": name, "head_sha": sha, "status": status, "conclusion": conclusion, "output": output}
-
-            session = await self._get_session()
-            async with session.post(url, headers=headers, json=data) as response:
-                if response.status == 201:
-                    result = await response.json()
-                    logger.info(f"Created check run '{name}' for {repo}")
-                    return result
-                else:
-                    error_text = await response.text()
-                    logger.error(
-                        f"Failed to create check run '{name}' for {repo}. Status: {response.status}, Response: {error_text}"
-                    )
-                    return {}
-        except Exception as e:
-            logger.error(f"Error creating check run '{name}' for {repo}: {e}")
             return {}
 
     async def update_check_run(
@@ -402,74 +527,6 @@ class GitHubClient:
         except Exception as e:
             logger.error(f"Error creating comment on issue #{issue_number} in {repo}: {e}")
             return {}
-
-    async def get_pull_request(self, repo: str, pr_number: int, installation_id: int) -> dict:
-        """Get pull request details."""
-        try:
-            token = await self.get_installation_access_token(installation_id)
-            if not token:
-                logger.error(f"Failed to get installation token for {installation_id}")
-                return {}
-
-            headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
-
-            url = f"{config.github.api_base_url}/repos/{repo}/pulls/{pr_number}"
-
-            session = await self._get_session()
-            async with session.get(url, headers=headers) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    logger.info(f"Retrieved PR #{pr_number} details from {repo}")
-                    return result
-                else:
-                    error_text = await response.text()
-                    logger.error(
-                        f"Failed to get PR #{pr_number} from {repo}. Status: {response.status}, Response: {error_text}"
-                    )
-                    return None
-        except Exception as e:
-            logger.error(f"Error getting PR #{pr_number} from {repo}: {e}")
-            return {}
-
-    async def list_pull_requests(
-        self,
-        repo: str,
-        installation_id: int | None = None,
-        state: str = "all",
-        per_page: int = 20,
-        user_token: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """
-        List pull requests for a repository.
-
-        Args:
-            repo: Full repo name (owner/repo)
-            installation_id: GitHub App installation id
-            state: "open", "closed", or "all"
-            per_page: max items to fetch (up to 100)
-        """
-        try:
-            headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
-            if not headers:
-                logger.error("Failed to resolve auth headers for list_pull_requests")
-                return []
-            url = f"{config.github.api_base_url}/repos/{repo}/pulls?state={state}&per_page={min(per_page, 100)}"
-
-            session = await self._get_session()
-            async with session.get(url, headers=headers) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    logger.info(f"Retrieved {len(result)} pull requests for {repo}")
-                    return result
-                else:
-                    error_text = await response.text()
-                    logger.error(
-                        f"Failed to list pull requests for {repo}. Status: {response.status}, Response: {error_text}"
-                    )
-                    return []
-        except Exception as e:
-            logger.error(f"Error listing pull requests for {repo}: {e}")
-            return []
 
     async def create_deployment_status(
         self,
@@ -717,34 +774,6 @@ class GitHubClient:
                 )
                 return []
 
-    async def get_repository(
-        self, repo_full_name: str, installation_id: int | None = None, user_token: str | None = None
-    ) -> dict[str, Any] | None:
-        """Fetch repository metadata (default branch, language, etc.)."""
-        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
-        if not headers:
-            return None
-        url = f"{config.github.api_base_url}/repos/{repo_full_name}"
-        session = await self._get_session()
-        async with session.get(url, headers=headers) as response:
-            if response.status == 200:
-                return await response.json()
-            return None
-
-    async def list_directory_any_auth(
-        self, repo_full_name: str, path: str, installation_id: int | None = None, user_token: str | None = None
-    ) -> list[dict[str, Any]]:
-        """List directory contents using either installation or user token."""
-        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
-        if not headers:
-            return []
-        url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{path}"
-        session = await self._get_session()
-        async with session.get(url, headers=headers) as response:
-            if response.status == 200:
-                return await response.json()
-            return []
-
     async def get_git_ref_sha(
         self, repo_full_name: str, ref: str, installation_id: int | None = None, user_token: str | None = None
     ) -> str | None:
@@ -869,37 +898,6 @@ class GitHubClient:
                 f"Status: {response.status}, Response: {error_text}"
             )
             return None
-
-    async def _get_session(self) -> aiohttp.ClientSession:
-        """Initializes and returns the aiohttp session."""
-        if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
-        return self._session
-
-    def _generate_jwt(self) -> str:
-        """Generates a JSON Web Token (JWT) to authenticate as the GitHub App."""
-        payload = {
-            "iat": int(time.time()),
-            "exp": int(time.time()) + (1 * 60),  # X * minutes expiration
-            "iss": self._app_id,
-        }
-        return jwt.encode(payload, self._private_key, algorithm="RS256")
-
-    @staticmethod
-    def _decode_private_key() -> str:
-        """
-        Decodes the base64-encoded private key from the configuration.
-
-        Returns:
-            The decoded private key as a string.
-        """
-        try:
-            # Decode the base64-encoded private key
-            decoded_key = base64.b64decode(config.github.private_key).decode("utf-8")
-            return decoded_key
-        except Exception as e:
-            logger.error(f"Failed to decode private key: {e}")
-            raise ValueError("Invalid private key format. Expected base64-encoded PEM key.") from e
 
 
 # Global instance

@@ -159,28 +159,20 @@ def cached_async(
             return await api_call(repo)
     """
     if cache is None:
-        if ttl:
-            cache = AsyncCache(maxsize=maxsize, ttl=ttl)
-        else:
-            # Use TTLCache as fallback
-            cache = TTLCache(maxsize=maxsize, ttl=ttl or 3600)
+        # SIM108: Use ternary operator
+        cache = AsyncCache(maxsize=maxsize, ttl=ttl) if ttl else TTLCache(maxsize=maxsize, ttl=ttl or 3600)
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Generate cache key
-            if key_func:
-                cache_key = key_func(*args, **kwargs)
-            else:
-                # Default: use function name and arguments
-                cache_key = f"{func.__name__}:{args}:{kwargs}"
+            # SIM108: Use ternary operator
+            cache_key = key_func(*args, **kwargs) if key_func else f"{func.__name__}:{args}:{kwargs}"
 
             # Check cache
-            if isinstance(cache, AsyncCache):
-                cached_value = cache.get(cache_key)
-            else:
-                # TTLCache
-                cached_value = cache.get(cache_key)
+            # SIM108: Use ternary operator or unified interface
+            # Both AsyncCache and TTLCache support .get()
+            cached_value = cache.get(cache_key)
 
             if cached_value is not None:
                 logger.debug(f"Cache hit for {func.__name__} with key '{cache_key}'")

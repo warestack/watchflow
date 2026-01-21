@@ -19,7 +19,7 @@ class PullRequestEventHandler(EventHandler):
         """Handle pull request events by enqueuing them for background processing."""
         logger.info(f"🔄 Enqueuing pull request event for {event.repo_full_name}")
 
-        # If the pull request is opened, validate the rules.yaml file
+        # PR opened—trigger rules.yaml validation. Brittle if GitHub changes event action names.
         if event.payload.get("action") == "opened":
             pr_number = event.payload.get("pull_request", {}).get("number")
             if pr_number:
