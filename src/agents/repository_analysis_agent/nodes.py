@@ -10,12 +10,12 @@ from src.integrations.providers.factory import get_chat_model
 logger = logging.getLogger(__name__)
 
 
-async def fetch_repository_metadata(state: dict) -> dict:
+async def fetch_repository_metadata(state: AnalysisState) -> dict:
     """
     Step 1: Gather raw signals from GitHub (Public or Private).
     This node populates the 'Shared Memory' (State) with facts about the repo.
     """
-    repo = state.get("repo_full_name")
+    repo = state.repo_full_name
     if not repo:
         raise ValueError("Repository full name is missing in state.")
 
@@ -104,17 +104,17 @@ async def fetch_repository_metadata(state: dict) -> dict:
     }
 
 
-async def generate_rule_recommendations(state: dict) -> dict:
+async def generate_rule_recommendations(state: AnalysisState) -> dict:
     """
     Step 2: Send gathered signals to LLM to generate governance rules.
     """
     logger.info("Generating rules via LLM...")
 
-    repo_name = state.get("repo_full_name", "unknown/repo")
-    languages = state.get("detected_languages", [])
-    has_ci = state.get("has_ci", False)
-    file_tree = state.get("file_tree", [])
-    readme_content = state.get("readme_content", "")
+    repo_name = state.repo_full_name or "unknown/repo"
+    languages = state.detected_languages
+    has_ci = state.has_ci
+    file_tree = state.file_tree
+    readme_content = state.readme_content or ""
 
     # 1. Construct Prompt
     # We format the prompt with the specific context of this repository

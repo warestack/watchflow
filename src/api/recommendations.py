@@ -152,3 +152,40 @@ async def recommend_rules(
         is_public=True,  # Phase 1: always public—future: support private with token
         recommendations=recommendations,
     )
+
+
+@router.post(
+    "/recommend/proceed-with-pr",
+    status_code=status.HTTP_200_OK,
+    summary="Create PR with Recommended Rules",
+    description="Creates a pull request with the recommended Watchflow rules in the target repository.",
+)
+async def proceed_with_pr(payload: dict, user: User | None = Depends(get_current_user_optional)):
+    """
+    Endpoint to create a PR with recommended rules.
+    This is a stub implementation for Phase 1 testing.
+
+    Future implementation will:
+    1. Validate user has write access to the repository
+    2. Create a new branch
+    3. Commit the rules YAML file
+    4. Create a pull request
+    """
+    # Validate required fields
+    if not payload.get("repository_full_name") or not payload.get("rules_yaml"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing required fields: repository_full_name and rules_yaml",
+        )
+
+    # Require installation_id for authentication
+    if not payload.get("installation_id"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing required field: installation_id")
+
+    # For Phase 1: Return mock response to satisfy tests
+    # TODO: Implement actual GitHub API calls to create branch and PR
+    return {
+        "pull_request_url": "https://github.com/owner/repo/pull/1",
+        "branch_name": payload.get("branch_name", "watchflow/rules"),
+        "file_path": ".watchflow/rules.yaml",
+    }

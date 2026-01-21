@@ -100,7 +100,7 @@ app.add_middleware(
 
 app.include_router(webhook_router, prefix="/webhooks", tags=["GitHub Webhooks"])
 app.include_router(rules_api_router, prefix="/api/v1", tags=["Public API"])
-app.include_router(recommendations_api_router, prefix="/api/rules", tags=["Recommendations API"])
+app.include_router(recommendations_api_router, prefix="/api/v1", tags=["Recommendations API"])
 app.include_router(scheduler_api_router, prefix="/api/v1/scheduler", tags=["Scheduler API"])
 
 # --- Root Endpoint ---

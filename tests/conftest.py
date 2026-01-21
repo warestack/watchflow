@@ -15,12 +15,26 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 
-# 2. Mock Environment Variables (Security First)
+# 2. Helper for environment mocking
+class Helpers:
+    @staticmethod
+    def mock_env(env_vars):
+        from unittest.mock import patch
+
+        return patch.dict(os.environ, env_vars)
+
+
+@pytest.fixture
+def helpers():
+    return Helpers
+
+
+# 3. Mock Environment Variables (Security First)
 # We do this BEFORE importing app code to ensure no real secrets are read
 @pytest.fixture(autouse=True)
 def mock_settings():
     """Forces the test environment to use dummy values."""
-    with pytest.helpers.mock_env(
+    with Helpers.mock_env(
         {
             "APP_CLIENT_ID_GITHUB": "mock-client-id",
             "APP_CLIENT_SECRET_GITHUB": "mock-client-secret",
@@ -32,18 +46,6 @@ def mock_settings():
         }
     ):
         yield
-
-
-# 3. Helper for environment mocking
-class Helpers:
-    @staticmethod
-    def mock_env(env_vars):
-        return pytest.mock.patch.dict(os.environ, env_vars)
-
-
-@pytest.fixture
-def helpers():
-    return Helpers
 
 
 # 4. Async Support (Essential for FastAPI)
