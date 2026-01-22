@@ -1,5 +1,5 @@
 """
-Rule Feasibility Agent implementation with error handling and retry logic.
+Rule Feasibility Agent implementation with error handling  and retry logic.
 """
 
 import asyncio
