@@ -37,6 +37,11 @@ dev = [
     "pre-commit>=3.5.0",
     "ruff>=0.1.0", # Replaces black, isort, flake8
 ]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocs-minify-plugin>=0.8.0",
+]
 
 [project.scripts]
 watchflow = "src.main:app"
