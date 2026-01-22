@@ -6,7 +6,7 @@ Watchflow's agentic approach to DevOps governance has shown promising results in
 
 ### Context Dependency in Enterprise Policies
 
-Our analysis of 70+ enterprise policies from major tech companies revealed a critical insight: **85% of real-world governance policies require context** and cannot be effectively enforced with traditional static rules.
+Our analysis of 70 + enterprise policies from major tech companies revealed a critical insight: **85% of real-world governance policies require context** and cannot be effectively enforced with traditional static rules.
 
 **Why this matters:**
 - Traditional rules are binary (true/false) and miss nuanced scenarios
