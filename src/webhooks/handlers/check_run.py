@@ -1,10 +1,10 @@
-import logging
+import structlog
 
 from src.core.models import WebhookEvent
 from src.tasks.task_queue import task_queue
 from src.webhooks.handlers.base import EventHandler
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class CheckRunEventHandler(EventHandler):

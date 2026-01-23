@@ -1,14 +1,14 @@
 import asyncio
 import hashlib
 import json
-import logging
 from datetime import datetime
 from enum import Enum
 from typing import Any
 
+import structlog
 from pydantic import BaseModel
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class TaskStatus(str, Enum):

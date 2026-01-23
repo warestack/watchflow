@@ -1,12 +1,12 @@
 import hashlib
 import hmac
-import logging
 
+import structlog
 from fastapi import HTTPException, Request
 
 from src.core.config import config
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 GITHUB_WEBHOOK_SECRET = config.github.webhook_secret
 

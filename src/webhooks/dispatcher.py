@@ -1,10 +1,11 @@
-import logging
 from typing import Any
+
+import structlog
 
 from src.core.models import EventType, WebhookEvent
 from src.webhooks.handlers.base import EventHandler  # Import the base handler
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class WebhookDispatcher:

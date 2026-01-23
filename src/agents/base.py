@@ -90,13 +90,13 @@ class BaseAgent(ABC):
             exceptions=(Exception,),
         )
 
-    async def _execute_with_timeout(self, coro, timeout: float = 30.0):
+    async def _execute_with_timeout(self, coro, timeout: float = 60.0):
         """
         Execute a coroutine with timeout handling.
 
         Args:
             coro: The coroutine to execute
-            timeout: Timeout in seconds
+            timeout: Timeout in seconds (default: 60s for showcase stability)
 
         Returns:
             The result of the coroutine

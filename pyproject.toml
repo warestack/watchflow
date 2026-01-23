@@ -27,6 +27,7 @@ dependencies = [
     "langchain-google-vertexai>=2.1.2",
     "giturlparse>=0.1.0",
     "structlog>=24.1.0",
+    "gql[all]>=3.4.0",
 ]
 
 [project.optional-dependencies]

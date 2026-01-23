@@ -1,11 +1,11 @@
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from giturlparse import parse
 from pydantic import BaseModel, Field, HttpUrl
 
 from src.agents.repository_analysis_agent.agent import RepositoryAnalysisAgent
-from src.agents.repository_analysis_agent.models import RuleRecommendation
 from src.api.dependencies import get_current_user_optional
 from src.api.rate_limit import rate_limiter
 
@@ -35,9 +35,9 @@ class AnalysisResponse(BaseModel):
     Standardized response for the frontend.
     """
 
-    repository: str
-    is_public: bool
-    recommendations: list[RuleRecommendation]
+    rules_yaml: str
+    pr_plan: str
+    analysis_summary: dict[str, Any]
 
 
 # --- Helpers ---  # Utility—URL parsing brittle if GitHub changes format.
@@ -130,13 +130,32 @@ async def recommend_rules(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Analysis failed: {result.message}"
             )
 
-    # Step 5: Success—extract recommendations, return API response.
-    recommendations = result.data.get("recommendations", [])
+    # Step 5: Success—map agent state to the API response model.
+    final_state = result.data  # The agent's execute method returns the final state
+
+    # Generate rules_yaml from recommendations
+    import yaml
+
+    rules_output = {"rules": [rec.model_dump(exclude_none=True) for rec in final_state.get("recommendations", [])]}
+    rules_yaml = yaml.dump(rules_output, indent=2, sort_keys=False)
+
+    # Generate a markdown plan for the PR
+    pr_plan_lines = ["### Watchflow: Automated Governance Plan\n"]
+    for rec in final_state.get("recommendations", []):
+        pr_plan_lines.append(f"- **Rule:** `{rec.name}` (`{rec.key}`)")
+        pr_plan_lines.append(f"  - **Reasoning:** {rec.reasoning}")
+    pr_plan = "\n".join(pr_plan_lines)
+
+    # Populate the analysis summary from hygiene metrics
+    analysis_summary = {}
+    hygiene_summary = final_state.get("hygiene_summary")
+    if hygiene_summary:
+        analysis_summary = hygiene_summary.model_dump()
 
     return AnalysisResponse(
-        repository=repo_full_name,
-        is_public=True,  # Phase 1: always public—future: support private with token
-        recommendations=recommendations,
+        rules_yaml=rules_yaml,
+        pr_plan=pr_plan,
+        analysis_summary=analysis_summary,
     )
 
 

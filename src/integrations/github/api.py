@@ -6,6 +6,7 @@ from typing import Any
 
 import aiohttp
 import jwt
+import structlog
 from cachetools import TTLCache
 
 from src.core.config import config
@@ -948,7 +949,6 @@ class GitHubClient:
             List of PR dictionaries with enhanced metadata for hygiene analysis
         """
         import httpx
-        import structlog
 
         logger = structlog.get_logger()
 

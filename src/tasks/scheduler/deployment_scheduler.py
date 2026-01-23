@@ -1,13 +1,14 @@
 import asyncio
 import contextlib
-import logging
 from datetime import datetime, timedelta
 from typing import Any
+
+import structlog
 
 from src.agents import get_agent
 from src.integrations.github import github_client
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class DeploymentScheduler:

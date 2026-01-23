@@ -1,12 +1,14 @@
 import logging
 from contextlib import asynccontextmanager
 
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.recommendations import router as recommendations_api_router
 from src.api.rules import router as rules_api_router
 from src.api.scheduler import router as scheduler_api_router
+from src.core.config import config
 from src.core.models import EventType
 from src.tasks.scheduler.deployment_scheduler import get_deployment_scheduler
 from src.tasks.task_queue import task_queue
@@ -25,9 +27,30 @@ from src.webhooks.router import router as webhook_router
 
 # --- Application Setup ---
 
+# Configure structlog for JSON logging (Phase 5: Observability)
+structlog.configure(
+    processors=[
+        structlog.contextvars.merge_contextvars,
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.JSONRenderer(),
+    ],
+    wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+    context_class=dict,
+    logger_factory=structlog.PrintLoggerFactory(),
+    cache_logger_on_first_use=False,
+)
+
+# Silence noisy libraries (Phase 5: Production readiness)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("aiohttp").setLevel(logging.WARNING)
+
+# Set root logger to configured level
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)8s %(message)s",
+    level=getattr(logging, config.logging.level),
+    format="%(message)s",  # structlog handles formatting
 )
 
 

@@ -1,19 +1,15 @@
-import logging
 from typing import Any
 
 import httpx
+import structlog
+from giturlparse import parse
 
+from src.core.errors import (
+    GitHubRateLimitError,
+    GitHubResourceNotFoundError,
+)
 
-# Custom Exceptions for clean error handling in the API layer
-class GitHubRateLimitError(Exception):
-    pass
-
-
-class GitHubResourceNotFoundError(Exception):
-    pass
-
-
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class GitHubService:
@@ -34,26 +30,50 @@ class GitHubService:
         Fetches basic metadata (is_private, stars, etc.)
         Does NOT require a token for public repos.
         """
-        owner, repo = self._parse_url(repo_url)
+        try:
+            owner, repo = self._parse_url(repo_url)
+        except ValueError as e:
+            logger.error("url_parse_failed", repo_url=repo_url, error=str(e))
+            raise
+
         api_url = f"{self.BASE_URL}/repos/{owner}/{repo}"
 
-        async with httpx.AsyncClient() as client:
-            response = await client.get(api_url)
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.get(api_url)
 
-            if response.status_code == 404:
-                raise GitHubResourceNotFoundError(f"Repo {owner}/{repo} not found")
-            if response.status_code == 403 and "rate limit" in response.text.lower():
-                raise GitHubRateLimitError("GitHub API rate limit exceeded")
+                if response.status_code == 404:
+                    raise GitHubResourceNotFoundError(f"Repo {owner}/{repo} not found")
+                if response.status_code == 403 and "rate limit" in response.text.lower():
+                    raise GitHubRateLimitError("GitHub API rate limit exceeded")
 
-            response.raise_for_status()
-            return response.json()
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                "github_metadata_fetch_failed",
+                repo=f"{owner}/{repo}",
+                status_code=e.response.status_code,
+                response_body=e.response.text,
+            )
+            raise
+        except httpx.TimeoutException as e:
+            logger.error("github_metadata_timeout", repo=f"{owner}/{repo}", error=str(e))
+            raise
+        except httpx.RequestError as e:
+            logger.error("github_metadata_request_error", repo=f"{owner}/{repo}", error=str(e))
+            raise
 
     async def analyze_repository_rules(self, repo_url: str, token: str | None = None) -> list[dict[str, Any]]:
         """
         The Core Logic: Analyzes the repo and returns rule suggestions.
         This replaces the "Fake Mock Data".
         """
-        owner, repo = self._parse_url(repo_url)
+        try:
+            owner, repo = self._parse_url(repo_url)
+        except ValueError as e:
+            logger.error("url_parse_failed", repo_url=repo_url, error=str(e))
+            raise
 
         headers = {}
         if token:
@@ -63,14 +83,29 @@ class GitHubService:
         files_to_check = ["CODEOWNERS", "CONTRIBUTING.md", ".github/workflows"]
         found_files = []
 
-        async with httpx.AsyncClient() as client:
-            for filepath in files_to_check:
-                # Tricky: Public repos can be read without auth, Private need auth
-                # We use the 'contents' API
-                check_url = f"{self.BASE_URL}/repos/{owner}/{repo}/contents/{filepath}"
-                resp = await client.get(check_url, headers=headers)
-                if resp.status_code == 200:
-                    found_files.append(filepath)
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                for filepath in files_to_check:
+                    # Tricky: Public repos can be read without auth, Private need auth
+                    # We use the 'contents' API
+                    check_url = f"{self.BASE_URL}/repos/{owner}/{repo}/contents/{filepath}"
+                    resp = await client.get(check_url, headers=headers)
+                    if resp.status_code == 200:
+                        found_files.append(filepath)
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                "github_files_check_failed",
+                repo=f"{owner}/{repo}",
+                status_code=e.response.status_code,
+                response_body=e.response.text,
+            )
+            # Continue with empty found_files on error
+        except httpx.TimeoutException as e:
+            logger.error("github_files_check_timeout", repo=f"{owner}/{repo}", error=str(e))
+            # Continue with empty found_files on error
+        except httpx.RequestError as e:
+            logger.error("github_files_check_request_error", repo=f"{owner}/{repo}", error=str(e))
+            # Continue with empty found_files on error
 
         # 2. Generate Recommendations based on REAL findings
         recommendations = []
@@ -106,10 +141,26 @@ class GitHubService:
 
     def _parse_url(self, url: str) -> tuple[str, str]:
         """
-        Extracts owner and repo from https://github.com/owner/repo
+        Extracts owner and repo from GitHub URL using giturlparse.
+        Handles both HTTPS and SSH formats:
+        - https://github.com/owner/repo
+        - https://github.com/owner/repo.git
+        - git@github.com:owner/repo.git
+
+        Raises:
+            ValueError: If URL is not a valid GitHub repository URL
         """
-        clean_url = str(url).rstrip("/")
-        parts = clean_url.split("/")
-        if len(parts) < 2:
-            raise ValueError("Invalid GitHub URL")
-        return parts[-2], parts[-1]
+        p = parse(url)
+        if not p.valid or not p.owner or not p.repo or "github.com" not in p.host:
+            logger.error(
+                "invalid_github_url",
+                url=url,
+                valid=p.valid,
+                host=p.host,
+                owner=p.owner,
+                repo=p.repo,
+            )
+            raise ValueError(
+                f"Invalid GitHub repository URL: {url}. Must be in format 'https://github.com/owner/repo'."
+            )
+        return p.owner, p.repo

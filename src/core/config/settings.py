@@ -112,6 +112,7 @@ class Config:
         self.environment = os.getenv("ENVIRONMENT", "development")
 
         # Repository Analysis Feature Settings (AI Immune System)
+        # CRITICAL: USE_MOCK_DATA must be False for CEO demo (Phase 5)
         self.use_mock_data = os.getenv("USE_MOCK_DATA", "false").lower() == "true"
         self.anonymous_rate_limit = int(os.getenv("ANONYMOUS_RATE_LIMIT", "5"))  # Per hour
         self.authenticated_rate_limit = int(os.getenv("AUTHENTICATED_RATE_LIMIT", "100"))  # Per hour

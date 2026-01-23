@@ -73,9 +73,9 @@ async def test_anonymous_access_public_repo():
         response = await ac.post("/api/v1/rules/recommend", json=payload)
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert "repository" in data and "recommendations" in data
-        assert data["repository"] == "pallets/flask"
-        assert isinstance(data["recommendations"], list)
+        assert "rules_yaml" in data and "pr_plan" in data and "analysis_summary" in data
+        assert isinstance(data["rules_yaml"], str)
+        assert isinstance(data["pr_plan"], str)
 
 
 @pytest.mark.asyncio
@@ -98,7 +98,7 @@ async def test_anonymous_access_private_repo():
         # This is the current behavior - it doesn't fail hard on GitHub 404
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert "repository" in data and "recommendations" in data
+        assert "rules_yaml" in data and "pr_plan" in data and "analysis_summary" in data
 
 
 @pytest.mark.asyncio
@@ -140,6 +140,6 @@ async def test_authenticated_access_private_repo():
         response = await ac.post("/api/v1/rules/recommend", json=payload, headers=headers)
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert "repository" in data and "recommendations" in data
-        assert data["repository"] == "example/private-repo"
-        assert isinstance(data["recommendations"], list)
+        assert "rules_yaml" in data and "pr_plan" in data and "analysis_summary" in data
+        assert isinstance(data["rules_yaml"], str)
+        assert isinstance(data["pr_plan"], str)
