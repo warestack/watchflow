@@ -25,6 +25,8 @@ dependencies = [
     "boto3>=1.40.43",
     "anthropic[vertex]>=0.69.0",
     "langchain-google-vertexai>=2.1.2",
+    "giturlparse>=0.1.0",
+    "structlog>=24.1.0",
 ]
 
 [project.optional-dependencies]
@@ -113,4 +115,5 @@ dev-dependencies = [
     "mypy>=1.7.0",
     "pre-commit>=3.5.0",
     "ruff>=0.1.0",
+    "giturlparse>=0.1.0",
 ]

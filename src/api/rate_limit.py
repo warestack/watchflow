@@ -7,13 +7,14 @@ import time
 
 from fastapi import Depends, HTTPException, Request, status
 
+from src.core.config import config
 from src.core.models import User
 
 # In-memory store: { key: [timestamps] }
 _RATE_LIMIT_STORE: dict[str, list[float]] = {}
 
-ANON_LIMIT = 5  # requests per hour
-AUTH_LIMIT = 100  # requests per hour
+ANON_LIMIT = config.anonymous_rate_limit  # Default: 5 requests per hour
+AUTH_LIMIT = config.authenticated_rate_limit  # Default: 100 requests per hour
 WINDOW = 3600  # seconds
 
 

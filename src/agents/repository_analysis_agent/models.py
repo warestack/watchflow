@@ -1,7 +1,5 @@
 # File: src/agents/repository_analysis_agent/models.py
 
-from typing import Any
-
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -52,6 +50,21 @@ class RepositoryFeatures(BaseModel):
     has_tests: bool = Field(default=False, description="Has test files or testing framework")
 
 
+class RepoMetadata(BaseModel):
+    """
+    Structured repository metadata.
+    """
+
+    name: str
+    owner: str
+    default_branch: str
+    language: str | None = None
+    description: str | None = None
+    stargazers_count: int = 0
+    forks_count: int = 0
+    open_issues_count: int = 0
+
+
 class RepositoryAnalysisResponse(BaseModel):
     """
     Response from repository analysis containing recommendations and metadata.
@@ -62,7 +75,7 @@ class RepositoryAnalysisResponse(BaseModel):
     repository_full_name: str = Field(..., description="The analyzed repository")
     recommendations: list["RuleRecommendation"] = Field(default_factory=list, description="List of recommended rules")
     features: RepositoryFeatures | None = Field(default=None, description="Extracted repository features")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Additional analysis metadata")
+    metadata: RepoMetadata | None = Field(default=None, description="Additional analysis metadata")
 
 
 class RuleRecommendation(BaseModel):
@@ -76,6 +89,56 @@ class RuleRecommendation(BaseModel):
     severity: str = Field("medium", description="low, medium, high, or critical")
     category: str = Field("quality", description="security, quality, compliance, or velocity")
     reasoning: str = Field(..., description="Why this rule was suggested based on the repo analysis")
+
+
+class PRSignal(BaseModel):
+    """
+    Represents data from a single historical PR to detect AI spam or low-quality contributions.
+
+    This model is a core component of the "AI Immune System" feature. It captures signals
+    from merged PRs that indicate potential low-effort contributions, including:
+    - Missing issue links (drive-by commits)
+    - First-time contributors (higher risk profile)
+    - AI-generated content markers (detected via heuristics)
+    - Abnormal PR sizes (mass changes without context)
+
+    These signals feed into HygieneMetrics to inform rule recommendations.
+    """
+
+    pr_number: int = Field(..., description="GitHub PR number for reference")
+    has_linked_issue: bool = Field(..., description="Whether the PR references an issue (required for context)")
+    author_association: str = Field(
+        ..., description="GitHub author role: 'FIRST_TIME_CONTRIBUTOR', 'MEMBER', 'COLLABORATOR', etc."
+    )
+    is_ai_generated_hint: bool = Field(
+        ..., description="Heuristic flag: True if PR description contains AI tool signatures (Claude, Cursor, etc.)"
+    )
+    lines_changed: int = Field(..., description="Total lines added + deleted (indicator of PR scope)")
+
+
+class HygieneMetrics(BaseModel):
+    """
+    Aggregated repository signals for hygiene analysis.
+
+    This model powers the "AI Immune System" by summarizing patterns across recent PRs.
+    High unlinked_issue_rate or abnormal average_pr_size triggers defensive rules like:
+    - require_linked_issue (force context)
+    - max_pr_size (prevent mass changes)
+    - first_time_contributor_review (extra scrutiny)
+
+    These metrics are calculated from the last 20-30 merged PRs and inform LLM reasoning.
+    """
+
+    unlinked_issue_rate: float = Field(
+        ...,
+        description="Percentage (0.0-1.0) of PRs without linked issues. High values indicate poor governance.",
+    )
+    average_pr_size: int = Field(
+        ..., description="Mean lines changed per PR. Unusually high values suggest untargeted contributions."
+    )
+    first_time_contributor_count: int = Field(
+        ..., description="Count of unique first-time contributors in recent PRs (risk indicator)."
+    )
 
 
 class AnalysisState(BaseModel):
@@ -97,6 +160,8 @@ class AnalysisState(BaseModel):
     workflow_patterns: list[str] = Field(
         default_factory=list, description="Detected workflow patterns in .github/workflows/"
     )
+    pr_signals: list[PRSignal] = Field(default_factory=list, description="Historical PR signals for hygiene analysis")
+    hygiene_summary: HygieneMetrics | None = None
 
     # --- Outputs ---
     recommendations: list[RuleRecommendation] = Field(default_factory=list)

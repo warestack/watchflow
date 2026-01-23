@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import logging
 import time
@@ -228,8 +229,30 @@ class GitHubClient:
             return []
 
     async def _get_session(self) -> aiohttp.ClientSession:
-        """Initializes and returns the aiohttp session."""
-        if self._session is None or self._session.closed:
+        """
+        Initializes and returns the aiohttp session.
+
+        Architectural Note:
+        - Creates a new session if none exists or if the current session is closed.
+        - Also recreates the session if the event loop has changed (common in test environments).
+        """
+        try:
+            if self._session is None or self._session.closed:
+                self._session = aiohttp.ClientSession()
+            else:
+                # Check if we're in a different event loop (avoid deprecated .loop property)
+                try:
+                    current_loop = asyncio.get_running_loop()
+                    # Try to access session's internal loop to check if it's the same
+                    # If the session's loop is closed, this will fail
+                    if self._session._loop != current_loop or self._session._loop.is_closed():
+                        await self._session.close()
+                        self._session = aiohttp.ClientSession()
+                except RuntimeError:
+                    # No running loop or loop is closed, recreate session
+                    self._session = aiohttp.ClientSession()
+        except Exception:
+            # Fallback: ensure we have a valid session
             self._session = aiohttp.ClientSession()
         return self._session
 
@@ -898,6 +921,143 @@ class GitHubClient:
                 f"Status: {response.status}, Response: {error_text}"
             )
             return None
+
+    async def fetch_recent_pull_requests(
+        self,
+        repo_full_name: str,
+        installation_id: int | None = None,
+        user_token: str | None = None,
+        limit: int = 30,
+    ) -> list[dict[str, Any]]:
+        """
+        Fetch recent merged pull requests for hygiene analysis (AI Immune System - Phase 6).
+
+        Returns PRs with fields required for detecting AI spam patterns:
+        - title, body (for AI hint detection)
+        - author association (FIRST_TIME_CONTRIBUTOR, MEMBER, etc.)
+        - linked issues (via timeline API or closing references)
+        - additions/deletions (lines changed)
+
+        Args:
+            repo_full_name: Repository in 'owner/repo' format
+            installation_id: GitHub App installation ID (optional for public repos)
+            user_token: User OAuth token (optional)
+            limit: Maximum number of PRs to fetch (default 30, max 100)
+
+        Returns:
+            List of PR dictionaries with enhanced metadata for hygiene analysis
+        """
+        import httpx
+        import structlog
+
+        logger = structlog.get_logger()
+
+        try:
+            headers = await self._get_auth_headers(
+                installation_id=installation_id,
+                user_token=user_token,
+                allow_anonymous=True,  # Support public repos
+            )
+            if not headers:
+                logger.error("pr_fetch_auth_failed", repo=repo_full_name, error_type="auth_error")
+                return []
+
+            # Fetch merged PRs sorted by recently updated
+            url = (
+                f"{config.github.api_base_url}/repos/{repo_full_name}/pulls"
+                f"?state=closed&sort=updated&direction=desc&per_page={min(limit, 100)}"
+            )
+
+            session = await self._get_session()
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    prs = await response.json()
+
+                    # Filter only merged PRs and extract required fields
+                    merged_prs = []
+                    for pr in prs:
+                        if not pr.get("merged_at"):  # Skip closed but not merged PRs
+                            continue
+
+                        # Calculate lines changed
+                        additions = pr.get("additions", 0)
+                        deletions = pr.get("deletions", 0)
+                        lines_changed = additions + deletions
+
+                        # Extract author association
+                        author_association = pr.get("author_association", "NONE")
+
+                        # Check for linked issues (heuristic: look for issue references in body)
+                        body = pr.get("body") or ""
+                        title = pr.get("title") or ""
+                        has_issue_ref = self._detect_issue_references(body, title)
+
+                        merged_prs.append(
+                            {
+                                "number": pr.get("number"),
+                                "title": title,
+                                "body": body,
+                                "author_association": author_association,
+                                "additions": additions,
+                                "deletions": deletions,
+                                "lines_changed": lines_changed,
+                                "has_issue_ref": has_issue_ref,
+                                "merged_at": pr.get("merged_at"),
+                            }
+                        )
+
+                        if len(merged_prs) >= limit:
+                            break
+
+                    logger.info(
+                        "pr_fetch_succeeded", repo=repo_full_name, fetched_count=len(merged_prs), total_closed=len(prs)
+                    )
+                    return merged_prs
+
+                elif response.status == 404:
+                    logger.warning("pr_fetch_repo_not_found", repo=repo_full_name, status_code=404)
+                    return []
+                else:
+                    error_text = await response.text()
+                    logger.error(
+                        "pr_fetch_failed",
+                        repo=repo_full_name,
+                        status_code=response.status,
+                        error_type="network_error",
+                        response=error_text[:200],
+                    )
+                    return []
+
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                "pr_fetch_http_error",
+                repo=repo_full_name,
+                status_code=e.response.status_code,
+                error_type="network_error",
+                error=str(e),
+            )
+            return []
+        except Exception as e:
+            logger.error("pr_fetch_unexpected_error", repo=repo_full_name, error_type="unknown_error", error=str(e))
+            return []
+
+    @staticmethod
+    def _detect_issue_references(body: str, title: str) -> bool:
+        """
+        Heuristic to detect if a PR references an issue.
+        Looks for common patterns: #123, fixes #123, closes #456, etc.
+        """
+        import re
+
+        combined_text = f"{title} {body}".lower()
+
+        # Common issue reference patterns
+        patterns = [
+            r"#\d+",  # Direct reference: #123
+            r"(?:fix|fixes|fixed|close|closes|closed|resolve|resolves|resolved)\s+#?\d+",
+        ]
+
+        return any(re.search(pattern, combined_text) for pattern in patterns)
 
 
 # Global instance

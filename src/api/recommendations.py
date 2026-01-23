@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from giturlparse import parse
 from pydantic import BaseModel, Field, HttpUrl
 
 from src.agents.repository_analysis_agent.agent import RepositoryAnalysisAgent
@@ -44,7 +45,7 @@ class AnalysisResponse(BaseModel):
 
 def parse_repo_from_url(url: str) -> str:
     """
-    Extracts 'owner/repo' from a full GitHub URL.
+    Extracts 'owner/repo' from a full GitHub URL using giturlparse.
 
     Args:
         url: The full URL string (e.g., https://github.com/owner/repo.git)
@@ -55,25 +56,10 @@ def parse_repo_from_url(url: str) -> str:
     Raises:
         ValueError: If the URL is not a valid GitHub repository URL.
     """
-    clean_url = str(url).strip().rstrip("/").removesuffix(".git")
-
-    # Accept raw "owner/repo"—user may paste shorthand.
-    if "github.com" not in clean_url and len(clean_url.split("/")) == 2:
-        return clean_url
-
-    try:
-        parts = clean_url.split("/")
-        # Extract owner/repo—fragile if GitHub URL structure changes.
-        if "github.com" in parts:
-            idx = parts.index("github.com")
-            if len(parts) > idx + 2:
-                owner = parts[idx + 1]
-                repo = parts[idx + 2]
-                return f"{owner}/{repo}"
-    except Exception:
-        pass
-
-    raise ValueError("Invalid GitHub repository URL. Must be in format 'https://github.com/owner/repo'.")
+    p = parse(str(url))
+    if not p.valid or not p.owner or not p.repo or "github.com" not in p.host:
+        raise ValueError("Invalid GitHub repository URL. Must be in format 'https://github.com/owner/repo'.")
+    return f"{p.owner}/{p.repo}"
 
 
 # --- Endpoints ---  # Main API surface—keep stable for clients.

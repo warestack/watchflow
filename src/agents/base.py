@@ -52,8 +52,11 @@ class BaseAgent(ABC):
         logger.info(f"🔧 {self.__class__.__name__} initialized with max_retries={max_retries}, agent_name={agent_name}")
 
     @abstractmethod
-    def _build_graph(self):
-        """Build the LangGraph workflow for this agent."""
+    def _build_graph(self) -> Any:
+        """
+        Build the LangGraph workflow.
+        Returns Any here to allow specific subclasses to define their unique CompiledStateGraph parameters.
+        """
         pass
 
     async def _retry_structured_output(self, llm, output_model, prompt, **kwargs) -> T:
@@ -108,6 +111,9 @@ class BaseAgent(ABC):
         )
 
     @abstractmethod
-    async def execute(self, **kwargs) -> AgentResult:
-        """Execute the agent with given parameters."""
+    async def execute(self, **kwargs: Any) -> AgentResult:
+        """
+        Execute the agent with given parameters.
+        Explicitly typed **kwargs to satisfy MyPy strict mode.
+        """
         pass

@@ -17,6 +17,16 @@ class RuleSeverity(str, Enum):
     WARNING = "warning"  # Added for backward compatibility
 
 
+class RuleCategory(str, Enum):
+    """Enumerates rule categories for organizational and filtering purposes."""
+
+    SECURITY = "security"  # Authentication, secrets, CVE scanning
+    QUALITY = "quality"  # Code review, testing, documentation standards
+    COMPLIANCE = "compliance"  # Legal, licensing, audit requirements
+    VELOCITY = "velocity"  # CI/CD optimization, automation
+    HYGIENE = "hygiene"  # AI spam detection, contribution governance (AI Immune System)
+
+
 class RuleCondition(BaseModel):
     """Represents a condition that must be met for a rule to be triggered."""
 

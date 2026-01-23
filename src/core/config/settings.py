@@ -111,6 +111,12 @@ class Config:
         self.debug = os.getenv("DEBUG", "false").lower() == "true"
         self.environment = os.getenv("ENVIRONMENT", "development")
 
+        # Repository Analysis Feature Settings (AI Immune System)
+        self.use_mock_data = os.getenv("USE_MOCK_DATA", "false").lower() == "true"
+        self.anonymous_rate_limit = int(os.getenv("ANONYMOUS_RATE_LIMIT", "5"))  # Per hour
+        self.authenticated_rate_limit = int(os.getenv("AUTHENTICATED_RATE_LIMIT", "100"))  # Per hour
+        self.analysis_timeout = int(os.getenv("ANALYSIS_TIMEOUT", "60"))  # Seconds
+
     def validate(self) -> bool:
         """Validate configuration."""
         errors = []
