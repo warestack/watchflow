@@ -1,25 +1,29 @@
 rules:
-- key: require_linked_issue
-  name: Require Linked Issue
-  description: Block PRs without issue references to ensure traceability and context
-    for changes.
+- description: 'require_linked_issue: Block PRs without issue references to improve
+    traceability and reduce uncoordinated development.'
+  enabled: true
   severity: high
-  category: quality
-  reasoning: The repository has an 85% unlinked issue rate, indicating most PRs lack
-    issue references which risks poor traceability and drive-by contributions.
-- key: required_workflows
-  name: Require CI Workflow Pass
-  description: Ensure all PRs pass CI workflows before merging to maintain code quality
-    and prevent regressions.
+  event_types:
+  - pull_request
+  parameters: {}
+- description: 'max_pr_size: Limit lines changed per PR to 500 to encourage smaller,
+    focused PRs and improve review quality.'
+  enabled: true
   severity: medium
-  category: quality
-  reasoning: The repository has established CI/CD workflows, so enforcing passing
-    CI before merge helps maintain quality and governance.
-- key: title_pattern
-  name: Enforce Conventional Commit Titles
-  description: Require PR titles to follow Conventional Commit patterns (feat:, fix:,
-    etc.) for better changelog generation and clarity.
-  severity: medium
-  category: quality
-  reasoning: No explicit mention of commit message standards; enforcing title patterns
-    improves commit hygiene and project governance.
+  event_types:
+  - pull_request
+  parameters: {}
+- description: 'code_owners: Enforce CODEOWNERS approval for critical paths to prevent
+    unvetted changes and improve code quality.'
+  enabled: true
+  severity: high
+  event_types:
+  - pull_request
+  parameters: {}
+- description: 'required_workflows: Ensure CI passes before merge to maintain code
+    stability and prevent regressions.'
+  enabled: true
+  severity: high
+  event_types:
+  - pull_request
+  parameters: {}
