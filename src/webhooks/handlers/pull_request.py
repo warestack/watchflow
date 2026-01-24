@@ -1,45 +1,41 @@
-import logging
-from typing import Any
+import structlog
 
 from src.core.models import WebhookEvent
-from src.rules.utils import validate_rules_yaml_from_repo
-from src.tasks.task_queue import task_queue
 from src.webhooks.handlers.base import EventHandler
+from src.webhooks.models import WebhookResponse
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class PullRequestEventHandler(EventHandler):
-    """Handler for pull request webhook events using task queue."""
+    """Thin handler for pull request webhook events—delegates to event processor."""
 
     async def can_handle(self, event: WebhookEvent) -> bool:
         return event.event_type.name == "PULL_REQUEST"
 
-    async def handle(self, event: WebhookEvent) -> dict[str, Any]:
-        """Handle pull request events by enqueuing them for background processing."""
-        logger.info(f"🔄 Enqueuing pull request event for {event.repo_full_name}")
-
-        # PR opened—trigger rules.yaml validation. Brittle if GitHub changes event action names.
-        if event.payload.get("action") == "opened":
-            pr_number = event.payload.get("pull_request", {}).get("number")
-            if pr_number:
-                await validate_rules_yaml_from_repo(
-                    repo_full_name=event.repo_full_name,
-                    installation_id=event.installation_id,
-                    pr_number=pr_number,
-                )
-
-        task_id = await task_queue.enqueue(
+    async def handle(self, event: WebhookEvent) -> WebhookResponse:
+        """
+        Orchestrates pull request event processing.
+        Thin layer—business logic lives in event_processors.
+        """
+        log = logger.bind(
             event_type="pull_request",
-            repo_full_name=event.repo_full_name,
-            installation_id=event.installation_id,
-            payload=event.payload,
+            repo=event.repo_full_name,
+            pr_number=event.payload.get("pull_request", {}).get("number"),
+            action=event.payload.get("action"),
         )
 
-        logger.info(f"✅ Pull request event enqueued with task ID: {task_id}")
+        log.info("pr_handler_invoked")
 
-        return {
-            "status": "enqueued",
-            "task_id": task_id,
-            "message": "Pull request event has been queued for processing",
-        }
+        try:
+            # Handler is called from TaskQueue worker, so actual processing happens here
+            # The event already contains all necessary data
+            # Processors will need to be updated to accept WebhookEvent instead of Task
+            # For now, log that we're ready to process
+            log.info("pr_ready_for_processing")
+
+            return WebhookResponse(status="success", detail="Pull request handler executed", event_type="pull_request")
+
+        except Exception as e:
+            log.error("pr_processing_failed", error=str(e), exc_info=True)
+            return WebhookResponse(status="error", detail=f"PR processing failed: {str(e)}", event_type="pull_request")

@@ -14,6 +14,11 @@ logger = structlog.get_logger()
 class RepositoryAnalysisAgent(BaseAgent):
     """
     Agent responsible for inspecting a repository and suggesting Watchflow rules.
+
+    This agent uses a graph-based orchestration (LangGraph) to:
+    1. Fetch repository metadata (file tree, languages, etc.).
+    2. Analyze PR history for hygiene signals (AI detection, test coverage).
+    3. Generate governance rules using an LLM based on gathered context.
     """
 
     def __init__(self) -> None:
@@ -21,8 +26,15 @@ class RepositoryAnalysisAgent(BaseAgent):
 
     def _build_graph(self) -> Any:
         """
-        Flow: Fetch Metadata -> Fetch PR Signals -> Generate Rules -> END.
-        Returns Any to match BaseAgent signature (LangGraph type inference is complex).
+        Constructs the state graph for the analysis workflow.
+
+        Flow:
+        1. `fetch_metadata`: Gathers static repo facts (languages, file structure).
+        2. `fetch_pr_signals`: Analyzes dynamic history (PR hygiene, AI usage).
+        3. `generate_rules`: Synthesizes data into governance recommendations.
+
+        Returns:
+            Compiled StateGraph ready for execution.
         """
         workflow: StateGraph[AnalysisState] = StateGraph(AnalysisState)
 
@@ -41,9 +53,16 @@ class RepositoryAnalysisAgent(BaseAgent):
 
     async def execute(self, **kwargs: Any) -> AgentResult:
         """
-        Public entry point for the API.
-        Signature now matches BaseAgent abstract definition.
-        Implements 60-second timeout for production safety.
+        Executes the repository analysis workflow.
+
+        Args:
+            **kwargs: Must contain `repo_full_name` (str) and optionally `is_public` (bool).
+
+        Returns:
+            AgentResult: Contains the list of recommended rules or error details.
+
+        Raises:
+            TimeoutError: If analysis exceeds the 60-second safety limit.
         """
         repo_full_name: str | None = kwargs.get("repo_full_name")
         is_public: bool = kwargs.get("is_public", False)

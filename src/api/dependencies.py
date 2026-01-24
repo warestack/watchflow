@@ -6,7 +6,6 @@ from src.core.models import User
 from src.integrations.github.service import GitHubService
 
 logger = logging.getLogger(__name__)  # Logger: keep at module level for reuse.
-logger = logging.getLogger(__name__)
 
 # --- Service Dependencies ---  # DI: swap for mock in tests.
 

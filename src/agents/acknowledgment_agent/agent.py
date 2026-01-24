@@ -209,9 +209,26 @@ class AcknowledgmentAgent(BaseAgent):
                 success=False, message=f"Acknowledgment evaluation failed: {str(e)}", data={"error": str(e)}
             )
 
-    async def execute(self, event_type: str, event_data: dict[str, Any], rules: list[dict[str, Any]]) -> AgentResult:
+    async def execute(self, **kwargs: Any) -> AgentResult:
         """
-        Legacy method for compatibility - not used for acknowledgment evaluation.
+        Execute the acknowledgment agent.
         """
-        logger.warning("🧠 execute() method called on AcknowledgmentAgent - this should not happen")
-        return AgentResult(success=False, message="AcknowledgmentAgent does not support execute() method", data={})
+        acknowledgment_reason = kwargs.get("acknowledgment_reason")
+        violations = kwargs.get("violations")
+        pr_data = kwargs.get("pr_data")
+        commenter = kwargs.get("commenter")
+        rules = kwargs.get("rules")
+
+        if acknowledgment_reason and violations and pr_data and commenter and rules:
+            return await self.evaluate_acknowledgment(
+                acknowledgment_reason=acknowledgment_reason,
+                violations=violations,
+                pr_data=pr_data,
+                commenter=commenter,
+                rules=rules,
+            )
+
+        logger.warning("🧠 execute() method called on AcknowledgmentAgent with missing arguments")
+        return AgentResult(
+            success=False, message="AcknowledgmentAgent requires specific arguments for execute()", data={}
+        )

@@ -27,8 +27,17 @@ class GitHubService:
 
     async def get_repo_metadata(self, repo_url: str) -> dict[str, Any]:
         """
-        Fetches basic metadata (is_private, stars, etc.)
-        Does NOT require a token for public repos.
+        Fetches basic metadata for a repository.
+
+        Args:
+            repo_url: The full URL of the repository.
+
+        Returns:
+            dict: Repository metadata including visibility, stars, description, etc.
+
+        Raises:
+            GitHubResourceNotFoundError: If the repository does not exist.
+            GitHubRateLimitError: If the API rate limit is exceeded.
         """
         try:
             owner, repo = self._parse_url(repo_url)
@@ -66,8 +75,18 @@ class GitHubService:
 
     async def analyze_repository_rules(self, repo_url: str, token: str | None = None) -> list[dict[str, Any]]:
         """
-        The Core Logic: Analyzes the repo and returns rule suggestions.
-        This replaces the "Fake Mock Data".
+        Analyzes the repository and returns rule suggestions.
+
+        This method performs a lightweight analysis by checking for the existence
+        of key governance files (CODEOWNERS, CONTRIBUTING.md) and generating
+        recommendations based on their presence or absence.
+
+        Args:
+            repo_url: The full URL of the repository.
+            token: Optional GitHub personal access token for private repos.
+
+        Returns:
+            list[dict]: A list of rule recommendations.
         """
         try:
             owner, repo = self._parse_url(repo_url)

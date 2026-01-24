@@ -147,7 +147,7 @@ class TestRuleEngineAgent:
             "repository": {"full_name": "test/repo"},
         }
 
-        result = await agent.execute("pull_request", event_data, rules)
+        result = await agent.execute(event_type="pull_request", event_data=event_data, rules=rules)
 
         assert result.success is True
         assert result.data["evaluation_result"].validator_usage == {"required_labels": 2, "min_approvals": 1}
@@ -206,7 +206,7 @@ class TestRuleEngineAgent:
             "repository": {"full_name": "test/repo"},
         }
 
-        result = await agent.execute("pull_request", event_data, rules)
+        result = await agent.execute(event_type="pull_request", event_data=event_data, rules=rules)
 
         assert result.success is False
         assert len(result.data["evaluation_result"].violations) == 1
@@ -231,7 +231,7 @@ class TestRuleEngineAgent:
         rules = [{"description": "Test Rule", "parameters": {}}]
         event_data = {"pull_request": {"title": "Test"}}
 
-        result = await agent.execute("pull_request", event_data, rules)
+        result = await agent.execute(event_type="pull_request", event_data=event_data, rules=rules)
 
         assert result.success is False
         assert "timed out" in result.message
@@ -464,7 +464,7 @@ class TestEngineAgentPerformance:
         agent.graph = AsyncMock()
         agent.graph.ainvoke.return_value = mock_state
 
-        result = await agent.execute("pull_request", event_data, rules)
+        result = await agent.execute(event_type="pull_request", event_data=event_data, rules=rules)
 
         assert result.success is True
         assert result.data["evaluation_result"].validator_usage["required_labels"] == 5
@@ -514,7 +514,7 @@ class TestEngineAgentPerformance:
         agent.graph = AsyncMock()
         agent.graph.ainvoke.return_value = mock_state
 
-        result = await agent.execute("pull_request", event_data, rules)
+        result = await agent.execute(event_type="pull_request", event_data=event_data, rules=rules)
 
         assert result.success is True
         assert result.data["evaluation_result"].validator_usage["required_labels"] == 1

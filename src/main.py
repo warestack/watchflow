@@ -76,14 +76,14 @@ async def lifespan(_app: FastAPI):
     deployment_review_handler = DeploymentReviewEventHandler()
     deployment_protection_rule_handler = DeploymentProtectionRuleEventHandler()
 
-    dispatcher.register_handler(EventType.PULL_REQUEST, pull_request_handler)
-    dispatcher.register_handler(EventType.PUSH, push_handler)
-    dispatcher.register_handler(EventType.CHECK_RUN, check_run_handler)
-    dispatcher.register_handler(EventType.ISSUE_COMMENT, issue_comment_handler)
-    dispatcher.register_handler(EventType.DEPLOYMENT, deployment_handler)
-    dispatcher.register_handler(EventType.DEPLOYMENT_STATUS, deployment_status_handler)
-    dispatcher.register_handler(EventType.DEPLOYMENT_REVIEW, deployment_review_handler)
-    dispatcher.register_handler(EventType.DEPLOYMENT_PROTECTION_RULE, deployment_protection_rule_handler)
+    dispatcher.register_handler(EventType.PULL_REQUEST, pull_request_handler.handle)
+    dispatcher.register_handler(EventType.PUSH, push_handler.handle)
+    dispatcher.register_handler(EventType.CHECK_RUN, check_run_handler.handle)
+    dispatcher.register_handler(EventType.ISSUE_COMMENT, issue_comment_handler.handle)
+    dispatcher.register_handler(EventType.DEPLOYMENT, deployment_handler.handle)
+    dispatcher.register_handler(EventType.DEPLOYMENT_STATUS, deployment_status_handler.handle)
+    dispatcher.register_handler(EventType.DEPLOYMENT_REVIEW, deployment_review_handler.handle)
+    dispatcher.register_handler(EventType.DEPLOYMENT_PROTECTION_RULE, deployment_protection_rule_handler.handle)
 
     logging.info("Event handlers registered, background workers started, and deployment scheduler started.")
 

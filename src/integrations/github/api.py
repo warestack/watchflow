@@ -5,13 +5,40 @@ import time
 from typing import Any
 
 import aiohttp
+import httpx
 import jwt
 import structlog
 from cachetools import TTLCache
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.core.config import config
+from src.core.errors import GitHubGraphQLError
 
 logger = logging.getLogger(__name__)
+
+_PR_HYGIENE_QUERY = """
+query PRHygiene($owner: String!, $repo: String!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequests(last: 20, states: [MERGED, CLOSED]) {
+      nodes {
+        number
+        title
+        body
+        changedFiles
+        comments {
+          totalCount
+        }
+        closingIssuesReferences(first: 1) {
+          totalCount
+        }
+        reviews(first: 1) {
+          totalCount
+        }
+      }
+    }
+  }
+}
+"""
 
 
 class GitHubClient:
@@ -128,6 +155,9 @@ class GitHubClient:
             if response.status == 200:
                 data = await response.json()
                 return data if isinstance(data, list) else [data]
+
+            # Raise exception for error statuses to avoid silent failures
+            response.raise_for_status()
             return []
 
     async def get_file_content(
@@ -160,6 +190,7 @@ class GitHubClient:
                     f"Failed to get file content for {repo_full_name}/{file_path}. "
                     f"Status: {response.status}, Response: {error_text}"
                 )
+                response.raise_for_status()
                 return None
 
     async def close(self):
@@ -948,7 +979,6 @@ class GitHubClient:
         Returns:
             List of PR dictionaries with enhanced metadata for hygiene analysis
         """
-        import httpx
 
         logger = structlog.get_logger()
 
@@ -1041,23 +1071,143 @@ class GitHubClient:
             logger.error("pr_fetch_unexpected_error", repo=repo_full_name, error_type="unknown_error", error=str(e))
             return []
 
-    @staticmethod
-    def _detect_issue_references(body: str, title: str) -> bool:
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    async def execute_graphql(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
         """
-        Heuristic to detect if a PR references an issue.
-        Looks for common patterns: #123, fixes #123, closes #456, etc.
+        Executes a GraphQL query against the GitHub API.
+
+        Args:
+            query: The GraphQL query string.
+            variables: A dictionary of variables for the query.
+
+        Returns:
+            The JSON response from the API.
+
+        Raises:
+            GitHubGraphQLError: If the API returns errors.
+            httpx.HTTPStatusError: If the HTTP request fails.
         """
-        import re
 
-        combined_text = f"{title} {body}".lower()
+        url = f"{config.github.api_base_url}/graphql"
+        payload = {"query": query, "variables": variables}
 
-        # Common issue reference patterns
-        patterns = [
-            r"#\d+",  # Direct reference: #123
-            r"(?:fix|fixes|fixed|close|closes|closed|resolve|resolves|resolved)\s+#?\d+",
-        ]
+        # Get appropriate headers (can be anonymous for public data or authenticated)
+        # Note: execute_graphql typically requires authentication for higher limits/access
+        # but we use the shared _get_auth_headers method.
+        # For now, we assume we want anonymous access if no token/installation_id is present,
+        # but GraphQL usually requires a token.
 
-        return any(re.search(pattern, combined_text) for pattern in patterns)
+        # We need to decide whether to use installation or user token here.
+        # Since this method is generic, we might rely on the caller to have set up the client
+        # with a token or use the internal _get_auth_headers logic if we extended this method signature.
+        # However, to match the moved code, we will use the existing _get_auth_headers
+        # but we need to know WHICH token to use.
+
+        # FIX: The original code used self.headers which was set in __init__ with a raw token.
+        # The new GitHubClient uses _get_auth_headers.
+        # We'll use _get_auth_headers(allow_anonymous=True) for now, but GraphQL often needs auth.
+
+        headers = await self._get_auth_headers(allow_anonymous=True)
+        if not headers:
+            # Fallback or error? GraphQL usually demands auth.
+            # If we have no headers, we likely can't query GraphQL successfully for many fields.
+            # We'll try with empty headers if that's what _get_auth_headers returns (it returns None on failure).
+            # If None, we can't proceed.
+            logger.error("GraphQL execution failed: No authentication headers available.")
+            raise Exception("Authentication required for GraphQL query.")
+
+        start_time = time.time()
+
+        session = await self._get_session()
+        async with session.post(url, headers=headers, json=payload) as response:
+            try:
+                if response.status != 200:
+                    # Log the error body for debugging
+                    error_text = await response.text()
+                    logger.error(
+                        "GitHub GraphQL request failed",
+                        status_code=response.status,
+                        response_body=error_text,
+                        query=query,
+                    )
+                    response.raise_for_status()
+
+                json_response = await response.json()
+                if "errors" in json_response:
+                    logger.error(
+                        "GitHub GraphQL Error",
+                        errors=json_response["errors"],
+                        query=query,
+                        variables=variables,
+                    )
+                    raise GitHubGraphQLError(json_response["errors"])
+
+                return json_response
+            finally:
+                end_time = time.time()
+                logger.debug(
+                    "GraphQL query executed",
+                    duration_ms=(end_time - start_time) * 1000,
+                )
+
+    async def fetch_pr_hygiene_stats(self, owner: str, repo: str) -> list[dict[str, Any]]:
+        """
+        Fetches PR statistics for hygiene analysis using GraphQL.
+        """
+        _PR_HYGIENE_QUERY = """
+        query PRHygiene($owner: String!, $repo: String!) {
+          repository(owner: $owner, name: $repo) {
+            pullRequests(last: 20, states: [MERGED, CLOSED]) {
+              nodes {
+                number
+                title
+                body
+                changedFiles
+                mergedAt
+                additions
+                deletions
+                author {
+                  login
+                }
+                comments {
+                  totalCount
+                }
+                closingIssuesReferences(first: 1) {
+                  totalCount
+                  nodes {
+                    title
+                  }
+                }
+                reviews(first: 10) {
+                  nodes {
+                    state
+                    author {
+                      login
+                    }
+                  }
+                }
+                files(first: 10) {
+                  edges {
+                    node {
+                      path
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+        variables = {"owner": owner, "repo": repo}
+        try:
+            data = await self.execute_graphql(_PR_HYGIENE_QUERY, variables)
+            nodes = data.get("data", {}).get("repository", {}).get("pullRequests", {}).get("nodes", [])
+            if not nodes:
+                logger.warning("GraphQL query returned no PR nodes.", owner=owner, repo=repo)
+            return nodes
+        except Exception as e:
+            logger.error("Failed to fetch PR hygiene stats", error=str(e))
+            return []
 
 
 # Global instance

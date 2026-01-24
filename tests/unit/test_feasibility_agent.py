@@ -97,7 +97,7 @@ class TestRuleFeasibilityAgent:
         agent.graph.ainvoke.return_value = mock_state
 
         # Execute the agent
-        result = await agent.execute("No deployments on weekends")
+        result = await agent.execute(rule_description="No deployments on weekends")
 
         # Assertions
         assert result.success is True
@@ -133,7 +133,7 @@ class TestRuleFeasibilityAgent:
         agent.graph.ainvoke.return_value = mock_state
 
         # Execute the agent
-        result = await agent.execute("This is impossible to implement")
+        result = await agent.execute(rule_description="This is impossible to implement")
 
         # Assertions
         assert result.success is False  # Success should be False for unfeasible rules
@@ -152,7 +152,7 @@ class TestRuleFeasibilityAgent:
         agent.graph.ainvoke.side_effect = Exception("OpenAI API error")
 
         # Execute the agent
-        result = await agent.execute("Test rule")
+        result = await agent.execute(rule_description="Test rule")
 
         # Assertions
         assert result.success is False
@@ -166,7 +166,7 @@ class TestRuleFeasibilityAgent:
         agent.graph.ainvoke.side_effect = Exception("YAML generation failed")
 
         # Execute the agent
-        result = await agent.execute("No deployments on weekends")
+        result = await agent.execute(rule_description="No deployments on weekends")
 
         # Assertions
         assert result.success is False  # Should fail due to YAML generation error
@@ -205,7 +205,7 @@ class TestRuleFeasibilityAgent:
             agent.graph.ainvoke.return_value = mock_state
 
             # Execute
-            result = await agent.execute(case["rule"])
+            result = await agent.execute(rule_description=case["rule"])
 
             # Verify
             assert result.data["rule_type"] == case["expected_type"]

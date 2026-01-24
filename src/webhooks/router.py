@@ -1,12 +1,12 @@
-import logging
-
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from src.core.models import EventType, WebhookEvent
 from src.webhooks.auth import verify_github_signature
 from src.webhooks.dispatcher import WebhookDispatcher, dispatcher
+from src.webhooks.models import GitHubEventModel, WebhookResponse
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 router = APIRouter()
 
 
@@ -23,13 +23,13 @@ def _create_event_from_request(event_name: str | None, payload: dict) -> Webhook
 
     # GitHub sometimes sends event names with dot suffixes—strip for enum match.
     normalized_event_name = event_name.split(".")[0]
-    logger.info(f"Received event: {event_name}, normalized: {normalized_event_name}")
+    logger.info("webhook_event_received", github_event=event_name, normalized=normalized_event_name)
 
     try:
         # Enum mapping—fail if GitHub adds new event type we don't support.
         event_type = EventType(normalized_event_name)
     except ValueError as e:
-        logger.warning(f"Received an unsupported event type: {event_name} - {e}")
+        logger.warning("unsupported_event_type", github_event=event_name, error=str(e))
         # Defensive: Accept unknown events, but don't process—avoids GitHub retries/spam.
         raise HTTPException(status_code=202, detail=f"Event type '{event_name}' is received but not supported.") from e
 
@@ -55,12 +55,33 @@ async def github_webhook_endpoint(
     payload = await request.json()
     event_name = request.headers.get("X-GitHub-Event")
 
+    # Parse and validate incoming event payload
+    try:
+        github_event = GitHubEventModel(**payload)
+        logger.info(
+            "webhook_validated",
+            event_type=event_name,
+            repository=github_event.repository.full_name,
+            sender=github_event.sender.login,
+        )
+    except Exception as e:
+        logger.error("webhook_validation_failed", event_type=event_name, error=str(e))
+        raise HTTPException(status_code=400, detail="Invalid webhook payload structure") from e
+
     try:
         event = _create_event_from_request(event_name, payload)
-        result = await dispatcher_instance.dispatch(event)
-        return {"status": "event dispatched successfully", "result": result}
+        await dispatcher_instance.dispatch(event)
+        return WebhookResponse(
+            status="success",
+            detail="Event dispatched successfully",
+            event_type=event_name,
+        )
     except HTTPException as e:
         # Don't 500 on unknown event—keeps GitHub happy, avoids alert noise.
         if e.status_code == 202:
-            return {"status": "event received but not supported", "detail": e.detail}
+            return WebhookResponse(
+                status="received",
+                detail=e.detail,
+                event_type=event_name,
+            )
         raise e

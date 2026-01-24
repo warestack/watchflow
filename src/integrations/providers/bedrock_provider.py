@@ -243,6 +243,8 @@ class BedrockProvider(BaseProvider):
                 run_manager: Any | None = None,
             ) -> ChatResult:
                 """Async generate using the Anthropic client."""
-                return self._generate(messages, stop, run_manager)
+                import asyncio
+
+                return await asyncio.to_thread(self._generate, messages, stop, run_manager)
 
         return AnthropicBedrockWrapper(client, model_id, self.max_tokens, self.temperature)

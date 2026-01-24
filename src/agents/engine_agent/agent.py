@@ -72,11 +72,20 @@ class RuleEngineAgent(BaseAgent):
 
         return workflow.compile()
 
-    async def execute(self, event_type: str, event_data: dict[str, Any], rules: list[dict[str, Any]]) -> AgentResult:
+    async def execute(self, **kwargs: Any) -> AgentResult:
         """
         Hybrid rule evaluation focusing on rule descriptions and parameters.
         Prioritizes fast validators with LLM reasoning as fallback.
         """
+        event_type = kwargs.get("event_type")
+        event_data = kwargs.get("event_data")
+        rules = kwargs.get("rules")
+
+        if not event_type or event_data is None or rules is None:
+            return AgentResult(
+                success=False, message="Missing required arguments: event_type, event_data, or rules", data={}
+            )
+
         start_time = time.time()
 
         try:
@@ -221,7 +230,7 @@ class RuleEngineAgent(BaseAgent):
         """
         Legacy method for backwards compatibility.
         """
-        result = await self.execute(event_type, event_data, rules)
+        result = await self.execute(event_type=event_type, event_data=event_data, rules=rules)
 
         if result.success:
             return {"status": "success", "message": result.message, "violations": []}

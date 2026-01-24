@@ -2771,7 +2771,6 @@ docs = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "giturlparse" },
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -2816,7 +2815,6 @@ provides-extras = ["dev", "docs"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "giturlparse", specifier = ">=0.1.0" },
     { name = "mypy", specifier = ">=1.7.0" },
     { name = "pre-commit", specifier = ">=3.5.0" },
     { name = "pytest", specifier = ">=7.4.0" },

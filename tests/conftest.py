@@ -39,9 +39,9 @@ def mock_settings():
             "APP_CLIENT_ID_GITHUB": "mock-client-id",
             "APP_CLIENT_SECRET_GITHUB": "mock-client-secret",
             "WEBHOOK_SECRET_GITHUB": "mock-webhook-secret",
-            "PRIVATE_KEY_BASE64_GITHUB": "bW9jay1rZXk=",  # "mock-key" in base64
+            "PRIVATE_KEY_BASE64_GITHUB": "bW9jay1rZXk=",  # "mock-key" in base64 # gitleaks:allow
             "AI_PROVIDER": "openai",
-            "OPENAI_API_KEY": "sk-mock-key",
+            "OPENAI_API_KEY": "sk-mock-key",  # gitleaks:allow
             "ENVIRONMENT": "test",
         }
     ):

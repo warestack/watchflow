@@ -116,5 +116,4 @@ dev-dependencies = [
     "mypy>=1.7.0",
     "pre-commit>=3.5.0",
     "ruff>=0.1.0",
-    "giturlparse>=0.1.0",
 ]

@@ -1,6 +1,6 @@
-import logging
 from typing import Any
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from giturlparse import parse
 from pydantic import BaseModel, Field, HttpUrl
@@ -12,7 +12,7 @@ from src.api.rate_limit import rate_limiter
 # Internal: User model, auth assumed present—see core/api for details.
 from src.core.models import User
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 router = APIRouter(prefix="/rules", tags=["Recommendations"])
 
@@ -22,6 +22,10 @@ router = APIRouter(prefix="/rules", tags=["Recommendations"])
 class AnalyzeRepoRequest(BaseModel):
     """
     Payload for repository analysis.
+
+    Attributes:
+        repo_url (HttpUrl): Full URL of the GitHub repository (e.g., https://github.com/pallets/flask).
+        force_refresh (bool): Bypass cache if true (Not yet implemented).
     """
 
     repo_url: HttpUrl = Field(
@@ -33,6 +37,11 @@ class AnalyzeRepoRequest(BaseModel):
 class AnalysisResponse(BaseModel):
     """
     Standardized response for the frontend.
+
+    Attributes:
+        rules_yaml (str): Generated rules in YAML format.
+        pr_plan (str): Markdown-formatted explanation of the recommended rules.
+        analysis_summary (dict): Hygiene metrics and analysis insights.
     """
 
     rules_yaml: str
@@ -57,7 +66,7 @@ def parse_repo_from_url(url: str) -> str:
         ValueError: If the URL is not a valid GitHub repository URL.
     """
     p = parse(str(url))
-    if not p.valid or not p.owner or not p.repo or "github.com" not in p.host:
+    if not p.valid or not p.owner or not p.repo or p.host not in {"github.com", "www.github.com"}:
         raise ValueError("Invalid GitHub repository URL. Must be in format 'https://github.com/owner/repo'.")
     return f"{p.owner}/{p.repo}"
 
@@ -77,25 +86,36 @@ async def recommend_rules(
     request: Request, payload: AnalyzeRepoRequest, user: User | None = Depends(get_current_user_optional)
 ) -> AnalysisResponse:
     """
-    Executes the Repository Analysis Agent.
+    Executes the Repository Analysis Agent to generate governance rules.
 
-    Flow:
-    1. Parse and validate the Repo URL.
-    2. Instantiate the RepositoryAnalysisAgent.
-    3. Execute the agent (which handles its own GitHub API calls).
-    4. Map the agent's internal result to the API response.
+    This endpoint orchestrates the analysis flow:
+    1. Validates the GitHub repository URL.
+    2. Instantiates the `RepositoryAnalysisAgent`.
+    3. Runs the agent to fetch metadata, analyze PR history, and generate rules.
+    4. Returns a standardized response with YAML rules and a remediation plan.
+
+    Args:
+        request: The incoming HTTP request (used for IP logging).
+        payload: The request body containing the repository URL.
+        user: The authenticated user (optional).
+
+    Returns:
+        AnalysisResponse: The generated rules, PR plan, and analysis summary.
+
+    Raises:
+        HTTPException: 404 if repo not found, 429 if rate limited, 500 for internal errors.
     """
     repo_url_str = str(payload.repo_url)
     client_ip = request.client.host if request.client else "unknown"
     user_id = user.email if user else "Anonymous"
 
-    logger.info(f"Analysis requested for {repo_url_str} by {user_id} (IP: {client_ip})")
+    logger.info("analysis_requested", repo_url=repo_url_str, user_id=user_id, ip=client_ip)
 
     # Step 1: Parse URL—fail fast if invalid.
     try:
         repo_full_name = parse_repo_from_url(repo_url_str)
     except ValueError as e:
-        logger.warning(f"Invalid URL provided by {client_ip}: {repo_url_str}")
+        logger.warning("invalid_url_provided", ip=client_ip, url=repo_url_str, error=str(e))
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
 
     # Step 2: Rate limiting—TODO: use Redis. For now, agent handles GitHub 429s internally.
@@ -106,7 +126,7 @@ async def recommend_rules(
         result = await agent.execute(repo_full_name=repo_full_name, is_public=True)
 
     except Exception as e:
-        logger.exception(f"Unexpected error during agent execution for {repo_full_name}")
+        logger.exception("agent_execution_failed", repo=repo_full_name)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal analysis engine error."
         ) from e

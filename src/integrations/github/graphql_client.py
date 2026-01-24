@@ -90,7 +90,7 @@ class GitHubGraphQLClient:
                     Commit(
                         oid=node["commit"]["oid"],
                         message=node["commit"]["message"],
-                        author=node["commit"]["author"]["name"],
+                        author=node["commit"].get("author", {}).get("name", "Unknown"),
                     )
                     for node in pr_data["commits"]["nodes"]
                 ]

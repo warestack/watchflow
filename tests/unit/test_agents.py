@@ -148,7 +148,7 @@ class TestFeasibilityAgent:
         agent.graph = AsyncMock()
         agent.graph.ainvoke.return_value = mock_state
 
-        result = await agent.execute("Prevent deployments on weekends")
+        result = await agent.execute(rule_description="Prevent deployments on weekends")
 
         assert result.success is True
         assert result.data["is_feasible"] is True
@@ -169,7 +169,7 @@ class TestFeasibilityAgent:
         agent.graph = AsyncMock()
         agent.graph.ainvoke.side_effect = TimeoutError()
 
-        result = await agent.execute("Prevent deployments on weekends")
+        result = await agent.execute(rule_description="Prevent deployments on weekends")
 
         assert result.success is False
         assert "timed out" in result.message

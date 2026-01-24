@@ -25,6 +25,10 @@ async def verify_github_signature(request: Request) -> bool:
         True if the signature is valid.
     """
     signature = request.headers.get("X-Hub-Signature-256")
+
+    # DEBUG: Log all headers to debug missing signature issue
+    logger.info("request_headers_received", headers=dict(request.headers))
+
     if not signature:
         logger.warning("Received a request without the X-Hub-Signature-256 header.")
         raise HTTPException(status_code=401, detail="Missing GitHub webhook signature.")

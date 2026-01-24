@@ -30,7 +30,7 @@ class IssueCommentEventHandler(EventHandler):
             repo = event.repo_full_name
             installation_id = event.installation_id
 
-            logger.info(f"🔄 Processing comment from {commenter}: {comment_body[:50]}...")
+            logger.info("comment_processed", commenter=commenter, body_length=len(comment_body))
 
             # Bot self-reply guard—avoids infinite loop, spam.
             bot_usernames = ["watchflow[bot]", "watchflow-bot", "watchflow", "watchflowbot", "watchflow_bot"]
@@ -150,7 +150,7 @@ class IssueCommentEventHandler(EventHandler):
         """Extract the quoted reason from an acknowledgment command, or None if not present."""
         comment_body = comment_body.strip()
 
-        logger.info(f"🔍 Extracting acknowledgment reason from: '{comment_body}'")
+        logger.info("extracting_acknowledgment_reason", body_length=len(comment_body))
 
         # Regex flexibility—users type commands in unpredictable ways.
         patterns = [

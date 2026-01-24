@@ -1,9 +1,9 @@
 from src.agents.repository_analysis_agent.models import (
-    HygieneMetrics,
     PRSignal,
     RepositoryAnalysisRequest,
     parse_github_repo_identifier,
 )
+from src.core.models import HygieneMetrics
 
 
 def test_parse_github_repo_identifier_normalizes_url():
