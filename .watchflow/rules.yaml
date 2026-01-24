@@ -1,35 +1,25 @@
 rules:
-  # Essential Open Source Rules
-  - description: "Pull requests must have descriptive titles following conventional commit format"
-    enabled: true
-    severity: "medium"
-    event_types: ["pull_request"]
-    parameters:
-      title_pattern: "^feat|^fix|^docs|^style|^refactor|^test|^chore|^perf|^ci|^build|^revert"
-
-  - description: "New contributors require approval from at least one past contributor"
-    enabled: true
-    severity: "medium"
-    event_types: ["pull_request"]
-    parameters:
-      min_past_contributors: 1
-
-  - description: "Code changes must include corresponding tests"
-    enabled: true
-    severity: "medium"
-    event_types: ["pull_request"]
-    parameters:
-      pattern: "tests/.*\\.py$|test_.*\\.py$"
-      condition_type: "files_match_pattern"
-
-  - description: "Changes to critical files require review from code owners"
-    enabled: true
-    severity: "high"
-    event_types: ["pull_request"]
-
-  - description: "No direct pushes to main branch - all changes must go through PRs"
-    enabled: true
-    severity: "critical"
-    event_types: ["push"]
-    parameters:
-      allow_force_push: false
+- key: require_linked_issue
+  name: Require Linked Issue
+  description: Block PRs without issue references to ensure traceability and context
+    for changes.
+  severity: high
+  category: quality
+  reasoning: The repository has an 85% unlinked issue rate, indicating most PRs lack
+    issue references which risks poor traceability and drive-by contributions.
+- key: required_workflows
+  name: Require CI Workflow Pass
+  description: Ensure all PRs pass CI workflows before merging to maintain code quality
+    and prevent regressions.
+  severity: medium
+  category: quality
+  reasoning: The repository has established CI/CD workflows, so enforcing passing
+    CI before merge helps maintain quality and governance.
+- key: title_pattern
+  name: Enforce Conventional Commit Titles
+  description: Require PR titles to follow Conventional Commit patterns (feat:, fix:,
+    etc.) for better changelog generation and clarity.
+  severity: medium
+  category: quality
+  reasoning: No explicit mention of commit message standards; enforcing title patterns
+    improves commit hygiene and project governance.
