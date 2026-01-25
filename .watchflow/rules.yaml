@@ -1,35 +1,36 @@
 rules:
-  # Essential Open Source Rules
-  - description: "Pull requests must have descriptive titles following conventional commit format"
-    enabled: true
-    severity: "medium"
-    event_types: ["pull_request"]
-    parameters:
-      title_pattern: "^feat|^fix|^docs|^style|^refactor|^test|^chore|^perf|^ci|^build|^revert"
-
-  - description: "New contributors require approval from at least one past contributor"
-    enabled: true
-    severity: "medium"
-    event_types: ["pull_request"]
-    parameters:
-      min_past_contributors: 1
-
-  - description: "Code changes must include corresponding tests"
-    enabled: true
-    severity: "medium"
-    event_types: ["pull_request"]
-    parameters:
-      pattern: "tests/.*\\.py$|test_.*\\.py$"
-      condition_type: "files_match_pattern"
-
-  - description: "Changes to critical files require review from code owners"
-    enabled: true
-    severity: "high"
-    event_types: ["pull_request"]
-
-  - description: "No direct pushes to main branch - all changes must go through PRs"
-    enabled: true
-    severity: "critical"
-    event_types: ["push"]
-    parameters:
-      allow_force_push: false
+- description: 'require_linked_issue: Block PRs without issue references to improve
+    traceability and reduce drive-by contributions.'
+  enabled: true
+  severity: high
+  event_types:
+  - pull_request
+  parameters: {}
+- description: 'max_pr_size: Limit PR size to prevent large, hard-to-review changes
+    and encourage focused contributions.'
+  enabled: true
+  severity: medium
+  event_types:
+  - pull_request
+  parameters: {}
+- description: 'code_owners: Enforce CODEOWNERS approval to prevent bypassing critical
+    code reviews and ensure vetted changes.'
+  enabled: true
+  severity: high
+  event_types:
+  - pull_request
+  parameters: {}
+- description: 'required_workflows: Ensure CI workflows pass before merging to maintain
+    code quality and prevent regressions.'
+  enabled: true
+  severity: critical
+  event_types:
+  - pull_request
+  parameters: {}
+- description: 'title_pattern: Enforce Conventional Commits pattern to improve commit
+    message clarity and automation.'
+  enabled: true
+  severity: medium
+  event_types:
+  - pull_request
+  parameters: {}
