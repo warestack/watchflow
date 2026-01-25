@@ -1,35 +1,29 @@
 rules:
-  # Essential Open Source Rules
-  - description: "Pull requests must have descriptive titles following conventional commit format"
-    enabled: true
-    severity: "medium"
-    event_types: ["pull_request"]
-    parameters:
-      title_pattern: "^feat|^fix|^docs|^style|^refactor|^test|^chore|^perf|^ci|^build|^revert"
-
-  - description: "New contributors require approval from at least one past contributor"
-    enabled: true
-    severity: "medium"
-    event_types: ["pull_request"]
-    parameters:
-      min_past_contributors: 1
-
-  - description: "Code changes must include corresponding tests"
-    enabled: true
-    severity: "medium"
-    event_types: ["pull_request"]
-    parameters:
-      pattern: "tests/.*\\.py$|test_.*\\.py$"
-      condition_type: "files_match_pattern"
-
-  - description: "Changes to critical files require review from code owners"
-    enabled: true
-    severity: "high"
-    event_types: ["pull_request"]
-
-  - description: "No direct pushes to main branch - all changes must go through PRs"
-    enabled: true
-    severity: "critical"
-    event_types: ["push"]
-    parameters:
-      allow_force_push: false
+- description: 'require_linked_issue: Block PRs without issue references to improve
+    traceability and accountability given the 40% unlinked issue rate.'
+  enabled: true
+  severity: high
+  event_types:
+  - pull_request
+  parameters: {}
+- description: 'max_pr_size: Limit lines changed per PR to 500 to reduce review complexity
+    and improve code quality given the average PR size of 428 lines.'
+  enabled: true
+  severity: medium
+  event_types:
+  - pull_request
+  parameters: {}
+- description: 'code_owners: Enforce CODEOWNERS approval for critical paths to prevent
+    unvetted changes, addressing the 35% codeowner bypass rate.'
+  enabled: true
+  severity: high
+  event_types:
+  - pull_request
+  parameters: {}
+- description: 'required_workflows: Ensure CI passes before merge to maintain code
+    stability and quality given the presence of CI/CD workflows.'
+  enabled: true
+  severity: high
+  event_types:
+  - pull_request
+  parameters: {}
