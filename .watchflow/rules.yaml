@@ -1,29 +1,31 @@
 rules:
-- description: 'require_linked_issue: Block PRs without issue references to improve
-    traceability and reduce uncoordinated development.'
+- description: 'code_owners: Enforce CODEOWNERS approval for critical paths to reduce
+    the 35% codeowner bypass rate, improving governance and code quality.'
   enabled: true
   severity: high
   event_types:
   - pull_request
   parameters: {}
-- description: 'max_pr_size: Limit lines changed per PR to 500 to encourage smaller,
-    focused PRs and improve review quality.'
+- description: 'required_workflows: Ensure CI passes before merge to maintain quality
+    and prevent regressions, supporting the existing CI/CD setup.'
   enabled: true
   severity: medium
   event_types:
   - pull_request
   parameters: {}
-- description: 'code_owners: Enforce CODEOWNERS approval for critical paths to prevent
-    unvetted changes and improve code quality.'
+- description: 'required_labels: Enforce categorization of PRs (bug, enhancement,
+    etc.) to improve issue-diff alignment and clarity, addressing the 15% mismatch
+    rate.'
   enabled: true
-  severity: high
+  severity: medium
   event_types:
   - pull_request
   parameters: {}
-- description: 'required_workflows: Ensure CI passes before merge to maintain code
-    stability and prevent regressions.'
+- description: 'title_pattern: Enforce Conventional Commits (feat:, fix:, etc.) to
+    clarify PR content and ensure meaningful change tracking, especially given zero
+    lines changed in many PRs.'
   enabled: true
-  severity: high
+  severity: medium
   event_types:
   - pull_request
   parameters: {}
