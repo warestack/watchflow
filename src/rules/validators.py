@@ -976,6 +976,79 @@ class RequiredFieldInDiffCondition(Condition):
         return True
 
 
+class RequireLinkedIssueCondition(Condition):
+    """Validates that PRs reference a linked issue in description or commit messages."""
+
+    name = "require_linked_issue"
+    description = "Validates that PRs reference a linked issue in description or commit messages"
+    parameter_patterns = ["check_commits"]
+    event_types = ["pull_request"]
+    examples = [{"check_commits": True}, {"check_commits": False}]
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        check_commits = parameters.get("check_commits", True)
+
+        # Get PR data
+        pull_request = event.get("pull_request_details", {})
+        if not pull_request:
+            return True  # No violation if we can't check
+
+        # Check PR description for linked issues
+        body = pull_request.get("body", "") or ""
+        title = pull_request.get("title", "") or ""
+
+        # Check for closing keywords (closes, fixes, resolves, refs, relates) followed by issue reference
+        closing_keywords = ["closes", "fixes", "resolves", "refs", "relates", "addresses"]
+        issue_pattern = r"#\d+|(?:https?://)?(?:github\.com/[\w-]+/[\w-]+/)?(?:issues|pull)/\d+"
+
+        # Check description and title
+        text_to_check = (body + " " + title).lower()
+        has_linked_issue = False
+
+        # Check for closing keywords with issue references
+        for keyword in closing_keywords:
+            pattern = rf"\b{re.escape(keyword)}\s+{issue_pattern}"
+            if re.search(pattern, text_to_check, re.IGNORECASE):
+                has_linked_issue = True
+                break
+
+        # Also check for standalone issue references (e.g., #123)
+        if not has_linked_issue and re.search(issue_pattern, text_to_check):
+            has_linked_issue = True
+
+        # Check commit messages if requested
+        if not has_linked_issue and check_commits:
+            commits = event.get("commits", [])
+            if not commits:
+                # Try to get from pull_request_details
+                commits = pull_request.get("commits", [])
+
+            for commit in commits:
+                commit_message = commit.get("message", "") or ""
+                if not commit_message:
+                    continue
+
+                commit_text = commit_message.lower()
+                for keyword in closing_keywords:
+                    pattern = rf"\b{re.escape(keyword)}\s+{issue_pattern}"
+                    if re.search(pattern, commit_text, re.IGNORECASE):
+                        has_linked_issue = True
+                        break
+
+                # Check for standalone issue references in commit
+                if not has_linked_issue and re.search(issue_pattern, commit_text):
+                    has_linked_issue = True
+                    break
+
+                if has_linked_issue:
+                    break
+
+        logger.debug(
+            f"RequireLinkedIssueCondition: PR has linked issue: {has_linked_issue}, checked commits: {check_commits}"
+        )
+        return has_linked_issue
+
+
 # Registry of all available validators
 VALIDATOR_REGISTRY = {
     "author_team_is": AuthorTeamCondition(),
@@ -1004,6 +1077,7 @@ VALIDATOR_REGISTRY = {
     "diff_pattern": DiffPatternCondition(),
     "related_tests": RelatedTestsCondition(),
     "required_field_in_diff": RequiredFieldInDiffCondition(),
+    "require_linked_issue": RequireLinkedIssueCondition(),
 }
 
 

@@ -1,5 +1,7 @@
 # File: src/agents/repository_analysis_agent/models.py
 
+from typing import Any
+
 from giturlparse import parse
 from pydantic import BaseModel, Field, model_validator
 
@@ -88,14 +90,14 @@ class RepositoryAnalysisResponse(BaseModel):
 class RuleRecommendation(BaseModel):
     """
     Represents a single rule suggested by the AI.
+    Contains only fields that go into rules.yaml file.
     """
 
-    key: str = Field(..., description="Unique identifier for the rule (e.g., 'require_pr_approvals')")
-    name: str = Field(..., description="Human-readable title")
     description: str = Field(..., description="What the rule does")
+    enabled: bool = Field(True, description="Whether the rule is enabled")
     severity: str = Field("medium", description="low, medium, high, or critical")
-    category: str = Field("quality", description="security, quality, compliance, or velocity")
-    reasoning: str = Field(..., description="Why this rule was suggested based on the repo analysis")
+    event_types: list[str] = Field(..., description="Event types this rule applies to (e.g., ['pull_request'])")
+    parameters: dict[str, Any] = Field(default_factory=dict, description="Rule parameters for validators")
 
 
 class PRSignal(BaseModel):
@@ -131,11 +133,15 @@ class AnalysisState(BaseModel):
     # --- Inputs ---
     repo_full_name: str
     is_public: bool = False
+    user_token: str | None = Field(
+        None, description="Optional GitHub Personal Access Token for authenticated API requests"
+    )
 
     # --- Collected Signals (Raw Data) ---
     file_tree: list[str] = Field(default_factory=list, description="List of file paths in the repo")
     readme_content: str | None = None
     contributing_content: str | None = None
+    codeowners_content: str | None = Field(None, description="CODEOWNERS file content if available")
     detected_languages: list[str] = Field(default_factory=list)
     has_ci: bool = False
     has_codeowners: bool = False
@@ -147,7 +153,12 @@ class AnalysisState(BaseModel):
 
     # --- Outputs ---
     recommendations: list[RuleRecommendation] = Field(default_factory=list)
+    rule_reasonings: dict[str, str] = Field(
+        default_factory=dict, description="Map of rule description to reasoning/justification"
+    )
+    analysis_report: str | None = Field(None, description="Generated analysis report markdown")
 
     # --- Execution Metadata ---
     error: str | None = None
+    warnings: list[str] = Field(default_factory=list, description="Warnings about incomplete data or rate limits")
     step_log: list[str] = Field(default_factory=list)

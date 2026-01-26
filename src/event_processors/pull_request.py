@@ -285,7 +285,7 @@ class PullRequestProcessor(BaseEventProcessor):
                 conclusion = "success"
 
             # Format output
-            output = self._format_check_run_output(violations, error)
+            output = self._format_check_run_output(violations, error, task.repo_full_name, task.installation_id)
 
             result = await self.github_client.create_check_run(
                 repo=task.repo_full_name,
@@ -305,23 +305,43 @@ class PullRequestProcessor(BaseEventProcessor):
         except Exception as e:
             logger.error(f"Error creating check run: {e}")
 
-    def _format_check_run_output(self, violations: list[dict[str, Any]], error: str | None = None) -> dict[str, Any]:
+    def _format_check_run_output(
+        self,
+        violations: list[dict[str, Any]],
+        error: str | None = None,
+        repo_full_name: str | None = None,
+        installation_id: int | None = None,
+    ) -> dict[str, Any]:
         """Format violations for check run output."""
         if error:
             # Check if it's a missing rules file error
             if "rules not configured" in error.lower() or "rules file not found" in error.lower():
+                # Build landing page URL with context
+                landing_url = "https://watchflow.dev"
+                if repo_full_name and installation_id:
+                    landing_url = (
+                        f"https://watchflow.dev/analyze?installation_id={installation_id}&repo={repo_full_name}"
+                    )
+                elif repo_full_name:
+                    landing_url = f"https://watchflow.dev/analyze?repo={repo_full_name}"
+
                 return {
                     "title": "Rules not configured",
-                    "summary": "⚙️ Watchflow rules setup required",
+                    "summary": "Watchflow rules setup required",
                     "text": (
                         "**Watchflow rules not configured**\n\n"
                         "No rules file found in your repository. Watchflow can help enforce governance rules for your team.\n\n"
-                        "**How to set up rules:**\n"
+                        "**Quick setup:**\n"
+                        f"1. [Analyze your repository and generate rules]({landing_url}) - Get AI-powered rule recommendations based on your repository patterns\n"
+                        "2. Review and customize the generated rules\n"
+                        "3. Create a PR with the recommended rules\n"
+                        "4. Merge to activate automated enforcement\n\n"
+                        "**Manual setup:**\n"
                         "1. Create a file at `.watchflow/rules.yaml` in your repository root\n"
                         "2. Add your rules in the following format:\n"
-                        "   ```yaml\n   rules:\n     - id: pr-approval-required\n       name: PR Approval Required\n       description: All pull requests must have at least 2 approvals\n       enabled: true\n       severity: high\n       event_types: [pull_request]\n       parameters:\n         min_approvals: 2\n   ```\n\n"
+                        "   ```yaml\n   rules:\n     - key: require_linked_issue\n       name: Require Linked Issue\n       description: All pull requests must reference an existing issue\n       enabled: true\n       severity: high\n       category: quality\n   ```\n\n"
                         "**Note:** Rules are currently read from the main branch only.\n\n"
-                        "📖 [Read the documentation for more examples](https://github.com/warestack/watchflow/blob/main/docs/getting-started/configuration.md)\n\n"
+                        "[Read the documentation for more examples](https://github.com/warestack/watchflow/blob/main/docs/getting-started/configuration.md)\n\n"
                         "After adding the file, push your changes to re-run validation."
                     ),
                 }

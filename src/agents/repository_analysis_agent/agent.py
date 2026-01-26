@@ -41,13 +41,18 @@ class RepositoryAnalysisAgent(BaseAgent):
         # Register Nodes
         workflow.add_node("fetch_metadata", nodes.fetch_repository_metadata)
         workflow.add_node("fetch_pr_signals", nodes.fetch_pr_signals)
+        workflow.add_node("generate_report", nodes.generate_analysis_report)
         workflow.add_node("generate_rules", nodes.generate_rule_recommendations)
+        workflow.add_node("generate_reasonings", nodes.generate_rule_reasonings)
 
         # Define Edges (Linear Flow)
+        # 1. Gather data → 2. Diagnose problems (report) → 3. Prescribe solutions (rules) → 4. Explain prescriptions (reasonings)
         workflow.set_entry_point("fetch_metadata")
         workflow.add_edge("fetch_metadata", "fetch_pr_signals")
-        workflow.add_edge("fetch_pr_signals", "generate_rules")
-        workflow.add_edge("generate_rules", END)
+        workflow.add_edge("fetch_pr_signals", "generate_report")
+        workflow.add_edge("generate_report", "generate_rules")
+        workflow.add_edge("generate_rules", "generate_reasonings")
+        workflow.add_edge("generate_reasonings", END)
 
         return workflow.compile()
 
@@ -56,7 +61,9 @@ class RepositoryAnalysisAgent(BaseAgent):
         Executes the repository analysis workflow.
 
         Args:
-            **kwargs: Must contain `repo_full_name` (str) and optionally `is_public` (bool).
+            **kwargs: Must contain `repo_full_name` (str) and optionally:
+                - `is_public` (bool): Whether the repo is public
+                - `user_token` (str | None): Optional GitHub Personal Access Token for authenticated requests
 
         Returns:
             AgentResult: Contains the list of recommended rules or error details.
@@ -66,11 +73,12 @@ class RepositoryAnalysisAgent(BaseAgent):
         """
         repo_full_name: str | None = kwargs.get("repo_full_name")
         is_public: bool = kwargs.get("is_public", False)
+        user_token: str | None = kwargs.get("user_token")
 
         if not repo_full_name:
             return AgentResult(success=False, message="repo_full_name is required")
 
-        initial_state = AnalysisState(repo_full_name=repo_full_name, is_public=is_public)
+        initial_state = AnalysisState(repo_full_name=repo_full_name, is_public=is_public, user_token=user_token)
 
         try:
             # Execute Graph with 60-second hard timeout
@@ -83,7 +91,14 @@ class RepositoryAnalysisAgent(BaseAgent):
                 return AgentResult(success=False, message=final_state.error)
 
             return AgentResult(
-                success=True, message="Analysis complete", data={"recommendations": final_state.recommendations}
+                success=True,
+                message="Analysis complete",
+                data={
+                    "recommendations": final_state.recommendations,
+                    "hygiene_summary": final_state.hygiene_summary,
+                    "rule_reasonings": final_state.rule_reasonings,
+                    "analysis_report": final_state.analysis_report,
+                },
             )
 
         except TimeoutError:

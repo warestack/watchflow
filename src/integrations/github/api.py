@@ -1,6 +1,5 @@
 import asyncio
 import base64
-import logging
 import time
 from typing import Any
 
@@ -14,7 +13,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from src.core.config import config
 from src.core.errors import GitHubGraphQLError
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 _PR_HYGIENE_QUERY = """
 query PRHygiene($owner: String!, $repo: String!) {
@@ -883,6 +882,34 @@ class GitHubClient:
             logger.error(f"Failed to create branch {ref_clean}: {response.status} - {error_text}")
             return None
 
+    async def get_file_sha(
+        self,
+        repo_full_name: str,
+        path: str,
+        branch: str,
+        installation_id: int | None = None,
+        user_token: str | None = None,
+    ) -> str | None:
+        """
+        Get the SHA of an existing file on a specific branch.
+        Returns None if file doesn't exist.
+        """
+        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
+        if not headers:
+            return None
+
+        url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{path.lstrip('/')}"
+        params = {"ref": branch}
+
+        session = await self._get_session()
+        async with session.get(url, headers=headers, params=params) as response:
+            if response.status == 200:
+                data = await response.json()
+                # Handle both single file and directory responses
+                if isinstance(data, dict) and "sha" in data:
+                    return data["sha"]
+            return None
+
     async def create_or_update_file(
         self,
         repo_full_name: str,
@@ -894,11 +921,23 @@ class GitHubClient:
         user_token: str | None = None,
         sha: str | None = None,
     ) -> dict[str, Any] | None:
-        """Create or update a file via the Contents API."""
+        """
+        Create or update a file via the Contents API.
+
+        If sha is not provided, will attempt to fetch it if file exists on the branch.
+        """
         headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
         if not headers:
             logger.error(f"Failed to get auth headers for create_or_update_file in {repo_full_name}")
             return None
+
+        # If sha not provided, try to get it from existing file
+        if not sha:
+            existing_sha = await self.get_file_sha(repo_full_name, path, branch, installation_id, user_token)
+            if existing_sha:
+                sha = existing_sha
+                logger.info(f"Found existing file, will update with SHA: {sha[:8]}")
+
         url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{path.lstrip('/')}"
         payload: dict[str, Any] = {
             "message": message,
@@ -907,6 +946,7 @@ class GitHubClient:
         }
         if sha:
             payload["sha"] = sha
+
         session = await self._get_session()
         async with session.put(url, headers=headers, json=payload) as response:
             if response.status in (200, 201):
@@ -979,9 +1019,6 @@ class GitHubClient:
         Returns:
             List of PR dictionaries with enhanced metadata for hygiene analysis
         """
-
-        logger = structlog.get_logger()
-
         try:
             headers = await self._get_auth_headers(
                 installation_id=installation_id,
@@ -1072,13 +1109,17 @@ class GitHubClient:
             return []
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    async def execute_graphql(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+    async def execute_graphql(
+        self, query: str, variables: dict[str, Any], user_token: str | None = None, installation_id: int | None = None
+    ) -> dict[str, Any]:
         """
         Executes a GraphQL query against the GitHub API.
 
         Args:
             query: The GraphQL query string.
             variables: A dictionary of variables for the query.
+            user_token: Optional GitHub Personal Access Token for authenticated requests.
+            installation_id: Optional GitHub App installation ID for authenticated requests.
 
         Returns:
             The JSON response from the API.
@@ -1092,22 +1133,10 @@ class GitHubClient:
         payload = {"query": query, "variables": variables}
 
         # Get appropriate headers (can be anonymous for public data or authenticated)
-        # Note: execute_graphql typically requires authentication for higher limits/access
-        # but we use the shared _get_auth_headers method.
-        # For now, we assume we want anonymous access if no token/installation_id is present,
-        # but GraphQL usually requires a token.
-
-        # We need to decide whether to use installation or user token here.
-        # Since this method is generic, we might rely on the caller to have set up the client
-        # with a token or use the internal _get_auth_headers logic if we extended this method signature.
-        # However, to match the moved code, we will use the existing _get_auth_headers
-        # but we need to know WHICH token to use.
-
-        # FIX: The original code used self.headers which was set in __init__ with a raw token.
-        # The new GitHubClient uses _get_auth_headers.
-        # We'll use _get_auth_headers(allow_anonymous=True) for now, but GraphQL often needs auth.
-
-        headers = await self._get_auth_headers(allow_anonymous=True)
+        # Priority: user_token > installation_id > anonymous (if allowed)
+        headers = await self._get_auth_headers(
+            user_token=user_token, installation_id=installation_id, allow_anonymous=True
+        )
         if not headers:
             # Fallback or error? GraphQL usually demands auth.
             # If we have no headers, we likely can't query GraphQL successfully for many fields.
@@ -1130,6 +1159,8 @@ class GitHubClient:
                         response_body=error_text,
                         query=query,
                     )
+                    # Raise exception - the error_text is logged and will be in exception context
+                    # We'll check response.status and error_text in the calling code
                     response.raise_for_status()
 
                 json_response = await response.json()
@@ -1150,11 +1181,22 @@ class GitHubClient:
                     duration_ms=(end_time - start_time) * 1000,
                 )
 
-    async def fetch_pr_hygiene_stats(self, owner: str, repo: str) -> list[dict[str, Any]]:
+    async def fetch_pr_hygiene_stats(
+        self, owner: str, repo: str, user_token: str | None = None, installation_id: int | None = None
+    ) -> tuple[list[dict[str, Any]], str | None]:
         """
         Fetches PR statistics for hygiene analysis using GraphQL.
+
+        Args:
+            owner: Repository owner (username or org).
+            repo: Repository name.
+            user_token: Optional GitHub Personal Access Token for authenticated requests.
+            installation_id: Optional GitHub App installation ID for authenticated requests.
+
+        Returns:
+            Tuple of (pr_nodes, warning_message). warning_message is None if successful, or a string describing the issue.
         """
-        _PR_HYGIENE_QUERY = """
+        _PR_HYGIENE_QUERY_20 = """
         query PRHygiene($owner: String!, $repo: String!) {
           repository(owner: $owner, name: $repo) {
             pullRequests(last: 20, states: [MERGED, CLOSED]) {
@@ -1169,6 +1211,7 @@ class GitHubClient:
                 author {
                   login
                 }
+                authorAssociation
                 comments {
                   totalCount
                 }
@@ -1198,16 +1241,106 @@ class GitHubClient:
           }
         }
         """
+
+        _PR_HYGIENE_QUERY_10 = """
+        query PRHygiene($owner: String!, $repo: String!) {
+          repository(owner: $owner, name: $repo) {
+            pullRequests(last: 10, states: [MERGED, CLOSED]) {
+              nodes {
+                number
+                title
+                body
+                changedFiles
+                mergedAt
+                additions
+                deletions
+                author {
+                  login
+                }
+                authorAssociation
+                comments {
+                  totalCount
+                }
+                closingIssuesReferences(first: 1) {
+                  totalCount
+                  nodes {
+                    title
+                  }
+                }
+                reviews(first: 10) {
+                  nodes {
+                    state
+                    author {
+                      login
+                    }
+                  }
+                }
+                files(first: 10) {
+                  edges {
+                    node {
+                      path
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+
         variables = {"owner": owner, "repo": repo}
+
+        # Try with 20 PRs first
         try:
-            data = await self.execute_graphql(_PR_HYGIENE_QUERY, variables)
+            data = await self.execute_graphql(
+                _PR_HYGIENE_QUERY_20, variables, user_token=user_token, installation_id=installation_id
+            )
             nodes = data.get("data", {}).get("repository", {}).get("pullRequests", {}).get("nodes", [])
             if not nodes:
                 logger.warning("GraphQL query returned no PR nodes.", owner=owner, repo=repo)
-            return nodes
+                return [], "No pull requests found in repository"
+            return nodes, None
         except Exception as e:
-            logger.error("Failed to fetch PR hygiene stats", error=str(e))
-            return []
+            error_str = str(e).lower()
+            # Check if it's a rate limit error - check both message and status code
+            is_rate_limit = "rate limit" in error_str or "403" in error_str
+            # Also check if it's an aiohttp ClientResponseError with status 403
+            if hasattr(e, "status") and e.status == 403:
+                is_rate_limit = True
+            has_auth = user_token is not None or installation_id is not None
+
+            if is_rate_limit and not has_auth:
+                # Try fallback with fewer PRs (10 instead of 20)
+                logger.warning(
+                    "Rate limit hit without auth, trying fallback with fewer PRs", owner=owner, repo=repo, error=str(e)
+                )
+                try:
+                    data = await self.execute_graphql(
+                        _PR_HYGIENE_QUERY_10, variables, user_token=user_token, installation_id=installation_id
+                    )
+                    nodes = data.get("data", {}).get("repository", {}).get("pullRequests", {}).get("nodes", [])
+                    if nodes:
+                        return (
+                            nodes,
+                            "GitHub API rate limit reached. Showing data from fewer PRs (10 instead of 20). Add a GitHub token for higher rate limits (5,000/hr vs 60/hr).",
+                        )
+                    else:
+                        return (
+                            [],
+                            "GitHub API rate limit reached and no PRs could be fetched. Add a GitHub token for higher rate limits (5,000/hr vs 60/hr).",
+                        )
+                except Exception as fallback_error:
+                    logger.error("Fallback PR fetch also failed", error=str(fallback_error))
+                    return (
+                        [],
+                        f"GitHub API rate limit exceeded. Unable to fetch PR data. Add a GitHub Personal Access Token for higher rate limits (5,000/hr vs 60/hr). Error: {str(e)}",
+                    )
+            else:
+                # Other error or rate limit with auth (shouldn't happen, but handle gracefully)
+                logger.error("Failed to fetch PR hygiene stats", error=str(e))
+                if is_rate_limit:
+                    return [], f"GitHub API rate limit exceeded. Error: {str(e)}"
+                return [], f"Failed to fetch PR data: {str(e)}"
 
 
 # Global instance

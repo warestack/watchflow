@@ -19,9 +19,9 @@ async def evaluate_rule(request: RuleEvaluationRequest):
     # Async call—agent may throw if rule malformed.
     result = await agent.execute(rule_description=request.rule_text)
 
-    # Output: keep format stable for frontend. Brittle if agent changes keys.
+    # Output: keep format stable for frontend. Use 'rule_yaml' for consistency with /analyze endpoint.
     return {
         "supported": result.data.get("is_feasible", False),
-        "snippet": result.data.get("yaml_content", ""),
+        "rule_yaml": result.data.get("yaml_content", ""),  # Changed from 'snippet' to 'rule_yaml' for consistency
         "feedback": result.message,
     }

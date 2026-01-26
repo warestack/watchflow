@@ -27,10 +27,13 @@ class TaskQueue:
     """
     In-memory task queue with deduplication as per Blueprint 2.3.C.
     Prevents processing the same GitHub event multiple times.
+
+    Open-source version: In-memory deduplication (resets on restart, no external dependencies).
     """
 
     def __init__(self) -> None:
         self.queue: asyncio.Queue[Task] = asyncio.Queue()
+        # In-memory deduplication set (resets on server restart, no external dependencies)
         self.processed_hashes: set[str] = set()
         self.workers: list[asyncio.Task[None]] = []
 

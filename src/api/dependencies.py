@@ -35,7 +35,8 @@ async def get_current_user_optional(request: Request) -> User | None:
         if scheme.lower() != "bearer":
             return None
 
-        # TODO: Wire to real IdP (Supabase/Auth0). For now, fake user if token present. WARNING: Must verify signature in prod.
+        # Open-source version: Pass token through without validation (users provide their own GitHub tokens).
+        # No external dependencies - token validation would require IdP integration.
         return User(id=123, username="authenticated_user", email="user@example.com", github_token=token)
     except Exception as e:
         logger.warning(f"Failed to parse auth header: {e}")
