@@ -1,6 +1,6 @@
 import asyncio
 import contextlib
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -114,7 +114,7 @@ class DeploymentScheduler:
         if not self.pending_deployments:
             return
 
-        current_time = datetime.utcnow()
+        current_time = datetime.now(UTC)
         logger.info(
             f"🔍 Checking {len(self.pending_deployments)} pending deployments at {current_time.strftime('%Y-%m-%d %H:%M:%S')} UTC"
         )
@@ -273,7 +273,7 @@ class DeploymentScheduler:
                 "✅ **Deployment Automatically Approved**\n\n"
                 "Time-based restrictions have been lifted. The deployment can now proceed.\n\n"
                 f"**Environment:** {environment}\n"
-                f"**Approved at:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n"
+                f"**Approved at:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n"
                 "The deployment will be automatically approved on GitHub."
             )
 

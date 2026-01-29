@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum, StrEnum
 from typing import Any, Literal
 
@@ -38,7 +38,7 @@ class Acknowledgment(BaseModel):
     rule_id: str = Field(description="Unique identifier of the rule being acknowledged")
     reason: str = Field(description="Justification provided by the user")
     commenter: str = Field(description="Username of the person acknowledging")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Time of acknowledgment")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC), description="Time of acknowledgment")
 
 
 class User(BaseModel):

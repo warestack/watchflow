@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-if TYPE_CHECKING:
-    from src.core.models import EventType
-    from src.rules.conditions.base import BaseCondition
+from src.core.models import EventType  # noqa: TCH001, TCH002, TC001
+from src.rules.conditions.base import BaseCondition  # noqa: TCH001, TCH002, TC001
 
 
 class RuleSeverity(str, Enum):
@@ -54,10 +53,13 @@ class Rule(BaseModel):
     description: str = Field(description="Primary identifier and description of the rule")
     enabled: bool = True
     severity: RuleSeverity = RuleSeverity.MEDIUM
-    event_types: list[EventType] = Field(default_factory=list)
-    conditions: list[BaseCondition] = Field(default_factory=list)
+    event_types: list["EventType"] = Field(default_factory=list)  # noqa: UP037
+    conditions: list["BaseCondition"] = Field(default_factory=list)  # noqa: UP037
     actions: list[RuleAction] = Field(default_factory=list)
     parameters: dict[str, Any] = Field(default_factory=dict)  # Store parameters as-is from YAML
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+# Update forward references
+Rule.model_rebuild()

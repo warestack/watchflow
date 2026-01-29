@@ -5,15 +5,13 @@ Data models for the Rule Engine Agent.
 from __future__ import annotations
 
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.models import Violation
-
-if TYPE_CHECKING:
-    from src.rules.conditions.base import BaseCondition
-    from src.rules.models import Rule
+from src.core.models import Violation  # noqa: TCH001, TCH002, TC001
+from src.rules.conditions.base import BaseCondition  # noqa: TCH001, TCH002, TC001
+from src.rules.models import Rule  # noqa: TCH001, TCH002, TC001
 
 
 class ValidationStrategy(str, Enum):
@@ -101,10 +99,9 @@ class RuleDescription(BaseModel):
     )
     validator_name: str | None = Field(default=None, description="Specific validator to use")
     fallback_to_llm: bool = Field(default=True, description="Whether to fallback to LLM if validator fails")
-    conditions: list[BaseCondition] = Field(default_factory=list, description="Attached executable conditions")
+    conditions: list["BaseCondition"] = Field(default_factory=list, description="Attached executable conditions")  # noqa: UP037
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class EngineState(BaseModel):
@@ -112,7 +109,7 @@ class EngineState(BaseModel):
 
     event_type: str
     event_data: dict[str, Any]
-    rules: list[Rule]  # Use Rule objects directly
+    rules: list["Rule"]  # noqa: UP037
     rule_descriptions: list[RuleDescription] = Field(default_factory=list)
     available_validators: list[ValidatorDescription] = Field(default_factory=list)
     violations: list[dict[str, Any]] = Field(default_factory=list)
@@ -121,5 +118,9 @@ class EngineState(BaseModel):
     validator_usage: dict[str, int] = Field(default_factory=dict)
     llm_usage: int = 0
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+# Update forward references
+RuleDescription.model_rebuild()
+EngineState.model_rebuild()
