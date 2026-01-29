@@ -7,7 +7,7 @@ import logging
 from src.agents.feasibility_agent.models import FeasibilityAnalysis, FeasibilityState, YamlGeneration
 from src.agents.feasibility_agent.prompts import RULE_FEASIBILITY_PROMPT, YAML_GENERATION_PROMPT
 from src.integrations.providers import get_chat_model
-from src.rules.validators import get_validator_descriptions
+from src.rules.registry import AVAILABLE_CONDITIONS
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +26,12 @@ async def analyze_rule_feasibility(state: FeasibilityState) -> FeasibilityState:
 
         # Build validator catalog text for the prompt
         validator_catalog = []
-        for v in get_validator_descriptions():
+        for condition_cls in AVAILABLE_CONDITIONS:
             validator_catalog.append(
-                f"- name: {v.get('name')}\n"
-                f"  event_types: {v.get('event_types')}\n"
-                f"  parameter_patterns: {v.get('parameter_patterns')}\n"
-                f"  description: {v.get('description')}"
+                f"- name: {condition_cls.name}\n"
+                f"  event_types: {condition_cls.event_types}\n"
+                f"  parameter_patterns: {condition_cls.parameter_patterns}\n"
+                f"  description: {condition_cls.description}"
             )
         validators_text = "\n".join(validator_catalog)
 

@@ -1,8 +1,9 @@
-from typing import Any
+from collections.abc import Callable
+from typing import Any, TypedDict
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from giturlparse import parse
+from giturlparse import parse  # type: ignore
 from pydantic import BaseModel, Field, HttpUrl
 
 from src.agents.repository_analysis_agent.agent import RepositoryAnalysisAgent
@@ -126,6 +127,14 @@ class ProceedWithPRResponse(BaseModel):
 # --- Helpers ---  # Utility—URL parsing brittle if GitHub changes format.
 
 
+class MetricConfig(TypedDict):
+    name: str
+    key: str
+    category: str
+    thresholds: dict[str, float]
+    explanation: Callable[[float | int], str]
+
+
 def _get_severity_label(value: float, thresholds: dict[str, float]) -> tuple[str, str]:
     """
     Determine severity label and color based on value and thresholds.
@@ -167,7 +176,7 @@ def generate_analysis_report(hygiene_summary: dict[str, Any]) -> str:
     ]
 
     # Define metric configurations
-    metrics_config = [
+    metrics_config: list[MetricConfig] = [
         {
             "name": "Unlinked PR Rate",
             "key": "unlinked_issue_rate",
@@ -295,7 +304,7 @@ def generate_analysis_report(hygiene_summary: dict[str, Any]) -> str:
             continue
 
         severity, color = _get_severity_label(value, metric["thresholds"])
-        formatted_value = _format_metric_value(metric["name"], value)
+        formatted_value = _format_metric_value(str(metric["name"]), value)
         explanation = metric["explanation"](value)
 
         report_lines.append(
@@ -777,5 +786,5 @@ async def proceed_with_pr(
         logger.exception("pr_creation_failed", repo=repo_full_name, error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create pull request: {str(e)}",
+            detail="Failed to create pull request. Please try again.",
         ) from e

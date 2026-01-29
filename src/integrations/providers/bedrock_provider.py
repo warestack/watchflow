@@ -85,7 +85,13 @@ class BedrockProvider(BaseProvider):
                 }
             )
 
-        return AnthropicBedrock(**client_kwargs)
+        # Cast to Any to bypass strict argument checking for now or explicitly pass if possible.
+        # Since we use **client_kwargs which is dict[str, Any] (or specific keys), passing it directly is cleaner if types align.
+        # But mypy complains about **dict[str, str | None] vs specific args.
+        # We'll use a typed dict approach or simple cast for the client init to satisfy mypy.
+        from typing import cast
+
+        return AnthropicBedrock(**cast("Any", client_kwargs))
 
     def _get_standard_bedrock_client(self) -> Any:
         """Get standard langchain-aws Bedrock client for on-demand models."""
@@ -125,7 +131,9 @@ class BedrockProvider(BaseProvider):
                 }
             )
 
-        return ChatBedrock(**client_kwargs)
+        from typing import cast
+
+        return ChatBedrock(**cast("Any", client_kwargs))
 
     def _is_anthropic_model(self, model_id: str) -> bool:
         """Check if a model ID is an Anthropic model."""
@@ -134,7 +142,7 @@ class BedrockProvider(BaseProvider):
     def _find_inference_profile(self, model_id: str) -> str | None:
         """Find an inference profile that contains the specified model."""
         try:
-            import boto3
+            import boto3  # type: ignore [import-untyped]
 
             aws_region = config.ai.bedrock_region or "us-east-1"
             aws_access_key = config.ai.aws_access_key_id
@@ -150,7 +158,9 @@ class BedrockProvider(BaseProvider):
 
             for profile in profiles:
                 profile_name = profile.get("name", "").lower()
-                profile_arn = profile.get("arn", "")
+                from typing import cast
+
+                profile_arn = cast("str", profile.get("arn", ""))
                 model_lower = model_id.lower()
 
                 # SIM102: Combined nested if statements
@@ -187,20 +197,12 @@ class BedrockProvider(BaseProvider):
             max_tokens: int
             temperature: float
 
-            def __init__(self, anthropic_client: Any, model_id: str, max_tokens: int, temperature: float):
-                super().__init__(
-                    anthropic_client=anthropic_client,
-                    model_id=model_id,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                )
-
             @property
             def _llm_type(self) -> str:
                 return "anthropic_bedrock"
 
-            def with_structured_output(self, output_model: Any) -> Any:
-                """Add structured output support."""
+            def with_structured_output(self, output_model: Any | type, **kwargs: Any) -> Any:  # type: ignore[override]
+                """Add structured output support. Note: this is a dummy implementation for compatibility."""
                 return self
 
             def _generate(
@@ -208,6 +210,7 @@ class BedrockProvider(BaseProvider):
                 messages: list[BaseMessage],
                 stop: list[str] | None = None,
                 run_manager: Any | None = None,
+                **kwargs: Any,
             ) -> ChatResult:
                 """Generate a response using the Anthropic client."""
                 anthropic_messages = []
@@ -241,10 +244,16 @@ class BedrockProvider(BaseProvider):
                 messages: list[BaseMessage],
                 stop: list[str] | None = None,
                 run_manager: Any | None = None,
+                **kwargs: Any,
             ) -> ChatResult:
                 """Async generate using the Anthropic client."""
                 import asyncio
 
                 return await asyncio.to_thread(self._generate, messages, stop, run_manager)
 
-        return AnthropicBedrockWrapper(client, model_id, self.max_tokens, self.temperature)
+        return AnthropicBedrockWrapper(
+            anthropic_client=client,
+            model_id=model_id,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+        )

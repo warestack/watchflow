@@ -45,7 +45,7 @@ async def execute_with_timeout(
         raise TimeoutError(msg) from err
 
 
-def timeout_decorator(timeout: float = 30.0, timeout_message: str | None = None):
+def timeout_decorator(timeout: float = 30.0, timeout_message: str | None = None) -> Any:
     """
     Decorator for adding timeout to async functions.
 
@@ -62,8 +62,8 @@ def timeout_decorator(timeout: float = 30.0, timeout_message: str | None = None)
             await asyncio.sleep(100)  # Will timeout
     """
 
-    def decorator(func):
-        async def wrapper(*args, **kwargs):
+    def decorator(func: Any) -> Any:
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
             return await execute_with_timeout(
                 func(*args, **kwargs),
                 timeout=timeout,

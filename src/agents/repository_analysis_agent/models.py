@@ -2,8 +2,8 @@
 
 from typing import Any
 
-from giturlparse import parse
-from pydantic import BaseModel, Field, model_validator
+from giturlparse import parse  # type: ignore
+from pydantic import BaseModel, Field, field_serializer, model_validator
 
 from src.core.models import HygieneMetrics
 
@@ -90,14 +90,49 @@ class RepositoryAnalysisResponse(BaseModel):
 class RuleRecommendation(BaseModel):
     """
     Represents a single rule suggested by the AI.
-    Contains only fields that go into rules.yaml file.
+    Contains both internal fields (key, name, reasoning) and YAML-exportable fields.
+
+    Internal fields:
+    - key: Unique identifier for the rule (not exported to YAML)
+    - name: Human-friendly name (not exported to YAML)
+    - category: Rule category like 'quality', 'security', etc. (not exported to YAML)
+    - reasoning: Justification for why this rule was recommended (not exported to YAML)
+
+    YAML-exportable fields:
+    - description: What the rule does
+    - enabled: Whether the rule is enabled
+    - severity: Severity level
+    - event_types: Event types this rule applies to
+    - parameters: Rule parameters (can be RuleParameters object or dict)
     """
 
+    # Internal fields (not exported to YAML)
+    key: str | None = Field(None, description="Unique identifier for the rule")
+    name: str | None = Field(None, description="Human-friendly name")
+    category: str | None = Field(None, description="Rule category (e.g., 'quality', 'security', 'hygiene')")
+    reasoning: str | None = Field(None, description="Justification for why this rule was recommended")
+
+    # YAML-exportable fields
     description: str = Field(..., description="What the rule does")
     enabled: bool = Field(True, description="Whether the rule is enabled")
     severity: str = Field("medium", description="low, medium, high, or critical")
     event_types: list[str] = Field(..., description="Event types this rule applies to (e.g., ['pull_request'])")
-    parameters: dict[str, Any] = Field(default_factory=dict, description="Rule parameters for validators")
+    parameters: Any = Field(default_factory=dict, description="Rule parameters for validators")
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    @field_serializer("parameters", when_used="json-unless-none")
+    def serialize_parameters(self, params: Any) -> dict[str, Any]:
+        """Serialize parameters to dict, handling RuleParameters objects."""
+        from src.core.models import RuleParameters
+
+        if isinstance(params, RuleParameters):
+            return params.model_dump(exclude_none=True)
+        elif isinstance(params, dict):
+            return params
+        else:
+            # For any other type, try to convert to dict
+            return dict(params) if params else {}
 
 
 class PRSignal(BaseModel):
@@ -156,7 +191,7 @@ class AnalysisState(BaseModel):
     rule_reasonings: dict[str, str] = Field(
         default_factory=dict, description="Map of rule description to reasoning/justification"
     )
-    analysis_report: str | None = Field(None, description="Generated analysis report markdown")
+    analysis_report: str | None = Field(default=None, description="Generated analysis report markdown")
 
     # --- Execution Metadata ---
     error: str | None = None

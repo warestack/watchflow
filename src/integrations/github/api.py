@@ -1,13 +1,13 @@
 import asyncio
 import base64
 import time
-from typing import Any
+from typing import Any, cast
 
 import aiohttp
 import httpx
 import jwt
 import structlog
-from cachetools import TTLCache
+from cachetools import TTLCache  # type: ignore[import-untyped]
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.core.config import config
@@ -54,12 +54,20 @@ class GitHubClient:
     - Centralizes auth header logic to prevent token leakage.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._private_key = self._decode_private_key()
         self._app_id = config.github.app_id
         self._session: aiohttp.ClientSession | None = None
         # Cache for installation tokens (TTL: 50 minutes, GitHub tokens expire in 60)
         self._token_cache: TTLCache = TTLCache(maxsize=100, ttl=50 * 60)
+
+    def _detect_issue_references(self, body: str, title: str) -> bool:
+        """Detect if PR body or title contains issue references (e.g. #123)."""
+        import re
+
+        # Simple heuristic: look for #digits
+        pattern = r"#\d+"
+        return bool(re.search(pattern, body) or re.search(pattern, title))
 
     async def _get_auth_headers(
         self,
@@ -73,22 +81,18 @@ class GitHubClient:
         """
         token = user_token
 
-        # Priority 1: User Token (Explicit)
         if token:
             return {"Authorization": f"Bearer {token}", "Accept": accept}
 
-        # Priority 2: Installation Token (App Context)
         if installation_id is not None:
             token = await self.get_installation_access_token(installation_id)
             if token:
                 return {"Authorization": f"Bearer {token}", "Accept": accept}
 
-        # Priority 3: Anonymous Access (Public Repos)
         if allow_anonymous:
             # Public access (Subject to 60 req/hr rate limit per IP)
             return {"Accept": accept, "User-Agent": "Watchflow-Analyzer/1.0"}
 
-        # Access Denied
         return None
 
     async def get_installation_access_token(self, installation_id: int) -> str | None:
@@ -98,7 +102,7 @@ class GitHubClient:
         """
         if installation_id in self._token_cache:
             logger.debug(f"Using cached installation token for installation_id {installation_id}.")
-            return self._token_cache[installation_id]
+            return cast("str", self._token_cache[installation_id])
 
         jwt_token = self._generate_jwt()
         headers = {
@@ -114,7 +118,7 @@ class GitHubClient:
                 token = data["token"]
                 self._token_cache[installation_id] = token
                 logger.info(f"Generated new installation token for installation_id {installation_id}.")
-                return token
+                return cast("str", token)
             else:
                 error_text = await response.text()
                 logger.error(
@@ -136,7 +140,8 @@ class GitHubClient:
         session = await self._get_session()
         async with session.get(url, headers=headers) as response:
             if response.status == 200:
-                return await response.json()
+                data = await response.json()
+                return cast("dict[str, Any]", data)
             return None
 
     async def list_directory_any_auth(
@@ -153,7 +158,7 @@ class GitHubClient:
         async with session.get(url, headers=headers) as response:
             if response.status == 200:
                 data = await response.json()
-                return data if isinstance(data, list) else [data]
+                return cast("list[dict[str, Any]]", data if isinstance(data, list) else [data])
 
             # Raise exception for error statuses to avoid silent failures
             response.raise_for_status()
@@ -192,14 +197,14 @@ class GitHubClient:
                 response.raise_for_status()
                 return None
 
-    async def close(self):
+    async def close(self) -> None:
         """Closes the aiohttp session."""
         if self._session and not self._session.closed:
             await self._session.close()
 
     async def create_check_run(
-        self, repo: str, sha: str, name: str, status: str, conclusion: str, output: dict, installation_id: int
-    ) -> dict:
+        self, repo: str, sha: str, name: str, status: str, conclusion: str, output: dict[str, Any], installation_id: int
+    ) -> dict[str, Any]:
         """Create a check run."""
         try:
             headers = await self._get_auth_headers(installation_id=installation_id)
@@ -212,7 +217,7 @@ class GitHubClient:
             session = await self._get_session()
             async with session.post(url, headers=headers, json=data) as response:
                 if response.status == 201:
-                    return await response.json()
+                    return cast("dict[str, Any]", await response.json())
                 return {}
         except Exception as e:
             logger.error(f"Error creating check run: {e}")
@@ -229,7 +234,7 @@ class GitHubClient:
             session = await self._get_session()
             async with session.get(url, headers=headers) as response:
                 if response.status == 200:
-                    return await response.json()
+                    return cast("dict[str, Any]", await response.json())
                 return None
         except Exception as e:
             logger.error(f"Error getting PR #{pr_number}: {e}")
@@ -253,7 +258,7 @@ class GitHubClient:
             session = await self._get_session()
             async with session.get(url, headers=headers) as response:
                 if response.status == 200:
-                    return await response.json()
+                    return cast("list[dict[str, Any]]", await response.json())
                 return []
         except Exception as e:
             logger.error(f"Error listing PRs for {repo}: {e}")
@@ -340,7 +345,7 @@ class GitHubClient:
             async with session.get(url, headers=headers) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data.get("check_runs", [])
+                    return cast("list[dict[str, Any]]", data.get("check_runs", []))
                 return []
         except Exception as e:
             logger.error(f"Error getting checks for PR #{pr_number}: {e}")
@@ -360,7 +365,7 @@ class GitHubClient:
         async with session.get(url, headers=headers) as response:
             if response.status == 200:
                 data = await response.json()
-                return [team["slug"] for team in data]
+                return [cast("dict[str, Any]", team) for team in data]
             return []
 
     async def get_user_team_membership(self, repo: str, username: str, installation_id: int) -> dict[str, Any]:
@@ -396,7 +401,7 @@ class GitHubClient:
                 if response.status == 201:
                     result = await response.json()
                     logger.info(f"Created comment on PR #{pr_number} in {repo}")
-                    return result
+                    return cast("dict[str, Any]", result)
                 else:
                     error_text = await response.text()
                     logger.error(
@@ -427,7 +432,7 @@ class GitHubClient:
                 if response.status == 200:
                     result = await response.json()
                     logger.info(f"Updated check run {check_run_id} for {repo}")
-                    return result
+                    return cast("dict[str, Any]", result)
                 else:
                     error_text = await response.text()
                     logger.error(
@@ -454,7 +459,7 @@ class GitHubClient:
             async with session.get(url, headers=headers) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data.get("check_runs", [])
+                    return cast("list[dict[str, Any]]", data.get("check_runs", []))
                 else:
                     error_text = await response.text()
                     logger.error(
@@ -482,7 +487,7 @@ class GitHubClient:
                 if response.status == 200:
                     result = await response.json()
                     logger.info(f"Retrieved {len(result)} reviews for PR #{pr_number} in {repo}")
-                    return result
+                    return cast("list[dict[str, Any]]", result)
                 else:
                     error_text = await response.text()
                     logger.error(
@@ -510,7 +515,7 @@ class GitHubClient:
                 if response.status == 200:
                     result = await response.json()
                     logger.info(f"Retrieved {len(result)} files for PR #{pr_number} in {repo}")
-                    return result
+                    return cast("list[dict[str, Any]]", result)
                 else:
                     error_text = await response.text()
                     logger.error(
@@ -540,7 +545,7 @@ class GitHubClient:
             async with session.post(url, headers=headers, json=data) as response:
                 if response.status == 201:
                     logger.info(f"Added reaction to comment {comment_id} in {repo}")
-                    return await response.json()
+                    return cast("dict[str, Any]", await response.json())
                 else:
                     error_text = await response.text()
                     logger.error(
@@ -571,7 +576,7 @@ class GitHubClient:
                 if response.status == 201:
                     result = await response.json()
                     logger.info(f"Created comment on issue #{issue_number} in {repo}")
-                    return result
+                    return cast("dict[str, Any]", result)
                 else:
                     error_text = await response.text()
                     logger.error(
@@ -591,7 +596,7 @@ class GitHubClient:
         environment: str,
         log_url: str,
         installation_id: int,
-    ):
+    ) -> dict[str, Any] | None:
         """Create a deployment status."""
         try:
             token = await self.get_installation_access_token(installation_id)
@@ -609,7 +614,7 @@ class GitHubClient:
                 if response.status == 201:
                     result = await response.json()
                     logger.info(f"Created deployment status for deployment {deployment_id} in {repo}")
-                    return result
+                    return cast("dict[str, Any]", result)
                 else:
                     error_text = await response.text()
                     logger.error(
@@ -622,7 +627,7 @@ class GitHubClient:
 
     async def review_deployment_protection_rule(
         self, callback_url: str, environment: str, state: str, comment: str, installation_id: int
-    ):
+    ) -> dict[str, Any] | None:
         """Review a deployment protection rule."""
         try:
             token = await self.get_installation_access_token(installation_id)
@@ -642,7 +647,7 @@ class GitHubClient:
                 if response.status in [200, 204]:  # 204 No Content is also a success
                     logger.info(f"Successfully reviewed deployment protection rule with state {state}.")
                     if response.status == 200:
-                        return await response.json()
+                        return cast("dict[str, Any]", await response.json())
                     else:
                         return {"status": "success", "state": state}
                 else:
@@ -674,7 +679,7 @@ class GitHubClient:
                 if response.status == 200:
                     result = await response.json()
                     logger.info(f"Retrieved {len(result)} comments for issue #{issue_number} in {repo}")
-                    return result
+                    return cast("list[dict[str, Any]]", result)
                 else:
                     error_text = await response.text()
                     logger.error(
@@ -687,7 +692,7 @@ class GitHubClient:
 
     async def update_deployment_status(
         self, callback_url: str, state: str, description: str, environment_url: str | None = None
-    ):
+    ) -> dict[str, Any] | None:
         """Update deployment status via callback URL."""
         try:
             # For this method, we need to use a different approach since we don't have the installation_id
@@ -704,7 +709,7 @@ class GitHubClient:
                 if response.status == 200:
                     result = await response.json()
                     logger.info(f"Updated deployment status to {state}")
-                    return result
+                    return cast("dict[str, Any]", result)
                 else:
                     error_text = await response.text()
                     logger.error(
@@ -731,7 +736,7 @@ class GitHubClient:
             if response.status == 200:
                 contributors = await response.json()
                 logger.info(f"Successfully fetched {len(contributors)} contributors for {repo}.")
-                return contributors
+                return cast("list[dict[str, Any]]", contributors)
             else:
                 error_text = await response.text()
                 logger.error(
@@ -760,7 +765,7 @@ class GitHubClient:
             if response.status == 200:
                 commits = await response.json()
                 logger.info(f"Successfully fetched {len(commits)} commits by {username} in {repo}.")
-                return commits
+                return cast("list[dict[str, Any]]", commits)
             else:
                 error_text = await response.text()
                 logger.error(
@@ -789,7 +794,7 @@ class GitHubClient:
             if response.status == 200:
                 pull_requests = await response.json()
                 logger.info(f"Successfully fetched {len(pull_requests)} PRs by {username} in {repo}.")
-                return pull_requests
+                return cast("list[dict[str, Any]]", pull_requests)
             else:
                 error_text = await response.text()
                 logger.error(
@@ -820,7 +825,7 @@ class GitHubClient:
             if response.status == 200:
                 issues = await response.json()
                 logger.info(f"Successfully fetched {len(issues)} issues by {username} in {repo}.")
-                return issues
+                return cast("list[dict[str, Any]]", issues)
             else:
                 error_text = await response.text()
                 logger.error(
@@ -841,7 +846,7 @@ class GitHubClient:
         async with session.get(url, headers=headers) as response:
             if response.status == 200:
                 data = await response.json()
-                return data.get("object", {}).get("sha")
+                return cast("str | None", data.get("object", {}).get("sha"))
             return None
 
     async def create_git_ref(
@@ -862,7 +867,7 @@ class GitHubClient:
         session = await self._get_session()
         async with session.post(url, headers=headers, json=payload) as response:
             if response.status in (200, 201):
-                return await response.json()
+                return cast("dict[str, Any]", await response.json())
             # Branch might already exist - check if it exists and points to the same SHA
             if response.status == 422:
                 error_data = await response.json()
@@ -907,7 +912,7 @@ class GitHubClient:
                 data = await response.json()
                 # Handle both single file and directory responses
                 if isinstance(data, dict) and "sha" in data:
-                    return data["sha"]
+                    return cast("str | None", data["sha"])
             return None
 
     async def create_or_update_file(
@@ -952,7 +957,7 @@ class GitHubClient:
             if response.status in (200, 201):
                 result = await response.json()
                 logger.info(f"Successfully created/updated file {path} in {repo_full_name} on branch {branch}")
-                return result
+                return cast("dict[str, Any]", result)
             error_text = await response.text()
             logger.error(
                 f"Failed to create/update file {path} in {repo_full_name} on branch {branch}. "
@@ -986,7 +991,9 @@ class GitHubClient:
                 logger.info(
                     f"Successfully created PR #{pr_number} in {repo_full_name}: {pr_url} (head: {head}, base: {base})"
                 )
-                return result
+                from typing import cast
+
+                return cast("dict[str, Any]", result)
             error_text = await response.text()
             logger.error(
                 f"Failed to create PR in {repo_full_name} (head: {head}, base: {base}). "
@@ -1173,7 +1180,9 @@ class GitHubClient:
                     )
                     raise GitHubGraphQLError(json_response["errors"])
 
-                return json_response
+                from typing import cast
+
+                return cast("dict[str, Any]", json_response)
             finally:
                 end_time = time.time()
                 logger.debug(

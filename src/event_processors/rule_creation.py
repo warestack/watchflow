@@ -4,6 +4,7 @@ import time
 from typing import Any
 
 from src.agents import get_agent
+from src.agents.base import AgentResult
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.tasks.task_queue import Task
 
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 class RuleCreationProcessor(BaseEventProcessor):
     """Processor for rule creation commands via comments."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Call super class __init__ first
         super().__init__()
 
@@ -47,7 +48,7 @@ class RuleCreationProcessor(BaseEventProcessor):
             logger.info(f"📝 Rule description: {rule_description}")
 
             # Use the feasibility agent to check if the rule is supported
-            feasibility_result = await self.feasibility_agent.check_feasibility(rule_description)
+            feasibility_result = await self.feasibility_agent.execute(rule_description=rule_description)
 
             processing_time = int((time.time() - start_time) * 1000)
 
@@ -57,10 +58,10 @@ class RuleCreationProcessor(BaseEventProcessor):
             # Summary
             logger.info("=" * 80)
             logger.info(f"🏁 Rule creation processing completed in {processing_time}ms")
-            logger.info(f"   Feasible: {feasibility_result.is_feasible}")
+            logger.info(f"   Feasible: {feasibility_result.success}")
             logger.info("   API calls made: 1")
 
-            if feasibility_result.is_feasible:
+            if feasibility_result.success:
                 logger.info("✅ Rule is feasible - YAML provided")
             else:
                 logger.info("❌ Rule is not feasible - feedback provided")
@@ -97,15 +98,15 @@ class RuleCreationProcessor(BaseEventProcessor):
 
         return ""
 
-    async def _post_result_to_comment(self, task: Task, feasibility_result):
+    async def _post_result_to_comment(self, task: Task, feasibility_result: AgentResult) -> None:
         """Post the feasibility result as a reply to the original comment."""
         try:
             # Get issue/PR number from the webhook payload
             issue = task.payload.get("issue", {})
             issue_number = issue.get("number")
 
-            if not issue_number:
-                logger.warning("No issue number found in webhook payload, skipping reply")
+            if not issue_number or not task.installation_id:
+                logger.warning("No issue number or installation_id found in webhook payload, skipping reply")
                 return
 
             reply_body = self._format_feasibility_reply(feasibility_result)
@@ -123,13 +124,13 @@ class RuleCreationProcessor(BaseEventProcessor):
         except Exception as e:
             logger.error(f"Error posting feasibility reply: {e}")
 
-    def _format_feasibility_reply(self, feasibility_result) -> str:
+    def _format_feasibility_reply(self, feasibility_result: AgentResult) -> str:
         """Format the feasibility result as a comment reply."""
-        if feasibility_result.is_feasible:
+        if feasibility_result.success and feasibility_result.data:
             reply = "## ✅ Rule Creation Successful!\n\n"
             reply += "Your rule is supported by Watchflow. Here's the YAML configuration:\n\n"
             reply += "```yaml\n"
-            reply += feasibility_result.yaml_content
+            reply += feasibility_result.data.get("yaml_content", "")
             reply += "\n```\n\n"
             reply += "**Next Steps:**\n"
             reply += "1. Copy the YAML above\n"
@@ -140,7 +141,7 @@ class RuleCreationProcessor(BaseEventProcessor):
             reply = "## ❌ Rule Not Supported\n\n"
             reply += "Sorry, but your requested rule is not currently supported by Watchflow.\n\n"
             reply += "**Feedback:**\n"
-            reply += feasibility_result.feedback
+            reply += feasibility_result.message
             reply += "\n\n"
             reply += "**Supported Rule Types:**\n"
             reply += "- Time-based restrictions (no merges on weekends)\n"

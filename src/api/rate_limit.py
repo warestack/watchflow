@@ -22,13 +22,14 @@ AUTH_LIMIT = config.authenticated_rate_limit  # Default: 100 requests per hour
 WINDOW = 3600  # seconds
 
 
-async def rate_limiter(request: Request, user: User | None = Depends(get_current_user_optional)):
+async def rate_limiter(request: Request, user: User | None = Depends(get_current_user_optional)) -> None:
     now = time.time()
     if user and user.email:
         key = f"user:{user.email}"
         limit = AUTH_LIMIT
     else:
-        key = f"ip:{request.client.host}"
+        client_host = request.client.host if request.client else "unknown"
+        key = f"ip:{client_host}"
         limit = ANON_LIMIT
 
     timestamps = _RATE_LIMIT_STORE.get(key, [])

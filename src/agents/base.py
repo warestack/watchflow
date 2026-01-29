@@ -4,7 +4,9 @@ Base agent classes and utilities for agents.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
+
+from pydantic import BaseModel, Field
 
 from src.core.utils.timeout import execute_with_timeout
 
@@ -13,20 +15,13 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
-class AgentResult:
+class AgentResult(BaseModel):
     """Result from an agent execution."""
 
-    def __init__(
-        self,
-        success: bool,
-        message: str,
-        data: dict[str, Any] = None,
-        metadata: dict[str, Any] = None,
-    ):
-        self.success = success
-        self.message = message
-        self.data = data or {}
-        self.metadata = metadata or {}
+    success: bool
+    message: str
+    data: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class BaseAgent(ABC):
@@ -59,7 +54,7 @@ class BaseAgent(ABC):
         """
         pass
 
-    async def _retry_structured_output(self, llm, output_model, prompt, **kwargs) -> T:
+    async def _retry_structured_output(self, llm: Any, output_model: Any, prompt: str, **kwargs: Any) -> T:
         """
         Retry structured output with exponential backoff.
 
@@ -81,7 +76,8 @@ class BaseAgent(ABC):
 
         async def _invoke_structured() -> T:
             """Inner function to invoke structured LLM."""
-            return await structured_llm.ainvoke(prompt, **kwargs)
+            response = await structured_llm.ainvoke(prompt, **kwargs)
+            return cast("T", response)
 
         return await retry_async(
             _invoke_structured,
@@ -90,7 +86,7 @@ class BaseAgent(ABC):
             exceptions=(Exception,),
         )
 
-    async def _execute_with_timeout(self, coro, timeout: float = 60.0):
+    async def _execute_with_timeout(self, coro: Any, timeout: float = 60.0) -> Any:
         """
         Execute a coroutine with timeout handling.
 

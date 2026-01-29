@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+from collections.abc import Mapping
 
 import structlog
 from fastapi import HTTPException, Request
@@ -9,6 +10,14 @@ from src.core.config import config
 logger = structlog.get_logger(__name__)
 
 GITHUB_WEBHOOK_SECRET = config.github.webhook_secret
+
+# Headers that should never be logged (security-sensitive)
+_SENSITIVE_HEADERS = frozenset({"authorization", "cookie", "x-hub-signature-256", "x-hub-signature"})
+
+
+def _redact_headers(headers: Mapping[str, str]) -> dict[str, str]:
+    """Redact sensitive headers for safe logging."""
+    return {k: "[REDACTED]" if k.lower() in _SENSITIVE_HEADERS else v for k, v in headers.items()}
 
 
 async def verify_github_signature(request: Request) -> bool:
@@ -26,8 +35,8 @@ async def verify_github_signature(request: Request) -> bool:
     """
     signature = request.headers.get("X-Hub-Signature-256")
 
-    # DEBUG: Log all headers to debug missing signature issue
-    logger.info("request_headers_received", headers=dict(request.headers))
+    # Log headers with sensitive values redacted
+    logger.debug("request_headers_received", headers=_redact_headers(request.headers))
 
     if not signature:
         logger.warning("Received a request without the X-Hub-Signature-256 header.")

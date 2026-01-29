@@ -25,7 +25,7 @@ async def log_operation(
     operation: str,
     subject_ids: dict[str, str] | None = None,
     **context: Any,
-):
+) -> Any:  # AsyncGenerator[None, None]
     """
     Context manager for structured operation logging.
 
@@ -67,7 +67,7 @@ async def log_operation(
         )
 
 
-def log_function_call(operation: str | None = None):
+def log_function_call(operation: str | None = None) -> Any:
     """
     Decorator for logging function calls with timing.
 
@@ -83,11 +83,11 @@ def log_function_call(operation: str | None = None):
             return await api_call()
     """
 
-    def decorator(func):
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         op_name = operation or func.__name__
 
         @wraps(func)
-        async def async_wrapper(*args, **kwargs):
+        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
             start_time = time.time()
             logger.info(f"🚀 Calling {op_name}")
 
@@ -105,7 +105,7 @@ def log_function_call(operation: str | None = None):
                 raise
 
         @wraps(func)
-        def sync_wrapper(*args, **kwargs):
+        def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
             start_time = time.time()
             logger.info(f"🚀 Calling {op_name}")
 

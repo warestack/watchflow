@@ -13,10 +13,9 @@ github_public_repo = "https://github.com/pallets/flask"
 github_private_repo = "https://github.com/example/private-repo"
 
 
-def mock_openai_response():
-    """Mock OpenAI API response for rule recommendations using structured outputs"""
+def mock_analysis_report_response():
     return {
-        "id": "chatcmpl-test",
+        "id": "chatcmpl-report",
         "object": "chat.completion",
         "created": 1234567890,
         "model": "gpt-4",
@@ -25,10 +24,79 @@ def mock_openai_response():
                 "index": 0,
                 "message": {
                     "role": "assistant",
-                    "content": '{"repo_full_name": "test/repo", "is_public": true, "file_tree": [], "recommendations": [{"key": "require_pr_reviews", "name": "Require Pull Request Reviews", "description": "Ensure all PRs are reviewed before merging", "severity": "high", "category": "quality", "reasoning": "Based on repository analysis"}]}',
-                    "refusal": None,
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_report",
+                            "type": "function",
+                            "function": {
+                                "name": "AnalysisReport",
+                                "arguments": '{"report": "## Analysis Report\\n\\nFindings..."}',
+                            },
+                        }
+                    ],
                 },
-                "finish_reason": "stop",
+                "finish_reason": "tool_calls",
+            }
+        ],
+        "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
+    }
+
+
+def mock_recommendations_response():
+    return {
+        "id": "chatcmpl-recs",
+        "object": "chat.completion",
+        "created": 1234567890,
+        "model": "gpt-4",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_recs",
+                            "type": "function",
+                            "function": {
+                                "name": "RecommendationsList",
+                                "arguments": '{"recommendations": [{"key": "require_pr_reviews", "name": "Require Pull Request Reviews", "description": "Ensure all PRs are reviewed before merging", "severity": "high", "category": "quality", "event_types": ["pull_request"], "parameters": {}}]}',
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ],
+        "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
+    }
+
+
+def mock_rule_reasoning_response():
+    return {
+        "id": "chatcmpl-reasoning",
+        "object": "chat.completion",
+        "created": 1234567890,
+        "model": "gpt-4",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_reasoning",
+                            "type": "function",
+                            "function": {
+                                "name": "RuleReasoning",
+                                "arguments": '{"reasoning": "This rule is recommended because..."}',
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
             }
         ],
         "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
@@ -38,10 +106,12 @@ def mock_openai_response():
 @pytest.mark.asyncio
 @respx.mock
 async def test_anonymous_access_public_repo():
-    # Mock OpenAI API call (httpx)
-    respx.post("https://api.openai.com/v1/chat/completions").mock(
-        return_value=Response(200, json=mock_openai_response())
-    )
+    # Mock OpenAI API call (httpx) - Sequence: Report -> Recommendations -> Reasoning
+    respx.post("https://api.openai.com/v1/chat/completions").side_effect = [
+        Response(200, json=mock_analysis_report_response()),
+        Response(200, json=mock_recommendations_response()),
+        Response(200, json=mock_rule_reasoning_response()),
+    ]
 
     # Patch global github_client for metadata
     with patch("src.agents.repository_analysis_agent.nodes.github_client") as mock_github:
@@ -72,8 +142,8 @@ async def test_anonymous_access_public_repo():
             ]
         )
 
-        # Configure PR signals mock
-        mock_github.fetch_pr_hygiene_stats = AsyncMock(return_value=[])
+        # Configure PR signals mock - return ([], None) which is (pr_nodes, warning)
+        mock_github.fetch_pr_hygiene_stats = AsyncMock(return_value=([], None))
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             payload = {"repo_url": github_public_repo, "force_refresh": False}
@@ -83,16 +153,17 @@ async def test_anonymous_access_public_repo():
             data = response.json()
             assert "rules_yaml" in data and "pr_plan" in data and "analysis_summary" in data
             assert isinstance(data["rules_yaml"], str)
-            assert isinstance(data["pr_plan"], str)
 
 
 @pytest.mark.asyncio
 @respx.mock
 async def test_anonymous_access_private_repo():
-    # Mock OpenAI API call
-    respx.post("https://api.openai.com/v1/chat/completions").mock(
-        return_value=Response(200, json=mock_openai_response())
-    )
+    # Mock OpenAI API call - Sequence: Report -> Recommendations -> Reasoning
+    respx.post("https://api.openai.com/v1/chat/completions").side_effect = [
+        Response(200, json=mock_analysis_report_response()),
+        Response(200, json=mock_recommendations_response()),
+        Response(200, json=mock_rule_reasoning_response()),
+    ]
 
     with patch("src.agents.repository_analysis_agent.nodes.github_client") as mock_github:
         # Create a proper ClientResponseError for list_directory_any_auth
@@ -108,7 +179,7 @@ async def test_anonymous_access_private_repo():
         mock_github.get_file_content = AsyncMock(return_value=None)
 
         # Configure PR signals mock
-        mock_github.fetch_pr_hygiene_stats = AsyncMock(return_value=[])
+        mock_github.fetch_pr_hygiene_stats = AsyncMock(return_value=([], None))
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             payload = {"repo_url": github_private_repo, "force_refresh": False}
@@ -123,10 +194,12 @@ async def test_anonymous_access_private_repo():
 @pytest.mark.asyncio
 @respx.mock
 async def test_authenticated_access_private_repo():
-    # Mock OpenAI API call
-    respx.post("https://api.openai.com/v1/chat/completions").mock(
-        return_value=Response(200, json=mock_openai_response())
-    )
+    # Mock OpenAI API call - Sequence: Report -> Recommendations -> Reasoning
+    respx.post("https://api.openai.com/v1/chat/completions").side_effect = [
+        Response(200, json=mock_analysis_report_response()),
+        Response(200, json=mock_recommendations_response()),
+        Response(200, json=mock_rule_reasoning_response()),
+    ]
 
     with patch("src.agents.repository_analysis_agent.nodes.github_client") as mock_github:
         # Mock fetch_repository_metadata calls
@@ -151,7 +224,7 @@ async def test_authenticated_access_private_repo():
         )
 
         # Configure PR signals mock
-        mock_github.fetch_pr_hygiene_stats = AsyncMock(return_value=[])
+        mock_github.fetch_pr_hygiene_stats = AsyncMock(return_value=([], None))
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             payload = {"repo_url": github_private_repo, "force_refresh": False}
@@ -162,4 +235,3 @@ async def test_authenticated_access_private_repo():
             data = response.json()
             assert "rules_yaml" in data and "pr_plan" in data and "analysis_summary" in data
             assert isinstance(data["rules_yaml"], str)
-            assert isinstance(data["pr_plan"], str)

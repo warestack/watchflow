@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class CheckRunProcessor(BaseEventProcessor):
     """Processor for check run events using hybrid agentic rule evaluation."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Call super class __init__ first
         super().__init__()
 
@@ -52,7 +52,17 @@ class CheckRunProcessor(BaseEventProcessor):
         }
 
         # Fetch rules
-        rules = await self.rule_provider.get_rules(task.repo_full_name, task.installation_id)
+        if not task.installation_id:
+            logger.error("No installation ID found in task")
+            return ProcessingResult(
+                success=False,
+                violations=[],
+                api_calls_made=0,
+                processing_time_ms=int((time.time() - start_time) * 1000),
+                error="No installation ID found",
+            )
+        rules_optional = await self.rule_provider.get_rules(task.repo_full_name, task.installation_id)
+        rules = rules_optional if rules_optional is not None else []
 
         # Convert rules to the new format expected by the agent
         formatted_rules = self._convert_rules_to_new_format(rules)

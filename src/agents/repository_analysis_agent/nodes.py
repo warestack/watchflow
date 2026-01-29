@@ -1,6 +1,7 @@
 import re
 from typing import Any
 
+import aiohttp
 import openai
 import pydantic
 import structlog
@@ -143,6 +144,16 @@ async def fetch_repository_metadata(state: AnalysisState) -> AnalysisState:
             has_codeowners=state.has_codeowners,
             workflow_patterns=state.workflow_patterns,
         )
+    except aiohttp.ClientResponseError as e:
+        if e.status in [403, 404]:
+            logger.warning("repository_access_limited", repo=repo, status=e.status, message=e.message)
+            state.warnings.append(
+                f"Repository access limited (Status {e.status}). Analysis will be based on available signals only."
+            )
+            # Do not set state.error so analysis can proceed to fallback
+        else:
+            logger.error("repository_metadata_fetch_failed", repo=repo, error=str(e), exc_info=True)
+            state.error = f"Failed to fetch repository metadata: {str(e)}"
     except Exception as e:
         logger.error("repository_metadata_fetch_failed", repo=repo, error=str(e), exc_info=True)
         state.error = f"Failed to fetch repository metadata: {str(e)}"
@@ -457,6 +468,9 @@ async def generate_rule_recommendations(state: AnalysisState) -> AnalysisState:
 
     # Format hygiene summary for LLM with issue context
     if hygiene_summary:
+        ai_rate_text = (
+            f"{hygiene_summary.ai_generated_rate:.1%}" if hygiene_summary.ai_generated_rate is not None else "N/A"
+        )
         hygiene_text = f"""- Unlinked Issue Rate: {hygiene_summary.unlinked_issue_rate:.1%} ({int(hygiene_summary.unlinked_issue_rate * 100)}% of PRs lack issue references)
 - Average PR Size: {hygiene_summary.average_pr_size} lines (unreviewable if >500)
 - First-Time Contributors: {hygiene_summary.first_time_contributor_count} in last 30 PRs
@@ -465,7 +479,7 @@ async def generate_rule_recommendations(state: AnalysisState) -> AnalysisState:
 - New Code Test Coverage: {hygiene_summary.new_code_test_coverage:.1%} (tests missing)
 - Issue-Diff Mismatch Rate: {hygiene_summary.issue_diff_mismatch_rate:.1%} (description vs code mismatch)
 - Ghost Contributor Rate: {hygiene_summary.ghost_contributor_rate:.1%} (no review engagement)
-- AI Generated Rate: {hygiene_summary.ai_generated_rate:.1%} (low-signal PRs)"""
+- AI Generated Rate: {ai_rate_text} (low-signal PRs)"""
     else:
         hygiene_text = "- No PR history available (new repository or no merged PRs)"
 
@@ -475,12 +489,12 @@ async def generate_rule_recommendations(state: AnalysisState) -> AnalysisState:
         report_context = f"\n\n**Analysis Report (Problems Identified):**\n{state.analysis_report}\n"
 
     # Get actual validator catalog dynamically
-    from src.rules.validators import get_validator_descriptions
+    from src.rules.registry import AVAILABLE_CONDITIONS
 
     validator_catalog = []
-    for v in get_validator_descriptions():
+    for condition_cls in AVAILABLE_CONDITIONS:
         validator_catalog.append(
-            f"- {v.get('name')}: {v.get('description')} (events: {', '.join(v.get('event_types', []))})"
+            f"- {condition_cls.name}: {condition_cls.description} (events: {', '.join(condition_cls.event_types)})"
         )
     validator_catalog_text = "\n".join(validator_catalog)
 
@@ -541,11 +555,15 @@ async def generate_rule_recommendations(state: AnalysisState) -> AnalysisState:
 
     # Fallback for any of the caught exceptions
     fallback_rule = RuleRecommendation(
+        key="fallback-rule",
+        name="Fallback Rule",
+        category="General",
         description="AI analysis could not complete. Please review repository manually.",
         enabled=False,
         severity="low",
         event_types=["pull_request"],
         parameters={},
+        reasoning=fallback_reason,
     )
     state.recommendations = [fallback_rule]
     state.error = fallback_reason
@@ -635,6 +653,9 @@ async def generate_analysis_report(state: AnalysisState) -> AnalysisState:
             state.analysis_report = "## Repository Analysis\n\nNo analysis data available."
             return state
 
+        ai_rate_text = (
+            f"{hygiene_summary.ai_generated_rate:.1%}" if hygiene_summary.ai_generated_rate is not None else "N/A"
+        )
         prompt = f"""Analyze repository health and generate markdown report identifying problems.
 
 Repository: {repo_name}
@@ -648,10 +669,10 @@ Hygiene Metrics:
 - New Code Test Coverage: {hygiene_summary.new_code_test_coverage:.1%} (tests missing)
 - Issue-Diff Mismatch Rate: {hygiene_summary.issue_diff_mismatch_rate:.1%} (description vs code mismatch)
 - Ghost Contributor Rate: {hygiene_summary.ghost_contributor_rate:.1%} (no review engagement)
-- AI Generated Rate: {hygiene_summary.ai_generated_rate:.1%} (low-signal PRs)
+- AI Generated Rate: {ai_rate_text} (low-signal PRs)
 
 Context:
-- Languages: {', '.join(state.detected_languages) if state.detected_languages else 'Unknown'}
+- Languages: {", ".join(state.detected_languages) if state.detected_languages else "Unknown"}
 - Has CI/CD: {state.has_ci}
 - Has CODEOWNERS: {state.has_codeowners}
 

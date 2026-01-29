@@ -2,7 +2,7 @@ from typing import Any
 
 import httpx
 import structlog
-from giturlparse import parse
+from giturlparse import parse  # type: ignore
 
 from src.core.errors import (
     GitHubRateLimitError,
@@ -20,7 +20,7 @@ class GitHubService:
 
     BASE_URL = "https://api.github.com"
 
-    def __init__(self):
+    def __init__(self) -> None:
         # We use a shared client for connection pooling in production,
         # but for now, we instantiate per request for safety.
         pass
@@ -57,7 +57,10 @@ class GitHubService:
                     raise GitHubRateLimitError("GitHub API rate limit exceeded")
 
                 response.raise_for_status()
-                return response.json()
+                data = response.json()
+                if not isinstance(data, dict):
+                    raise TypeError("Expected a dictionary from GitHub API")
+                return data
         except httpx.HTTPStatusError as e:
             logger.error(
                 "github_metadata_fetch_failed",

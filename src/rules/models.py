@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
-from src.core.models import EventType
+if TYPE_CHECKING:
+    from src.core.models import EventType
+    from src.rules.conditions.base import BaseCondition
 
 
 class RuleSeverity(str, Enum):
@@ -28,7 +32,10 @@ class RuleCategory(str, Enum):
 
 
 class RuleCondition(BaseModel):
-    """Represents a condition that must be met for a rule to be triggered."""
+    """
+    Represents a condition that must be met for a rule to be triggered.
+    Deprecated: Used for legacy JSON/YAML parsing, but runtime now uses BaseCondition objects.
+    """
 
     type: str
     parameters: dict[str, Any] = Field(default_factory=dict)
@@ -48,6 +55,9 @@ class Rule(BaseModel):
     enabled: bool = True
     severity: RuleSeverity = RuleSeverity.MEDIUM
     event_types: list[EventType] = Field(default_factory=list)
-    conditions: list[RuleCondition] = Field(default_factory=list)
+    conditions: list[BaseCondition] = Field(default_factory=list)
     actions: list[RuleAction] = Field(default_factory=list)
     parameters: dict[str, Any] = Field(default_factory=dict)  # Store parameters as-is from YAML
+
+    class Config:
+        arbitrary_types_allowed = True

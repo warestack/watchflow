@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 async def track_metrics(
     operation: str,
     **metadata: Any,
-):
+) -> Any:  # AsyncGenerator[dict[str, Any], None] but Any is simpler for mypy in context managers sometimes
     """
     Context manager for tracking operation metrics.
 
@@ -63,7 +63,7 @@ async def track_metrics(
         )
 
 
-def metrics_decorator(operation: str | None = None, **default_metadata: Any):
+def metrics_decorator(operation: str | None = None, **default_metadata: Any) -> Any:
     """
     Decorator for tracking function call metrics.
 
@@ -80,11 +80,11 @@ def metrics_decorator(operation: str | None = None, **default_metadata: Any):
             return await api_call()
     """
 
-    def decorator(func):
+    def decorator(func: Any) -> Any:
         op_name = operation or func.__name__
 
         @wraps(func)
-        async def async_wrapper(*args, **kwargs):
+        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
             async with track_metrics(op_name, **default_metadata) as metrics:
                 try:
                     result = await func(*args, **kwargs)
@@ -96,7 +96,7 @@ def metrics_decorator(operation: str | None = None, **default_metadata: Any):
                     raise
 
         @wraps(func)
-        def sync_wrapper(*args, **kwargs):
+        def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
             start_time = time.time()
             metrics: dict[str, Any] = {
                 "operation": op_name,

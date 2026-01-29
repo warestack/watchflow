@@ -2,10 +2,18 @@
 Data models for the Rule Engine Agent.
 """
 
+from __future__ import annotations
+
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
+
+from src.core.models import Violation
+
+if TYPE_CHECKING:
+    from src.rules.conditions.base import BaseCondition
+    from src.rules.models import Rule
 
 
 class ValidationStrategy(str, Enum):
@@ -57,14 +65,11 @@ class HowToFixResponse(BaseModel):
     context: str = Field(description="Additional context or explanation", default="")
 
 
-class RuleViolation(BaseModel):
+class RuleViolation(Violation):
     """Represents a violation of a specific rule."""
 
-    rule_description: str = Field(description="Description of the violated rule")
-    severity: str
-    message: str
-    details: dict[str, Any] = Field(default_factory=dict)
-    how_to_fix: str | None = None
+    # Inherits: rule_description, severity, message, details, how_to_fix from Violation
+
     docs_url: str | None = None
     validation_strategy: ValidationStrategy = ValidationStrategy.VALIDATOR
     execution_time_ms: float = 0.0
@@ -96,6 +101,10 @@ class RuleDescription(BaseModel):
     )
     validator_name: str | None = Field(default=None, description="Specific validator to use")
     fallback_to_llm: bool = Field(default=True, description="Whether to fallback to LLM if validator fails")
+    conditions: list[BaseCondition] = Field(default_factory=list, description="Attached executable conditions")
+
+    class Config:
+        arbitrary_types_allowed = True
 
 
 class EngineState(BaseModel):
@@ -103,7 +112,7 @@ class EngineState(BaseModel):
 
     event_type: str
     event_data: dict[str, Any]
-    rules: list[dict[str, Any]]
+    rules: list[Rule]  # Use Rule objects directly
     rule_descriptions: list[RuleDescription] = Field(default_factory=list)
     available_validators: list[ValidatorDescription] = Field(default_factory=list)
     violations: list[dict[str, Any]] = Field(default_factory=list)
@@ -111,3 +120,6 @@ class EngineState(BaseModel):
     analysis_steps: list[str] = Field(default_factory=list)
     validator_usage: dict[str, int] = Field(default_factory=dict)
     llm_usage: int = 0
+
+    class Config:
+        arbitrary_types_allowed = True

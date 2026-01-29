@@ -78,7 +78,12 @@ class RepositoryAnalysisAgent(BaseAgent):
         if not repo_full_name:
             return AgentResult(success=False, message="repo_full_name is required")
 
-        initial_state = AnalysisState(repo_full_name=repo_full_name, is_public=is_public, user_token=user_token)
+        initial_state = AnalysisState(
+            repo_full_name=repo_full_name,
+            is_public=is_public,
+            user_token=user_token,
+            codeowners_content=None,
+        )
 
         try:
             # Execute Graph with 60-second hard timeout

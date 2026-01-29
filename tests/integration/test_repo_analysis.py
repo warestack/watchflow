@@ -26,8 +26,21 @@ async def test_agent_returns_enhanced_metrics():
             json={
                 "choices": [
                     {
-                        "message": {"role": "assistant", "content": '{"recommendations": []}'},
-                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call_123",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "RecommendationsList",
+                                        "arguments": '{"recommendations": []}',
+                                    },
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
                         "index": 0,
                     }
                 ],
@@ -44,7 +57,7 @@ async def test_agent_returns_enhanced_metrics():
         mock_github.get_file_content = AsyncMock(return_value=None)
 
         # Configure PR signals mock
-        mock_github.fetch_pr_hygiene_stats = AsyncMock(return_value=[])
+        mock_github.fetch_pr_hygiene_stats = AsyncMock(return_value=([], None))
 
         # 2. Action: Initialize the agent and invoke the graph directly to get the final state
         agent = RepositoryAnalysisAgent()

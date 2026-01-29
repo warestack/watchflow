@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 DOCS_URL = "https://github.com/warestack/watchflow/blob/main/docs/getting-started/configuration.md"
 
 
-async def validate_rules_yaml_from_repo(repo_full_name: str, installation_id: int, pr_number: int):
+async def validate_rules_yaml_from_repo(repo_full_name: str, installation_id: int, pr_number: int) -> None:
     validation_result = await _validate_rules_yaml(repo_full_name, installation_id)
     # Only post a comment if the result is not a success
     if not validation_result["success"]:

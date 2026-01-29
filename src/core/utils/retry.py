@@ -7,7 +7,7 @@ configurable exponential backoff strategies.
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from functools import wraps
 from typing import Any, TypeVar
 
@@ -22,7 +22,7 @@ def retry_with_backoff(
     max_delay: float = 60.0,
     exponential_base: float = 2.0,
     exceptions: tuple[type[Exception], ...] = (Exception,),
-):
+) -> Any:
     """
     Decorator for retrying async functions with exponential backoff.
 
@@ -78,8 +78,8 @@ def retry_with_backoff(
     return decorator
 
 
-async def retry_async(
-    func: Callable[..., Any],
+async def retry_async[T](
+    func: Callable[..., Awaitable[T]],
     *args: Any,
     max_retries: int = 3,
     initial_delay: float = 1.0,
@@ -87,7 +87,7 @@ async def retry_async(
     exponential_base: float = 2.0,
     exceptions: tuple[type[Exception], ...] = (Exception,),
     **kwargs: Any,
-) -> Any:
+) -> T:
     """
     Retry an async function call with exponential backoff.
 

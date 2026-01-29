@@ -3,7 +3,9 @@ import time
 from typing import Any
 
 from src.agents import get_agent
+from src.core.models import Severity, Violation
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
+from src.integrations.github.check_runs import CheckRunManager
 from src.tasks.task_queue import Task
 
 logger = logging.getLogger(__name__)
@@ -12,12 +14,12 @@ logger = logging.getLogger(__name__)
 class PushProcessor(BaseEventProcessor):
     """Processor for push events using hybrid agentic rule evaluation."""
 
-    def __init__(self):
-        # Call super class __init__ first
+    def __init__(self) -> None:
         super().__init__()
 
-        # Create instance of hybrid RuleEngineAgent
         self.engine_agent = get_agent("engine")
+
+        self.check_run_manager = CheckRunManager(self.github_client)
 
     def get_event_type(self) -> str:
         return "push"
@@ -35,7 +37,6 @@ class PushProcessor(BaseEventProcessor):
         logger.info(f"   Commits: {len(commits)}")
         logger.info("=" * 80)
 
-        # Prepare event_data for the agent
         event_data = {
             "push": {
                 "ref": ref,
@@ -51,8 +52,18 @@ class PushProcessor(BaseEventProcessor):
             "timestamp": payload.get("timestamp"),
         }
 
-        # Get rules for the repository
-        rules = await self.rule_provider.get_rules(task.repo_full_name, task.installation_id)
+        if not task.installation_id:
+            logger.error("No installation ID found in task")
+            return ProcessingResult(
+                success=False,
+                violations=[],
+                api_calls_made=0,
+                processing_time_ms=int((time.time() - start_time) * 1000),
+                error="No installation ID found",
+            )
+
+        rules_optional = await self.rule_provider.get_rules(task.repo_full_name, task.installation_id)
+        rules = rules_optional if rules_optional is not None else []
 
         if not rules:
             logger.info("No rules found for this repository")
@@ -62,37 +73,70 @@ class PushProcessor(BaseEventProcessor):
 
         logger.info(f"📋 Loaded {len(rules)} rules for evaluation")
 
-        # Convert rules to the new format expected by the agent
         formatted_rules = self._convert_rules_to_new_format(rules)
 
-        # Run agentic analysis using the instance
         result = await self.engine_agent.execute(event_type="push", event_data=event_data, rules=formatted_rules)
 
-        violations = result.data.get("violations", [])
+        raw_violations = result.data.get("violations", [])
+        violations: list[Violation] = []
+
+        for v in raw_violations:
+            try:
+                # Map raw fields to Violation model
+                severity_str = v.get("severity", "medium").lower()
+                try:
+                    severity = Severity(severity_str)
+                except ValueError:
+                    severity = Severity.MEDIUM
+
+                violation = Violation(
+                    rule_description=v.get("rule", "Unknown Rule"),
+                    severity=severity,
+                    message=v.get("message", "No message provided"),
+                    how_to_fix=v.get("suggestion"),
+                    details=v,
+                )
+                violations.append(violation)
+            except Exception as e:
+                logger.error(f"Error converting violation: {e}")
 
         processing_time = int((time.time() - start_time) * 1000)
 
-        # Post results to GitHub (create check run)
-        api_calls = 1  # Initial rule fetch
-        if violations:
-            await self._create_check_run(task, violations)
-            api_calls += 1
+        api_calls = 1
 
-        # Summary
+        sha = payload.get("after")
+        if not sha or sha == "0000000000000000000000000000000000000000":
+            logger.warning("No valid commit SHA found, skipping check run")
+        else:
+            # Ensure installation_id is not None before passing to check_run_manager
+            if task.installation_id is None:
+                logger.warning("Missing installation_id for push event, cannot create check run")
+            else:
+                if violations:
+                    await self.check_run_manager.create_check_run(
+                        repo=task.repo_full_name,
+                        sha=sha,
+                        installation_id=task.installation_id,
+                        violations=violations,
+                    )
+                    api_calls += 1
+                else:
+                    # Create passing check run if no violations (optional but good practice)
+                    await self.check_run_manager.create_check_run(
+                        repo=task.repo_full_name,
+                        sha=sha,
+                        installation_id=task.installation_id,
+                        violations=[],
+                        conclusion="success",
+                    )
+                    api_calls += 1
+
         logger.info("=" * 80)
+
         logger.info(f"🏁 PUSH processing completed in {processing_time}ms")
         logger.info(f"   Rules evaluated: {len(formatted_rules)}")
         logger.info(f"   Violations found: {len(violations)}")
         logger.info(f"   API calls made: {api_calls}")
-
-        if violations:
-            logger.warning("🚨 VIOLATION SUMMARY:")
-            for i, violation in enumerate(violations, 1):
-                logger.warning(f"   {i}. {violation.get('rule', 'Unknown')} ({violation.get('severity', 'medium')})")
-                logger.warning(f"      {violation.get('message', '')}")
-        else:
-            logger.info("✅ All rules passed - no violations detected!")
-
         logger.info("=" * 80)
 
         return ProcessingResult(
@@ -141,88 +185,3 @@ class PushProcessor(BaseEventProcessor):
     async def prepare_api_data(self, task: Task) -> dict[str, Any]:
         """Prepare data from GitHub API calls."""
         return {}
-
-    async def _create_check_run(self, task: Task, violations: list[dict[str, Any]]):
-        """Create a check run with violation results."""
-        try:
-            # head_commit = task.payload.get("head_commit")
-            sha = task.payload.get("after")  # Use 'after' SHA instead of head_commit.id
-
-            if not sha or sha == "0000000000000000000000000000000000000000":
-                logger.warning("No valid commit SHA found (likely branch deletion), skipping check run creation")
-                return
-
-            # Determine check run status
-            if violations:
-                status = "completed"
-                conclusion = "failure"
-            else:
-                status = "completed"
-                conclusion = "success"
-
-            # Format output
-            output = self._format_check_run_output(violations)
-
-            result = await self.github_client.create_check_run(
-                repo=task.repo_full_name,
-                sha=sha,
-                name="Watchflow Rules",
-                status=status,
-                conclusion=conclusion,
-                output=output,
-                installation_id=task.installation_id,
-            )
-
-            if result:
-                logger.info(f"✅ Successfully created check run for commit {sha[:8]} with conclusion: {conclusion}")
-            else:
-                logger.error(f"❌ Failed to create check run for commit {sha[:8]}")
-
-        except Exception as e:
-            logger.error(f"Error creating check run: {e}")
-
-    def _format_check_run_output(self, violations: list[dict[str, Any]]) -> dict[str, Any]:
-        """Format violations for check run output."""
-        if not violations:
-            return {
-                "title": "All rules passed",
-                "summary": "✅ No rule violations detected",
-                "text": "All configured rules in `.watchflow/rules.yaml` have passed successfully.",
-            }
-
-        # Group violations by severity
-        severity_groups = {"critical": [], "high": [], "medium": [], "low": []}
-
-        for violation in violations:
-            severity = violation.get("severity", "medium")
-            severity_groups[severity].append(violation)
-
-        # Build summary
-        summary_parts = []
-        for severity in ["critical", "high", "medium", "low"]:
-            if severity_groups[severity]:
-                count = len(severity_groups[severity])
-                summary_parts.append(f"{count} {severity}")
-
-        summary = f"🚨 {len(violations)} violations found: {', '.join(summary_parts)}"
-
-        # Build detailed text
-        text = "# Watchflow Rule Violations\n\n"
-
-        for severity in ["critical", "high", "medium", "low"]:
-            if severity_groups[severity]:
-                severity_emoji = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}.get(severity, "⚪")
-
-                text += f"## {severity_emoji} {severity.title()} Severity\n\n"
-
-                for violation in severity_groups[severity]:
-                    text += f"### {violation.get('rule_description', 'Unknown Rule')}\n"
-                    text += f"Rule validation failed with severity: **{violation.get('severity', 'medium')}**\n"
-                    if violation.get("suggestion"):
-                        text += f"*How to fix: {violation.get('suggestion')}*\n"
-                    text += "\n"
-
-        text += "---\n"
-        text += "*To configure rules, edit the `.watchflow/rules.yaml` file in this repository.*"
-
-        return {"title": f"{len(violations)} rule violations found", "summary": summary, "text": text}

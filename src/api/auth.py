@@ -1,92 +1,98 @@
-from fastapi import APIRouter, HTTPException
+"""Authentication-related API endpoints."""
+
+import structlog
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from src.integrations.github.api import GitHubClient
+from src.integrations.github.api import github_client
 
-router = APIRouter()
+logger = structlog.get_logger()
+
+# Use prefix to keep URLs clean: /auth/validate-token
+router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
-class TokenValidationRequest(BaseModel):
+class ValidateTokenRequest(BaseModel):
+    """Request model for token validation."""
+
     token: str
 
 
-class TokenValidationResponse(BaseModel):
+class ValidateTokenResponse(BaseModel):
+    """Response model for token validation."""
+
     valid: bool
-    user_login: str | None = None
-    scopes: list[str] = []
+    has_repo_scope: bool
+    has_public_repo_scope: bool
+    scopes: list[str] | None = None
     message: str | None = None
 
 
-class InstallationCheckResponse(BaseModel):
-    installed: bool
-    installation_id: int | None = None
-    permissions: dict[str, str] = {}
-    message: str | None = None
+@router.post(
+    "/validate-token",
+    response_model=ValidateTokenResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Validate GitHub Token",
+    description="Check if a GitHub Personal Access Token has the required scopes (repo or public_repo).",
+)
+async def validate_token(request: ValidateTokenRequest) -> ValidateTokenResponse:
+    """Validate GitHub PAT and check for repo/public_repo scopes."""
+    token = request.token.strip()
 
-
-@router.post("/auth/validate-token", response_model=TokenValidationResponse)
-async def validate_token(request: TokenValidationRequest):
-    """
-    Validates a GitHub Personal Access Token (PAT).
-    """
-    from structlog import get_logger
-
-    logger = get_logger()
+    if not token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token is required")
 
     try:
-        # Use a temporary client to check the token
-        client = GitHubClient(token=request.token)
-        user = await client.get_authenticated_user()
+        url = "https://api.github.com/user"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
 
-        if not user:
-            return TokenValidationResponse(valid=False, message="Invalid token")
+        # Use the shared session from the global client
+        session = await github_client._get_session()
+        async with session.get(url, headers=headers) as response:
+            if response.status == 401:
+                return ValidateTokenResponse(
+                    valid=False,
+                    has_repo_scope=False,
+                    has_public_repo_scope=False,
+                    message="Token is invalid or expired.",
+                )
 
-        return TokenValidationResponse(
-            valid=True,
-            user_login=user.get("login"),
-            scopes=[],  # To get scopes we'd need to inspect headers, which GitHubClient might obscure.
-            # For now, successful user fetch confirms validity.
-            message="Token is valid",
-        )
-    except Exception as e:
-        # Security: Do not leak exception details to client
-        logger.error("token_validation_failed", error=str(e))
-        return TokenValidationResponse(valid=False, message="Token validation failed. Please check your credentials.")
+            if response.status != 200:
+                error_text = await response.text()
+                logger.error("token_validation_failed", status=response.status, error=error_text)
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Token validation failed. Please try again.",
+                )
 
+            # Get scopes from X-OAuth-Scopes header
+            oauth_scopes_header = response.headers.get("X-OAuth-Scopes", "")
+            scopes = [s.strip() for s in oauth_scopes_header.split(",")] if oauth_scopes_header else []
 
-@router.get("/repos/{owner}/{repo}/installation", response_model=InstallationCheckResponse)
-async def check_installation(owner: str, repo: str):
-    """
-    Checks if the GitHub App is installed on the given repository.
-    """
-    from src.integrations.github.api import github_client  # Use the global app client for this check
+            has_repo_scope = "repo" in scopes
+            has_public_repo_scope = "public_repo" in scopes
+            has_required_scope = has_repo_scope or has_public_repo_scope
 
-    try:
-        # We need to find the installation for this repo
-        # Typically requires JWT auth as App to search installations
-
-        # Note: listing all installations and filtering is inefficient.
-        # Better: Try to get installation for repo directly.
-
-        installation = await github_client.get_repo_installation(owner, repo)
-
-        if installation:
-            return InstallationCheckResponse(
-                installed=True,
-                installation_id=installation.get("id"),
-                permissions=installation.get("permissions", {}),
-                message="Installation found",
+            return ValidateTokenResponse(
+                valid=True,
+                has_repo_scope=has_repo_scope,
+                has_public_repo_scope=has_public_repo_scope,
+                scopes=scopes,
+                message=(
+                    "Token is valid and has required scopes."
+                    if has_required_scope
+                    else "Token is valid but missing required scopes (repo or public_repo)."
+                ),
             )
-        else:
-            return InstallationCheckResponse(installed=False, message="App not installed on this repository")
 
     except HTTPException:
-        # Re-raise HTTP exceptions (expected errors)
         raise
     except Exception as e:
-        # Log full error internally, return generic message to client
-        from structlog import get_logger
-
-        logger = get_logger()
-        logger.error("installation_check_failed", error=str(e), exc_info=True)
-        return InstallationCheckResponse(installed=False, message="Unable to verify installation status")
+        logger.exception("token_validation_error", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Token validation failed. Please try again.",
+        ) from e

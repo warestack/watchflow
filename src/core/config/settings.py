@@ -21,7 +21,7 @@ load_dotenv()
 class Config:
     """Main configuration class."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.github = GitHubConfig(
             app_name=os.getenv("APP_NAME_GITHUB", ""),
             app_id=os.getenv("APP_CLIENT_ID_GITHUB", ""),

@@ -41,7 +41,7 @@ async def github_webhook_endpoint(
     request: Request,
     is_verified: bool = Depends(verify_github_signature),
     dispatcher_instance: WebhookDispatcher = Depends(get_dispatcher),
-):
+) -> WebhookResponse:
     """
     This endpoint receives all events from a configured GitHub App.
 
@@ -51,8 +51,9 @@ async def github_webhook_endpoint(
       correct application service.
     """
     # Signature check handled by dependency—fail fast if invalid.
+    from typing import Any, cast
 
-    payload = await request.json()
+    payload = cast("dict[str, Any]", await request.json())
     event_name = request.headers.get("X-GitHub-Event")
 
     # Parse and validate incoming event payload

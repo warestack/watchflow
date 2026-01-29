@@ -26,7 +26,7 @@ from src.agents.engine_agent.nodes import (
     select_validation_strategy,
     validate_violations,
 )
-from src.rules.validators import get_validator_descriptions
+from src.rules.registry import AVAILABLE_CONDITIONS
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +48,10 @@ class RuleEngineAgent(BaseAgent):
         self.timeout = timeout
 
         logger.info("🔧 Rule Engine agent initializing...")
-        logger.info(f"🔧 Available validators: {list(get_validator_descriptions())}")
+        logger.info(f"🔧 Available validators: {len(AVAILABLE_CONDITIONS)}")
         logger.info("🔧 Validation strategy: Hybrid (validators + LLM fallback)")
 
-    def _build_graph(self) -> StateGraph:
+    def _build_graph(self) -> Any:
         """Build the LangGraph workflow for hybrid rule evaluation."""
         workflow = StateGraph(EngineState)
 
@@ -181,24 +181,41 @@ class RuleEngineAgent(BaseAgent):
                 metadata={"execution_time_ms": execution_time * 1000, "error_type": type(e).__name__},
             )
 
-    def _convert_rules_to_descriptions(self, rules: list[dict[str, Any]]) -> list[RuleDescription]:
-        """Convert rule dictionaries to RuleDescription objects without id/name dependency."""
+    def _convert_rules_to_descriptions(self, rules: list[Any]) -> list[RuleDescription]:
+        """Convert rules to RuleDescription objects without id/name dependency."""
         rule_descriptions = []
 
         for rule in rules:
-            # Extract rule description from various possible fields
-            description = (
-                rule.get("description") or rule.get("name") or rule.get("rule_description") or "Rule with parameters"
-            )
+            # Handle Rule objects (preferred) or dicts (legacy/fallback)
+            if hasattr(rule, "description"):
+                # It's a Rule object (or similar)
+                description = rule.description
+                parameters = rule.parameters
+                conditions = getattr(rule, "conditions", [])
+                event_types = [et.value if hasattr(et, "value") else str(et) for et in rule.event_types]
+                severity = str(rule.severity.value) if hasattr(rule.severity, "value") else str(rule.severity)
+            else:
+                # It's a dict
+                description = (
+                    rule.get("description")
+                    or rule.get("name")
+                    or rule.get("rule_description")
+                    or "Rule with parameters"
+                )
+                parameters = rule.get("parameters", {})
+                conditions = []  # Dicts don't have attached conditions
+                event_types = rule.get("event_types", [])
+                severity = rule.get("severity", "medium")
 
             rule_description = RuleDescription(
                 description=description,
-                parameters=rule.get("parameters", {}),
-                event_types=rule.get("event_types", []),
-                severity=rule.get("severity", "medium"),
-                validation_strategy=ValidationStrategy.HYBRID,  # Will be determined by LLM
+                parameters=parameters,
+                event_types=event_types,
+                severity=severity,
+                validation_strategy=ValidationStrategy.HYBRID,  # Will be determined by LLM or conditions
                 validator_name=None,  # Will be selected by LLM
                 fallback_to_llm=True,
+                conditions=conditions,
             )
 
             rule_descriptions.append(rule_description)
@@ -209,16 +226,13 @@ class RuleEngineAgent(BaseAgent):
         """Get validator descriptions from the validators themselves."""
         validator_descriptions = []
 
-        # Get descriptions from validators
-        raw_descriptions = get_validator_descriptions()
-
-        for desc in raw_descriptions:
+        for condition_cls in AVAILABLE_CONDITIONS:
             validator_desc = ValidatorDescription(
-                name=desc["name"],
-                description=desc["description"],
-                parameter_patterns=desc["parameter_patterns"],
-                event_types=desc["event_types"],
-                examples=desc["examples"],
+                name=condition_cls.name,
+                description=condition_cls.description,
+                parameter_patterns=condition_cls.parameter_patterns,
+                event_types=condition_cls.event_types,
+                examples=condition_cls.examples,
             )
             validator_descriptions.append(validator_desc)
 

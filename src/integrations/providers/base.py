@@ -11,7 +11,7 @@ from typing import Any
 class BaseProvider(ABC):
     """Base class for providers."""
 
-    def __init__(self, model: str, max_tokens: int = 4096, temperature: float = 0.1, **kwargs):
+    def __init__(self, model: str, max_tokens: int = 4096, temperature: float = 0.1, **kwargs: "Any") -> None:
         self.model = model
         self.max_tokens = max_tokens
         self.temperature = temperature

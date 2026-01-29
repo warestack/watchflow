@@ -1,5 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
+from typing import Any
 
 import structlog
 from fastapi import FastAPI
@@ -27,9 +28,6 @@ from src.webhooks.handlers.pull_request import PullRequestEventHandler
 from src.webhooks.handlers.push import PushEventHandler
 from src.webhooks.router import router as webhook_router
 
-# --- Application Setup ---
-
-# Configure structlog for JSON logging (Phase 5: Observability)
 structlog.configure(
     processors=[
         structlog.contextvars.merge_contextvars,
@@ -43,13 +41,13 @@ structlog.configure(
     cache_logger_on_first_use=False,
 )
 
-# Silence noisy libraries (Phase 5: Production readiness)
+
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("aiohttp").setLevel(logging.WARNING)
 
-# Set root logger to configured level
+
 logging.basicConfig(
     level=getattr(logging, config.logging.level),
     format="%(message)s",  # structlog handles formatting
@@ -57,18 +55,15 @@ logging.basicConfig(
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
+async def lifespan(_app: FastAPI) -> Any:
     """Application lifespan manager for startup and shutdown logic."""
-    # Startup logic
+
     logging.info("Watchflow application starting up...")
 
-    # Start background task workers
     await task_queue.start_workers(num_workers=5)
 
-    # Start deployment scheduler
     await get_deployment_scheduler().start()
 
-    # Register event handlers
     pull_request_handler = PullRequestEventHandler()
     push_handler = PushEventHandler()
     check_run_handler = CheckRunEventHandler()
@@ -91,13 +86,10 @@ async def lifespan(_app: FastAPI):
 
     yield
 
-    # Shutdown logic
     logging.info("Watchflow application shutting down...")
 
-    # Stop deployment scheduler
     await get_deployment_scheduler().stop()
 
-    # Stop background workers
     await task_queue.stop_workers()
 
     logging.info("Background workers and deployment scheduler stopped.")
@@ -121,7 +113,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Include Routers ---
 
 app.include_router(webhook_router, prefix="/webhooks", tags=["GitHub Webhooks"])
 app.include_router(rules_api_router, prefix="/api/v1", tags=["Public API"])
@@ -130,41 +121,29 @@ app.include_router(auth_api_router, prefix="/api/v1", tags=["Authentication API"
 app.include_router(repos_api_router, prefix="/api/v1", tags=["Repositories API"])
 app.include_router(scheduler_api_router, prefix="/api/v1/scheduler", tags=["Scheduler API"])
 
-# --- Root Endpoint ---
-
 
 @app.get("/", tags=["Health Check"])
-async def read_root():
+async def read_root() -> dict[str, str]:
     """A simple health check endpoint to confirm the service is running."""
     return {"status": "ok", "message": "Watchflow agents are running."}
 
 
-# --- Health Check Endpoints ---
-
-
 @app.get("/health/tasks", tags=["Health Check"])
-async def health_tasks():
-    """Check the status of background tasks."""
-    tasks = task_queue.tasks.values()
-    pending_count = sum(1 for t in tasks if t.status.value == "pending")
-    running_count = sum(1 for t in tasks if t.status.value == "running")
-    completed_count = sum(1 for t in tasks if t.status.value == "completed")
-    failed_count = sum(1 for t in tasks if t.status.value == "failed")
-
+async def health_tasks() -> dict[str, Any]:
+    """Check the status of the task queue."""
+    stats = task_queue.get_stats()
     return {
-        "task_queue_status": "running",
-        "workers": len(task_queue.workers),
-        "tasks": {
-            "pending": pending_count,
-            "running": running_count,
-            "completed": completed_count,
-            "failed": failed_count,
-            "total": len(tasks),
+        "task_queue_status": "running" if task_queue.workers else "stopped",
+        "workers": stats["worker_count"],
+        "queue_size": stats["queue_size"],
+        "dedup_cache": {
+            "size": stats["dedup_cache_size"],
+            "max_size": stats["dedup_cache_max"],
         },
     }
 
 
 @app.get("/health/scheduler", tags=["Health Check"])
-async def health_scheduler():
+async def health_scheduler() -> dict[str, Any]:
     """Check the status of the deployment scheduler."""
     return get_deployment_scheduler().get_status()

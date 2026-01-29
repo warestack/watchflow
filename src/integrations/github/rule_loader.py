@@ -7,7 +7,7 @@ Loads rules from GitHub repository files, implementing the RuleLoader interface.
 from typing import Any
 
 import structlog
-import yaml
+import yaml  # type: ignore
 
 from src.core.config import config
 from src.core.models import EventType

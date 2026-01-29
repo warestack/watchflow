@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 @pytest.mark.asyncio
-async def test_acknowledgment_agent():
+async def test_acknowledgment_agent() -> None:
     """Test the intelligent acknowledgment agent with sample data."""
 
     # Create agent

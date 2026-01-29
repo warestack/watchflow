@@ -11,7 +11,7 @@ from datetime import datetime
 from functools import wraps
 from typing import Any
 
-from cachetools import TTLCache
+from cachetools import TTLCache  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +140,7 @@ def cached_async(
     key_func: Callable[..., str] | None = None,
     ttl: int | None = None,
     maxsize: int = 100,
-):
+) -> Any:
     """
     Decorator for caching async function results.
 

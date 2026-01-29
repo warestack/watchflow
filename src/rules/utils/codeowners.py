@@ -128,7 +128,7 @@ class CodeOwnersParser:
         # Exact match
         return f"^{re.escape(pattern)}$"
 
-    def get_critical_files(self, critical_owners: list[str] = None) -> list[str]:
+    def get_critical_files(self, critical_owners: list[str] | None = None) -> list[str]:
         """
         Get a list of file patterns that are considered critical.
 
@@ -205,7 +205,7 @@ def get_file_owners(file_path: str, repo_path: str = ".") -> list[str]:
     return parser.get_owners_for_file(file_path)
 
 
-def is_critical_file(file_path: str, repo_path: str = ".", critical_owners: list[str] = None) -> bool:
+def is_critical_file(file_path: str, repo_path: str = ".", critical_owners: list[str] | None = None) -> bool:
     """
     Check if a file is considered critical based on CODEOWNERS.
 

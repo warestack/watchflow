@@ -1,7 +1,6 @@
 import logging
-from typing import Any
 
-from src.core.models import EventType, WebhookEvent
+from src.core.models import EventType, WebhookEvent, WebhookResponse
 from src.tasks.task_queue import task_queue
 from src.webhooks.handlers.base import EventHandler
 
@@ -14,7 +13,7 @@ class DeploymentStatusEventHandler(EventHandler):
     async def can_handle(self, event: WebhookEvent) -> bool:
         return event.event_type == EventType.DEPLOYMENT_STATUS
 
-    async def handle(self, event: WebhookEvent) -> dict[str, Any]:
+    async def handle(self, event: WebhookEvent) -> WebhookResponse:
         """Handle deployment_status events."""
         payload = event.payload
         repo_full_name = event.repo_full_name
@@ -22,7 +21,7 @@ class DeploymentStatusEventHandler(EventHandler):
 
         if not installation_id:
             logger.error(f"No installation ID found in deployment_status event for {repo_full_name}")
-            return {"status": "error", "message": "Missing installation ID"}
+            return WebhookResponse(status="error", detail="Missing installation ID")
 
         # Extract status—fragile if GitHub changes payload structure.
         deployment_status = payload.get("deployment_status", {})
@@ -33,8 +32,11 @@ class DeploymentStatusEventHandler(EventHandler):
         logger.info(f"   State: {state}")
         logger.info(f"   Environment: {deployment.get('environment', 'unknown')}")
 
-        # Enqueue: async, may fail if queue overloaded.
+        from src.event_processors.deployment_status import DeploymentStatusProcessor
+
+        # ... existing code ...
         task_id = await task_queue.enqueue(
+            DeploymentStatusProcessor().process,
             event_type="deployment_status",
             repo_full_name=repo_full_name,
             installation_id=installation_id,
@@ -43,8 +45,8 @@ class DeploymentStatusEventHandler(EventHandler):
 
         logger.info(f"✅ Deployment status event enqueued with task ID: {task_id}")
 
-        return {
-            "status": "success",
-            "message": f"Deployment status event for {repo_full_name} enqueued successfully",
-            "task_id": task_id,
-        }
+        return WebhookResponse(
+            status="ok",
+            detail=f"Deployment status event for {repo_full_name} enqueued successfully",
+            event_type=EventType.DEPLOYMENT_STATUS,
+        )

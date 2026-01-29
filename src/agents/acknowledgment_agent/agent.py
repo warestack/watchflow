@@ -33,7 +33,7 @@ class AcknowledgmentAgent(BaseAgent):
         self.timeout = timeout
         logger.info(f"🧠 Acknowledgment agent initialized with timeout: {timeout}s")
 
-    def _build_graph(self) -> StateGraph:
+    def _build_graph(self) -> Any:
         """
         Build a simple LangGraph workflow for acknowledgment evaluation.
         Since this agent is primarily LLM-based, we create a minimal graph.
@@ -51,7 +51,7 @@ class AcknowledgmentAgent(BaseAgent):
 
         return workflow.compile()
 
-    async def _evaluate_node(self, state):
+    async def _evaluate_node(self, state: Any) -> AgentResult:
         """Node function for LangGraph workflow."""
         try:
             result = await self.evaluate_acknowledgment(

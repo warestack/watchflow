@@ -1,8 +1,7 @@
 import structlog
 
-from src.core.models import WebhookEvent
+from src.core.models import EventType, WebhookEvent, WebhookResponse
 from src.webhooks.handlers.base import EventHandler
-from src.webhooks.models import WebhookResponse
 
 logger = structlog.get_logger()
 
@@ -31,12 +30,14 @@ class PushEventHandler(EventHandler):
             # Handler is thin—just logs and confirms readiness
             log.info("push_ready_for_processing")
 
-            return WebhookResponse(status="success", detail="Push handler executed", event_type="push")
+            return WebhookResponse(status="ok", detail="Push handler executed", event_type=EventType.PUSH)
 
         except ImportError:
             # Deployment processor may not exist yet
             log.warning("deployment_processor_not_found")
-            return WebhookResponse(status="success", detail="Push acknowledged (no processor)", event_type="push")
+            return WebhookResponse(status="ok", detail="Push acknowledged (no processor)", event_type=EventType.PUSH)
         except Exception as e:
             log.error("push_processing_failed", error=str(e), exc_info=True)
-            return WebhookResponse(status="error", detail=f"Push processing failed: {str(e)}", event_type="push")
+            return WebhookResponse(
+                status="error", detail=f"Push processing failed: {str(e)}", event_type=EventType.PUSH
+            )

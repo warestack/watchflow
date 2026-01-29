@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class DeploymentReviewProcessor(BaseEventProcessor):
     """Processor for deployment review events using hybrid agentic rule evaluation."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Call super class __init__ first
         super().__init__()
 
@@ -58,7 +58,17 @@ class DeploymentReviewProcessor(BaseEventProcessor):
             )
 
         # Fetch rules
-        rules = await self.rule_provider.get_rules(task.repo_full_name, task.installation_id)
+        if not task.installation_id:
+            logger.error("No installation ID found in task")
+            return ProcessingResult(
+                success=False,
+                violations=[],
+                api_calls_made=0,
+                processing_time_ms=int((time.time() - start_time) * 1000),
+                error="No installation ID found",
+            )
+        rules_optional = await self.rule_provider.get_rules(task.repo_full_name, task.installation_id)
+        rules = rules_optional if rules_optional is not None else []
 
         # Filter rules for deployment_review events
         deployment_review_rules = []
@@ -109,11 +119,11 @@ class DeploymentReviewProcessor(BaseEventProcessor):
             processing_time_ms=int((time.time() - start_time) * 1000),
         )
 
-    async def prepare_webhook_data(self, task) -> dict[str, Any]:
+    async def prepare_webhook_data(self, task: Task) -> dict[str, Any]:
         """Extract data available in webhook payload."""
         return task.payload
 
-    async def prepare_api_data(self, task) -> dict[str, Any]:
+    async def prepare_api_data(self, task: Task) -> dict[str, Any]:
         """Fetch data not available in webhook."""
         return {}
 
@@ -142,12 +152,12 @@ class DeploymentReviewProcessor(BaseEventProcessor):
         return formatted_rules
 
     @staticmethod
-    def _format_violation_comment(violations):
+    def _format_violations_for_comment(violations: list[dict[str, Any]]) -> str:
         lines = []
         for v in violations:
-            emoji = "❌" if v.get("severity", "high") in ("critical", "high") else "⚠️"
+            emoji = "⚠️" if v.get("severity") == "low" else "🚨"
             lines.append(
-                f"{emoji} **Rule Violated:** {v.get('rule', v.get('id', 'Unknown'))}\n"
+                f"{emoji} **Rule Violated:** `{v.get('rule_id', 'N/A')}`\n"
                 f"**Severity:** {v.get('severity', 'high').capitalize()}\n"
                 f"**Message:** {v.get('message', '')}\n"
                 f"**How to fix:** {v.get('suggestion', 'See documentation.')}\n"

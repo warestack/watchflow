@@ -23,6 +23,8 @@ class OpenAIProvider(BaseProvider):
 
         return ChatOpenAI(
             model=self.model,
+            # mypy complains about max_tokens but it is valid for ChatOpenAI
+            # type: ignore[call-arg]
             max_tokens=self.max_tokens,
             temperature=self.temperature,
             api_key=self.kwargs.get("api_key"),

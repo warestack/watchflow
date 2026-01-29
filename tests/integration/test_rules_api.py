@@ -60,10 +60,10 @@ class TestRulesAPIIntegration:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["supported"] is True
-        assert len(data["snippet"]) > 0
-        assert "weekend" in data["snippet"].lower() or "saturday" in data["snippet"].lower()
-        assert len(data["feedback"]) > 0
+        assert data["data"]["supported"] is True
+        assert len(data["data"]["snippet"]) > 0
+        assert "weekend" in data["data"]["snippet"].lower() or "saturday" in data["data"]["snippet"].lower()
+        assert len(data["message"]) > 0
 
     def test_evaluate_unfeasible_rule_integration(self, client):
         """Test unfeasible rule evaluation through the complete stack (mocked OpenAI)."""
@@ -104,9 +104,9 @@ class TestRulesAPIIntegration:
         data = response.json()
         # Note: For mocked tests, we control the response, for real API this might vary
         if os.getenv("INTEGRATION_TEST_REAL_API", "false").lower() != "true":
-            assert data["supported"] is False
-            assert data["snippet"] == ""
-        assert len(data["feedback"]) > 0
+            assert data["data"]["supported"] is False
+            assert data["data"]["snippet"] == ""
+        assert len(data["message"]) > 0
 
     def test_evaluate_rule_missing_text_integration(self, client):
         """Test API validation for missing rule text (no external API calls needed)."""

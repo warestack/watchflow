@@ -8,6 +8,7 @@ import time
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from src.agents.base import AgentResult, BaseAgent
 from src.agents.feasibility_agent.models import FeasibilityState
@@ -32,7 +33,7 @@ class RuleFeasibilityAgent(BaseAgent):
         self.timeout = timeout
         logger.info(f"🔧 FeasibilityAgent initialized with max_retries={max_retries}, timeout={timeout}s")
 
-    def _build_graph(self) -> StateGraph:
+    def _build_graph(self) -> CompiledStateGraph:
         """Build the LangGraph workflow for rule feasibility checking."""
         workflow = StateGraph(FeasibilityState)
 

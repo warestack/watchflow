@@ -53,4 +53,4 @@ def test_proceed_with_pr_requires_auth(monkeypatch):
     payload = {"repository_full_name": "owner/repo", "rules_yaml": "description: sample\nenabled: true"}
 
     response = client.post("/api/v1/rules/recommend/proceed-with-pr", json=payload)
-    assert response.status_code == 400
+    assert response.status_code == 401

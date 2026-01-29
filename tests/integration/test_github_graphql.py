@@ -6,7 +6,7 @@ from src.integrations.github.graphql import GitHubGraphQLClient
 
 
 @pytest.mark.asyncio
-async def test_execute_query_success():
+async def test_execute_query_success() -> None:
     token = "test_token"
     client = GitHubGraphQLClient(token)
     query = "query { viewer { login } }"
@@ -22,11 +22,11 @@ async def test_execute_query_success():
 
 
 @pytest.mark.asyncio
-async def test_execute_query_unauthorized():
+async def test_execute_query_unauthorized() -> None:
     token = "invalid_token"
     client = GitHubGraphQLClient(token)
     query = "query { viewer { login } }"
-    variables = {}
+    variables: dict[str, str] = {}
 
     async with respx.mock:
         respx.post("https://api.github.com/graphql").mock(

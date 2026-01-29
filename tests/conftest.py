@@ -5,6 +5,7 @@ Global Pytest configuration.
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -18,7 +19,7 @@ if str(SRC) not in sys.path:
 # 2. Helper for environment mocking
 class Helpers:
     @staticmethod
-    def mock_env(env_vars):
+    def mock_env(env_vars) -> "Any":
         from unittest.mock import patch
 
         return patch.dict(os.environ, env_vars)

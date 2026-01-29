@@ -5,6 +5,7 @@ from typing import Any
 import structlog
 from fastapi import APIRouter, HTTPException, status
 
+from src.core.config import config
 from src.integrations.github.api import github_client
 
 logger = structlog.get_logger()
@@ -24,16 +25,35 @@ async def check_installation(owner: str, repo: str) -> dict[str, Any]:
     repo_full_name = f"{owner}/{repo}"
 
     try:
-        repo_data = await github_client.get_repository(repo_full_name=repo_full_name)
-        if not repo_data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Repository '{repo_full_name}' not found or access denied.",
-            )
-
-        # TODO: Implement via GitHub App API /app/installations endpoint
+        # We need to find the installation for this repo
         # Requires app JWT authentication to query installations
-        return {"installed": False, "message": "Installation check not yet implemented."}
+
+        jwt_token = github_client._generate_jwt()
+        headers = {
+            "Authorization": f"Bearer {jwt_token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        url = f"{config.github.api_base_url}/repos/{owner}/{repo}/installation"
+
+        session = await github_client._get_session()
+        async with session.get(url, headers=headers) as response:
+            if response.status == 200:
+                installation = await response.json()
+                return {
+                    "installed": True,
+                    "installation_id": installation.get("id"),
+                    "permissions": installation.get("permissions", {}),
+                    "message": "Installation found",
+                }
+            elif response.status == 404:
+                return {"installed": False, "message": "App not installed on this repository"}
+            else:
+                error_text = await response.text()
+                logger.error("installation_check_failed", repo=repo_full_name, status=response.status, error=error_text)
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to check installation: {error_text}",
+                )
 
     except HTTPException:
         raise

@@ -2,11 +2,13 @@
 Core error classes for the Watchflow application.
 """
 
+from typing import Any
+
 
 class GitHubGraphQLError(Exception):
     """Raised when GitHub GraphQL API returns errors in the response."""
 
-    def __init__(self, errors):
+    def __init__(self, errors: list[dict[str, Any]]) -> None:
         self.errors = errors
         super().__init__(f"GraphQL errors: {errors}")
 

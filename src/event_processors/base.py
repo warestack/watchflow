@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from src.core.models import WebhookEvent
+from src.core.models import Violation, WebhookEvent
 from src.integrations.github import github_client
 from src.rules.interface import RuleLoader
 from src.rules.loaders.github_loader import GitHubRuleLoader
@@ -17,7 +17,7 @@ class ProcessingResult(BaseModel):
     """Result of event processing."""
 
     success: bool
-    violations: list[dict[str, Any]] = Field(default_factory=list)
+    violations: list[Violation] = Field(default_factory=list)
     api_calls_made: int
     processing_time_ms: int
     error: str | None = None
@@ -26,7 +26,7 @@ class ProcessingResult(BaseModel):
 class BaseEventProcessor(ABC):
     """Base class for all event processors."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.rule_provider = self._get_rule_provider()
         self.github_client = github_client
 

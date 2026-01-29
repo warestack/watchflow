@@ -54,14 +54,29 @@ def test_rule_recommendation_schema():
 
 
 def test_analysis_response_structure():
-    """Verify AnalysisResponse separates rules and reasonings."""
-    rules = [RuleConfig(description="d1", severity="info", event_types=["pr"], parameters={})]
+    """Verify AnalysisResponse structure matches API expectations."""
+    import yaml
+
+    # Create rule config
+    rule_config = RuleConfig(description="d1", severity="info", event_types=["pr"], parameters={})
+
+    # Create rules YAML as the API expects
+    rules_output = {"rules": [rule_config.model_dump(exclude_none=True)]}
+    rules_yaml = yaml.dump(rules_output, indent=2, sort_keys=False)
+
     reasonings = {"rule1": "reason1"}
 
+    # Create response with actual API structure
     response = AnalysisResponse(
-        rules=rules, rule_reasonings=reasonings, analysis_summary="summary", immune_system_metrics={"score": 0.9}
+        rules_yaml=rules_yaml,
+        pr_plan={"title": "Test PR", "body": "Test body"},
+        analysis_summary={"score": 0.9},
+        rule_reasonings=reasonings,
     )
 
-    assert len(response.rules) == 1
+    assert response.rules_yaml is not None
+    assert "description: d1" in response.rules_yaml
     assert response.rule_reasonings["rule1"] == "reason1"
-    assert "reasoning" not in response.rules[0].model_dump()
+    # Verify that rules in YAML don't contain reasoning field
+    parsed_yaml = yaml.safe_load(response.rules_yaml)
+    assert "reasoning" not in parsed_yaml["rules"][0]

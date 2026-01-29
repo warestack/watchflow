@@ -1,8 +1,7 @@
 import structlog
 
-from src.core.models import WebhookEvent
+from src.core.models import EventType, WebhookEvent, WebhookResponse
 from src.webhooks.handlers.base import EventHandler
-from src.webhooks.models import WebhookResponse
 
 logger = structlog.get_logger()
 
@@ -34,8 +33,12 @@ class PullRequestEventHandler(EventHandler):
             # For now, log that we're ready to process
             log.info("pr_ready_for_processing")
 
-            return WebhookResponse(status="success", detail="Pull request handler executed", event_type="pull_request")
+            return WebhookResponse(
+                status="ok", detail="Pull request handler executed", event_type=EventType.PULL_REQUEST
+            )
 
         except Exception as e:
             log.error("pr_processing_failed", error=str(e), exc_info=True)
-            return WebhookResponse(status="error", detail=f"PR processing failed: {str(e)}", event_type="pull_request")
+            return WebhookResponse(
+                status="error", detail=f"PR processing failed: {str(e)}", event_type=EventType.PULL_REQUEST
+            )

@@ -37,7 +37,9 @@ async def get_current_user_optional(request: Request) -> User | None:
 
         # Open-source version: Pass token through without validation (users provide their own GitHub tokens).
         # No external dependencies - token validation would require IdP integration.
-        return User(id=123, username="authenticated_user", email="user@example.com", github_token=token)
+        from pydantic import SecretStr
+
+        return User(id=123, username="authenticated_user", email="user@example.com", github_token=SecretStr(token))
     except Exception as e:
         logger.warning(f"Failed to parse auth header: {e}")
         return None

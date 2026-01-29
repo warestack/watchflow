@@ -159,11 +159,11 @@ class TestWebhookResponse:
 
     def test_minimal_response(self) -> None:
         """Test response with only required fields."""
-        response = WebhookResponse(status="queued")
+        response = WebhookResponse(status="queued", detail="Event queued", event_type="pull_request")
 
         assert response.status == "queued"
-        assert response.detail is None
-        assert response.event_type is None
+        assert response.detail == "Event queued"
+        assert response.event_type == "pull_request"
 
     def test_error_response(self) -> None:
         """Test error response with detail."""

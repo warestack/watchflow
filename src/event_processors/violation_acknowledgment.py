@@ -1,30 +1,36 @@
 import logging
-import re
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.agents import get_agent
-from src.core.models import EventType
+from src.core.models import Acknowledgment, EventType, Violation
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
+from src.integrations.github.check_runs import CheckRunManager
+from src.rules.acknowledgment import extract_acknowledgment_reason
 from src.tasks.task_queue import Task
+
+if TYPE_CHECKING:
+    from src.agents.acknowledgment_agent.agent import AcknowledgmentAgent
 
 logger = logging.getLogger(__name__)
 
 # Add at the top
-acknowledged_prs = set()
+acknowledged_prs: set[str] = set()
 
 
 class ViolationAcknowledgmentProcessor(BaseEventProcessor):
     """Processor for violation acknowledgment events using intelligent agentic evaluation."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Call super class __init__ first
         super().__init__()
 
         # Create instance of hybrid RuleEngineAgent for rule evaluation
         self.engine_agent = get_agent("engine")
         # Create instance of intelligent AcknowledgmentAgent for acknowledgment evaluation
-        self.acknowledgment_agent = get_agent("acknowledgment")
+
+        self.acknowledgment_agent: AcknowledgmentAgent = get_agent("acknowledgment")  # type: ignore[assignment]
+        self.check_run_manager = CheckRunManager(self.github_client)
 
     def get_event_type(self) -> str:
         return "violation_acknowledgment"
@@ -44,6 +50,11 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             pr_number = issue.get("number")
             comment_body = event_data.get("comment", {}).get("body", "")
             commenter = event_data.get("comment", {}).get("user", {}).get("login")
+
+            # Helper to get SHA efficiently without full PR fetch if possible,
+            # but we need PR data anyway later.
+            pr_data: dict[str, Any] = {}
+            sha = ""
 
             logger.info("=" * 80)
             logger.info(f"🔍 Processing VIOLATION ACKNOWLEDGMENT for {repo}#{pr_number}")
@@ -95,7 +106,20 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
                 )
 
             # Get current PR data and violations
-            pr_data = await self.github_client.get_pull_request(repo, pr_number, installation_id)
+            pr_data_optional = await self.github_client.get_pull_request(repo, pr_number, installation_id)
+            if not pr_data_optional:
+                logger.error(f"❌ Failed to get PR data for {repo}#{pr_number}")
+                return ProcessingResult(
+                    success=False,
+                    violations=[],
+                    api_calls_made=api_calls,
+                    processing_time_ms=int((time.time() - start_time) * 1000),
+                    error="Failed to get PR data",
+                )
+            pr_data = pr_data_optional
+            if pr_data:
+                sha = pr_data.get("head", {}).get("sha")
+
             api_calls += 1
 
             # Get PR files for better analysis
@@ -138,34 +162,18 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             )
 
             # Extract violations from AgentResult
-            all_violations = []
+            all_violations: list[Violation] = []
             if analysis_result.data and "evaluation_result" in analysis_result.data:
                 eval_result = analysis_result.data["evaluation_result"]
                 if hasattr(eval_result, "violations"):
-                    # Convert RuleViolation objects to dictionaries
-                    all_violations = []
-                    for violation in eval_result.violations:
-                        violation_dict = {
-                            "rule_description": violation.rule_description,
-                            "severity": violation.severity,
-                            "message": violation.message,
-                            "details": violation.details,
-                            "how_to_fix": violation.how_to_fix,
-                            "docs_url": violation.docs_url,
-                            "validation_strategy": violation.validation_strategy.value
-                            if hasattr(violation.validation_strategy, "value")
-                            else violation.validation_strategy,
-                            "execution_time_ms": violation.execution_time_ms,
-                        }
-                        all_violations.append(violation_dict)
+                    # Use objects directly
+                    all_violations = list(eval_result.violations)
 
             logger.info(f"Found {len(all_violations)} total violations")
             for violation in all_violations:
-                logger.info(f"    • {violation.get('message', 'Unknown violation')}")
+                logger.info(f"    • {violation.message}")
 
             # Check if the analysis failed due to timeout or other issues
-            # Note: Rule Engine returns success=False when violations are found, which is correct
-            # We need to check if there's actual data to determine if the analysis worked
             if not analysis_result.data or "evaluation_result" not in analysis_result.data:
                 logger.warning(f"⚠️ Rule analysis failed: {analysis_result.message}")
                 await self._post_comment(
@@ -193,13 +201,10 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
                 api_calls += 1
 
                 # Update check run to reflect no violations
-                await self._update_check_run(
-                    repo=repo,
-                    pr_number=pr_number,
-                    acknowledgable_violations=[],
-                    require_fixes=[],
-                    installation_id=installation_id,
-                )
+                if sha:
+                    await self.check_run_manager.create_check_run(
+                        repo=repo, sha=sha, installation_id=installation_id, violations=[], conclusion="success"
+                    )
                 api_calls += 1
 
                 return ProcessingResult(
@@ -220,11 +225,14 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
 
             if evaluation_result["valid"]:
                 # Acknowledgment is valid - selectively approve violations and provide guidance
+                acknowledgable_violations = evaluation_result["acknowledgable_violations"]
+                require_fixes = evaluation_result["require_fixes"]
+
                 await self._approve_violations_selectively(
                     repo=repo,
                     pr_number=pr_number,
-                    acknowledgable_violations=evaluation_result["acknowledgable_violations"],
-                    require_fixes=evaluation_result["require_fixes"],
+                    acknowledgable_violations=acknowledgable_violations,
+                    require_fixes=require_fixes,
                     reason=acknowledgment_reason,
                     commenter=commenter,
                     installation_id=installation_id,
@@ -232,13 +240,23 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
                 api_calls += 1
 
                 # Update check run to reflect post-acknowledgment state
-                await self._update_check_run(
-                    repo=repo,
-                    pr_number=pr_number,
-                    acknowledgable_violations=evaluation_result["acknowledgable_violations"],
-                    require_fixes=evaluation_result["require_fixes"],
-                    installation_id=installation_id,
-                )
+                if sha:
+                    # Create Ack map
+                    acknowledgments = {
+                        v.rule_description: Acknowledgment(
+                            rule_id=v.rule_description, reason=acknowledgment_reason, commenter=commenter
+                        )
+                        for v in acknowledgable_violations
+                    }
+
+                    await self.check_run_manager.create_acknowledgment_check_run(
+                        repo=repo,
+                        sha=sha,
+                        installation_id=installation_id,
+                        acknowledgable_violations=acknowledgable_violations,
+                        violations=require_fixes,
+                        acknowledgments=acknowledgments,
+                    )
                 api_calls += 1
 
                 logger.info(f"✅ Acknowledgment accepted: {evaluation_result['reason']}")
@@ -262,9 +280,14 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             logger.info(f"    Status: {'accepted' if evaluation_result['valid'] else 'rejected'}")
             logger.info("=" * 80)
 
+            # Return typed objects, not model dumps
+            final_violations = []
+            if not evaluation_result["valid"]:
+                final_violations = evaluation_result["require_fixes"]
+
             return ProcessingResult(
                 success=True,
-                violations=evaluation_result["require_fixes"] if not evaluation_result["valid"] else [],
+                violations=final_violations,
                 api_calls_made=api_calls,
                 processing_time_ms=processing_time,
             )
@@ -298,45 +321,17 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
         return formatted_rules
 
     def _extract_acknowledgment_reason(self, comment_body: str) -> str:
-        """Extract acknowledgment reason from comment."""
-        logger.info(f"🔍 Extracting acknowledgment reason from: '{comment_body}'")
+        """Extract acknowledgment reason from comment.
 
-        # Look for acknowledgment patterns with better quote handling
-        patterns = [
-            r'@watchflow\s+(acknowledge|ack)\s+"([^"]+)"',  # Double quotes
-            r"@watchflow\s+(acknowledge|ack)\s+'([^']+)'",  # Single quotes
-            r"@watchflow\s+(acknowledge|ack)\s+([^\n\r]+)",  # No quotes, until end of line
-            r"@watchflow\s+override\s+(.+)",
-            r"@watchflow\s+bypass\s+(.+)",
-            r"/acknowledge\s+(.+)",
-            r"/override\s+(.+)",
-            r"/bypass\s+(.+)",
-        ]
-
-        for i, pattern in enumerate(patterns):
-            match = re.search(pattern, comment_body, re.IGNORECASE | re.DOTALL)
-            if match:
-                # For patterns with quotes, group 2 contains the reason
-                # For patterns without quotes, group 1 contains the reason
-                if pattern.endswith('"') or pattern.endswith("'"):
-                    reason = match.group(2).strip()
-                else:
-                    reason = match.group(1).strip()
-
-                logger.info(f"✅ Pattern {i + 1} matched! Reason: '{reason}'")
-                if reason:  # Make sure we got a non-empty reason
-                    return reason
-            else:
-                logger.info(f"❌ Pattern {i + 1} did not match")
-
-        logger.info("❌ No patterns matched for acknowledgment reason")
-        return ""
+        Delegates to centralized acknowledgment module.
+        """
+        return extract_acknowledgment_reason(comment_body)
 
     async def _evaluate_acknowledgment(
         self,
         acknowledgment_reason: str,
         pr_data: dict[str, Any],
-        violations: list[dict[str, Any]],
+        violations: list[Violation],
         commenter: str,
         rules: list[dict[str, Any]],
     ) -> dict[str, Any]:
@@ -352,7 +347,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             # Use the intelligent acknowledgment agent
             agent_result = await self.acknowledgment_agent.evaluate_acknowledgment(
                 acknowledgment_reason=acknowledgment_reason,
-                violations=violations,
+                violations=[v.model_dump() for v in violations],
                 pr_data=pr_data,
                 commenter=commenter,
                 rules=rules,
@@ -414,12 +409,12 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
         self,
         repo: str,
         pr_number: int,
-        acknowledgable_violations: list[dict[str, Any]],
-        require_fixes: list[dict[str, Any]],
+        acknowledgable_violations: list[Violation],
+        require_fixes: list[Violation],
         reason: str,
         commenter: str,
         installation_id: int,
-    ):
+    ) -> None:
         """Selectively approve violations and provide guidance for those that require fixes."""
         comment_parts = []
 
@@ -432,18 +427,9 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             comment_parts.append("The following violations have been overridden:")
 
             for violation in acknowledgable_violations:
-                if isinstance(violation, dict):
-                    # For acknowledged violations, show the actual violation message
-                    message = (
-                        violation.get("message")
-                        or violation.get("rule_message")
-                        or f"Rule '{violation.get('rule_description', 'Unknown Rule')}' validation failed"
-                    )
-                    comment_parts.append(f"• {message}")
-                else:
-                    # Handle dataclass-like objects
-                    message = getattr(violation, "message", "Rule violation detected")
-                    comment_parts.append(f"• {message}")
+                # Handle objects
+                message = getattr(violation, "message", "Rule violation detected")
+                comment_parts.append(f"• {message}")
 
             comment_parts.append("")
 
@@ -458,27 +444,16 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             comment_parts.append("")
 
             for violation in require_fixes:
-                if isinstance(violation, dict):
-                    rule_description = violation.get("rule_description", "Unknown Rule")
-                    message = violation.get("message", "Rule violation detected")
-                    how_to_fix = violation.get("how_to_fix", "")
+                # Handle objects
+                rule_description = getattr(violation, "rule_description", "Unknown Rule")
+                message = getattr(violation, "message", "Rule violation detected")
+                how_to_fix = getattr(violation, "how_to_fix", "")
 
-                    comment_parts.append(f"**{rule_description}**")
-                    comment_parts.append(f"• {message}")
-                    if how_to_fix:
-                        comment_parts.append(f"• **How to fix:** {how_to_fix}")
-                    comment_parts.append("")
-                else:
-                    # Handle dataclass-like objects
-                    rule_description = getattr(violation, "rule_description", "Unknown Rule")
-                    message = getattr(violation, "message", "Rule violation detected")
-                    how_to_fix = getattr(violation, "how_to_fix", "")
-
-                    comment_parts.append(f"**{rule_description}**")
-                    comment_parts.append(f"• {message}")
-                    if how_to_fix:
-                        comment_parts.append(f"• **How to fix:** {how_to_fix}")
-                    comment_parts.append("")
+                comment_parts.append(f"**{rule_description}**")
+                comment_parts.append(f"• {message}")
+                if how_to_fix:
+                    comment_parts.append(f"• **How to fix:** {how_to_fix}")
+                comment_parts.append("")
 
         comment_parts.append("*This acknowledgment was validated using intelligent analysis.*")
 
@@ -493,9 +468,9 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
         pr_number: int,
         reason: str,
         commenter: str,
-        require_fixes: list[dict[str, Any]],
+        require_fixes: list[Violation],
         installation_id: int,
-    ):
+    ) -> None:
         """Reject acknowledgment and explain why, showing violations that still need resolution."""
         comment_parts = []
 
@@ -518,27 +493,16 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             comment_parts.append("")
 
             for violation in require_fixes:
-                if isinstance(violation, dict):
-                    rule_description = violation.get("rule_description", "Unknown Rule")
-                    message = violation.get("message", "Rule violation detected")
-                    how_to_fix = violation.get("how_to_fix", "")
+                # Handle objects
+                rule_description = getattr(violation, "rule_description", "Unknown Rule")
+                message = getattr(violation, "message", "Rule violation detected")
+                how_to_fix = getattr(violation, "how_to_fix", "")
 
-                    comment_parts.append(f"**{rule_description}**")
-                    comment_parts.append(f"• {message}")
-                    if how_to_fix:
-                        comment_parts.append(f"• **How to fix:** {how_to_fix}")
-                    comment_parts.append("")
-                else:
-                    # Handle dataclass-like objects
-                    rule_description = getattr(violation, "rule_description", "Unknown Rule")
-                    message = getattr(violation, "message", "Rule violation detected")
-                    how_to_fix = getattr(violation, "how_to_fix", "")
-
-                    comment_parts.append(f"**{rule_description}**")
-                    comment_parts.append(f"• {message}")
-                    if how_to_fix:
-                        comment_parts.append(f"• **How to fix:** {how_to_fix}")
-                    comment_parts.append("")
+                comment_parts.append(f"**{rule_description}**")
+                comment_parts.append(f"• {message}")
+                if how_to_fix:
+                    comment_parts.append(f"• **How to fix:** {how_to_fix}")
+                comment_parts.append("")
 
         comment_parts.append("*This acknowledgment was validated using intelligent analysis.*")
 
@@ -547,114 +511,11 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             repo=repo, pr_number=pr_number, installation_id=installation_id, comment="\n".join(comment_parts)
         )
 
-    async def _post_comment(self, repo: str, pr_number: int, installation_id: int, comment: str):
+    async def _post_comment(self, repo: str, pr_number: int, installation_id: int, comment: str) -> None:
         """Post a comment on the PR."""
         await self.github_client.create_issue_comment(
             repo=repo, issue_number=pr_number, comment=comment, installation_id=installation_id
         )
-
-    async def _update_check_run(
-        self,
-        repo: str,
-        pr_number: int,
-        acknowledgable_violations: list[dict[str, Any]],
-        require_fixes: list[dict[str, Any]],
-        installation_id: int,
-    ):
-        """Update the check run to reflect the post-acknowledgment state."""
-        try:
-            # Get the PR to find the commit SHA
-            pr_data = await self.github_client.get_pull_request(repo, pr_number, installation_id)
-            sha = pr_data.get("head", {}).get("sha")
-
-            if not sha:
-                logger.warning("No commit SHA found, skipping check run update")
-                return
-
-            # The acknowledgable_violations and require_fixes are already passed as parameters
-            # No need to filter them again
-
-            # Determine check run status based on remaining violations
-            if require_fixes:
-                status = "completed"
-                conclusion = "failure"
-            else:
-                status = "completed"
-                conclusion = "success"
-
-            # Format output
-            output = self._format_check_run_output(acknowledgable_violations, require_fixes)
-
-            # Update the check run
-            result = await self.github_client.create_check_run(
-                repo=repo,
-                sha=sha,
-                name="Watchflow Rules",
-                status=status,
-                conclusion=conclusion,
-                output=output,
-                installation_id=installation_id,
-            )
-
-            if result:
-                logger.info(f"✅ Successfully updated check run for commit {sha[:8]} with conclusion: {conclusion}")
-            else:
-                logger.error(f"❌ Failed to update check run for commit {sha[:8]}")
-
-        except Exception as e:
-            logger.error(f"Error updating check run: {e}")
-
-    def _format_check_run_output(
-        self, acknowledgable_violations: list[dict[str, Any]], require_fixes: list[dict[str, Any]]
-    ) -> dict[str, Any]:
-        """Format violations for check run output after acknowledgment."""
-        if not require_fixes:
-            return {
-                "title": "All violations resolved",
-                "summary": "✅ All rule violations have been acknowledged or resolved",
-                "text": "All configured rules in `.watchflow/rules.yaml` have been satisfied through acknowledgment or fixes.",
-            }
-
-        # Build summary
-        summary = f"⚠️ {len(require_fixes)} violations require fixes"
-
-        # Build detailed text
-        text = "# Watchflow Rule Violations - Post Acknowledgment\n\n"
-
-        if acknowledgable_violations:
-            text += "## ✅ Acknowledged Violations\n\n"
-            for violation in acknowledgable_violations:
-                # Handle both old format (dict) and new format (dataclass-like dict)
-                if isinstance(violation, dict):
-                    rule_description = violation.get("rule_description", "Unknown Rule")
-                    validator = violation.get("validator", "unknown")
-                    text += f"• Rule '{rule_description}' was violated (validator: {validator})\n"
-                else:
-                    # Handle dataclass-like objects
-                    rule_description = getattr(violation, "rule_description", "Unknown Rule")
-                    text += f"• Rule '{rule_description}' was violated\n"
-            text += "\n"
-            text += "---\n\n"
-
-        text += "## ⚠️ Violations Requiring Fixes\n\n"
-
-        for violation in require_fixes:
-            # Handle both old format (dict) and new format (dataclass-like dict)
-            if isinstance(violation, dict):
-                rule_description = violation.get("rule_description", "Unknown Rule")
-                validator = violation.get("validator", "unknown")
-                text += f"• Rule '{rule_description}' was violated (validator: {validator})\n"
-            else:
-                # Handle dataclass-like objects
-                rule_description = getattr(violation, "rule_description", "Unknown Rule")
-                text += f"• Rule '{rule_description}' was violated\n"
-            text += "\n"
-
-        text += "---\n"
-        text += "*This check run was updated after violation acknowledgment.*\n"
-        text += "*To configure rules, edit the `.watchflow/rules.yaml` file in this repository.*"
-
-        return {"title": f"{len(require_fixes)} violations require fixes", "summary": summary, "text": text}
 
     # Required abstract methods
     async def prepare_webhook_data(self, task: Task) -> dict[str, Any]:
@@ -663,10 +524,9 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
 
     async def prepare_api_data(self, task: Task) -> dict[str, Any]:
         """Prepare data from GitHub API calls."""
-        # For acknowledgment, we don't need additional API data
         return {}
 
-    def _get_rule_provider(self):
+    def _get_rule_provider(self) -> Any:
         """Get the rule provider for this processor."""
         from src.rules.loaders.github_loader import github_rule_loader
 

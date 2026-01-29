@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 
-from src.core.models import WebhookEvent
-from src.webhooks.models import WebhookResponse
+from src.core.models import WebhookEvent, WebhookResponse
 
 
 class EventHandler(ABC):

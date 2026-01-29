@@ -37,7 +37,10 @@ class GitHubGraphQLClient:
                 )
                 response.raise_for_status()
 
-                return response.json()
+                data = response.json()
+                if not isinstance(data, dict):
+                    raise TypeError("Expected a dictionary from GraphQL API")
+                return data
 
         except httpx.HTTPStatusError as e:
             logger.error("graphql_request_failed", status=e.response.status_code)
