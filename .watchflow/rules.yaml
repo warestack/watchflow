@@ -1,35 +1,34 @@
 rules:
-  # Essential Open Source Rules
-  - description: "Pull requests must have descriptive titles following conventional commit format"
-    enabled: true
-    severity: "medium"
-    event_types: ["pull_request"]
-    parameters:
-      title_pattern: "^feat|^fix|^docs|^style|^refactor|^test|^chore|^perf|^ci|^build|^revert"
-
-  - description: "New contributors require approval from at least one past contributor"
-    enabled: true
-    severity: "medium"
-    event_types: ["pull_request"]
-    parameters:
-      min_past_contributors: 1
-
-  - description: "Code changes must include corresponding tests"
-    enabled: true
-    severity: "medium"
-    event_types: ["pull_request"]
-    parameters:
-      pattern: "tests/.*\\.py$|test_.*\\.py$"
-      condition_type: "files_match_pattern"
-
-  - description: "Changes to critical files require review from code owners"
-    enabled: true
-    severity: "high"
-    event_types: ["pull_request"]
-
-  - description: "No direct pushes to main branch - all changes must go through PRs"
-    enabled: true
-    severity: "critical"
-    event_types: ["push"]
-    parameters:
-      allow_force_push: false
+- description: Require PRs to include a reference to an existing issue by enforcing
+    required labels or title patterns that include issue numbers.
+  enabled: true
+  severity: high
+  event_types:
+  - pull_request
+  parameters:
+    required_labels:
+    - issue-linked
+    title_pattern: '^(feat|fix|docs|chore|refactor|test|style|perf|ci|build|revert)\(#[0-9]+\):
+      .+'
+- description: Enforce a maximum file size or diff size limit to keep PRs manageable
+    and reviewable.
+  enabled: true
+  severity: medium
+  event_types:
+  - pull_request
+  - push
+  parameters:
+    max_file_size_mb: 5
+    diff_pattern: ^.{0,500}$
+- description: Require PRs to include related tests and enforce presence of test files
+    or test-related changes in the diff.
+  enabled: true
+  severity: high
+  event_types:
+  - pull_request
+  parameters:
+    related_tests: true
+    required_field_in_diff:
+    - test
+    - spec
+    - coverage
