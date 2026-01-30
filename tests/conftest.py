@@ -60,3 +60,21 @@ def event_loop():
     loop = policy.new_event_loop()
     yield loop
     loop.close()
+
+
+@pytest.fixture(autouse=True)
+def mock_chat_model():
+    """
+    Globally mocks src.integrations.providers.factory.get_chat_model
+    to return a MagicMock instead of a real ChatOpenAI instance.
+    This ensures no network calls are attempted during test collection or execution.
+    """
+    from unittest.mock import MagicMock, patch
+
+    mock_model = MagicMock()
+    # Mock the invoke method to return a dummy response
+    mock_model.invoke.return_value.content = "Mocked LLM response"
+
+    # Patch the factory function
+    with patch("src.integrations.providers.factory.get_chat_model", return_value=mock_model) as mock:
+        yield mock

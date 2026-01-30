@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 import structlog
 
 from src.core.models import EventType, WebhookEvent, WebhookResponse
@@ -7,8 +9,11 @@ from src.webhooks.handlers.base import EventHandler
 
 logger = structlog.get_logger()
 
-# Instantiate processor once (singleton-like)
-pr_processor = PullRequestProcessor()
+
+# Instantiate processor once (singleton-like) but lazily
+@lru_cache(maxsize=1)
+def get_pr_processor() -> PullRequestProcessor:
+    return PullRequestProcessor()
 
 
 class PullRequestEventHandler(EventHandler):
@@ -42,7 +47,7 @@ class PullRequestEventHandler(EventHandler):
         try:
             # Enqueue the processing task
             enqueued = await task_queue.enqueue(
-                func=pr_processor.process,
+                func=get_pr_processor().process,
                 event_type="pull_request",
                 payload=event.payload,
             )
