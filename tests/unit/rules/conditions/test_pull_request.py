@@ -6,10 +6,80 @@ Tests for TitlePatternCondition, MinDescriptionLengthCondition, and RequiredLabe
 import pytest
 
 from src.rules.conditions.pull_request import (
+    MinApprovalsCondition,
     MinDescriptionLengthCondition,
     RequiredLabelsCondition,
     TitlePatternCondition,
 )
+
+
+class TestMinApprovalsCondition:
+    """Tests for MinApprovalsCondition class."""
+
+    @pytest.mark.asyncio
+    async def test_validate_sufficient_approvals(self) -> None:
+        """Test that validate returns True when enough approvals are present."""
+        condition = MinApprovalsCondition()
+
+        event = {
+            "reviews": [
+                {"state": "APPROVED"},
+                {"state": "APPROVED"},
+            ]
+        }
+
+        result = await condition.validate({"min_approvals": 2}, event)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_validate_insufficient_approvals(self) -> None:
+        """Test that validate returns False when not enough approvals."""
+        condition = MinApprovalsCondition()
+
+        event = {
+            "reviews": [
+                {"state": "APPROVED"},
+                {"state": "COMMENTED"},
+            ]
+        }
+
+        result = await condition.validate({"min_approvals": 2}, event)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_validate_no_reviews(self) -> None:
+        """Test that validate returns False when no reviews exist."""
+        condition = MinApprovalsCondition()
+        result = await condition.validate({"min_approvals": 1}, {})
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_evaluate_returns_violations(self) -> None:
+        """Test that evaluate returns violations for insufficient approvals."""
+        condition = MinApprovalsCondition()
+
+        event = {"reviews": [{"state": "APPROVED"}]}
+        context = {"parameters": {"min_approvals": 2}, "event": event}
+
+        violations = await condition.evaluate(context)
+        assert len(violations) == 1
+        assert "requires 2" in violations[0].message
+
+    @pytest.mark.asyncio
+    async def test_evaluate_returns_empty_when_sufficient(self) -> None:
+        """Test that evaluate returns empty list when sufficient approvals."""
+        condition = MinApprovalsCondition()
+
+        event = {
+            "reviews": [
+                {"state": "APPROVED"},
+                {"state": "APPROVED"},
+            ]
+        }
+        context = {"parameters": {"min_approvals": 2}, "event": event}
+
+        violations = await condition.evaluate(context)
+        assert len(violations) == 0
 
 
 class TestTitlePatternCondition:

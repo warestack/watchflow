@@ -31,7 +31,7 @@ class GitHubGraphQLClient:
         }
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
                     self.endpoint, json={"query": query, "variables": variables}, headers=headers
                 )

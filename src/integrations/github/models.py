@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Actor(BaseModel):
@@ -56,6 +56,7 @@ class FileConnection(BaseModel):
 
 
 class CommentConnection(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
     total_count: int = Field(alias="totalCount")
 
 

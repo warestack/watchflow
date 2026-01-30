@@ -165,6 +165,13 @@ async def execute_validator_evaluation(state: EngineState) -> dict[str, Any]:
                 # NEW: Use attached conditions
                 task = _execute_conditions(rule_desc, state.event_data)
                 validator_tasks.append(task)
+            else:
+                logger.error(
+                    f"❌ Rule '{rule_desc.description[:50]}...' set to VALIDATOR strategy but has no conditions attached."
+                )
+                state.analysis_steps.append(
+                    f"❌ Configuration Error: Rule '{rule_desc.description[:30]}...' has VALIDATOR strategy but no conditions."
+                )
 
         if validator_tasks:
             results = await asyncio.gather(*validator_tasks, return_exceptions=True)

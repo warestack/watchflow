@@ -252,3 +252,49 @@ class RequiredLabelsCondition(BaseCondition):
         )
 
         return is_valid
+
+
+class MinApprovalsCondition(BaseCondition):
+    """Validates if the PR has the minimum number of approvals."""
+
+    name = "min_approvals"
+    description = "Validates if the PR has the minimum number of approvals"
+    parameter_patterns = ["min_approvals"]
+    event_types = ["pull_request"]
+    examples = [{"min_approvals": 1}, {"min_approvals": 2}]
+
+    async def evaluate(self, context: Any) -> list[Violation]:
+        parameters = context.get("parameters", {})
+        event = context.get("event", {})
+
+        min_approvals = parameters.get("min_approvals", 1)
+        # Logic recovered from old watchflow: check explicit 'APPROVED' state
+        reviews = event.get("reviews", [])
+
+        approved_count = 0
+        for review in reviews:
+            if review.get("state") == "APPROVED":
+                approved_count += 1
+
+        if approved_count < min_approvals:
+            return [
+                Violation(
+                    rule_description=self.description,
+                    severity=Severity.MEDIUM,
+                    message=f"PR has {approved_count} approvals, requires {min_approvals}",
+                    how_to_fix=f"Get at least {min_approvals} approving reviews from eligible reviewers.",
+                )
+            ]
+        return []
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        """Legacy validation interface for backward compatibility."""
+        min_approvals = parameters.get("min_approvals", 1)
+        reviews = event.get("reviews", [])
+
+        approved_count = 0
+        for review in reviews:
+            if review.get("state") == "APPROVED":
+                approved_count += 1
+
+        return approved_count >= min_approvals

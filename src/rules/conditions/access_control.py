@@ -8,16 +8,11 @@ from typing import Any
 
 import structlog
 
+from src.core.constants import DEFAULT_TEAM_MEMBERSHIPS
 from src.core.models import Severity, Violation
 from src.rules.conditions.base import BaseCondition
 
 logger = structlog.get_logger(__name__)
-
-# TODO: Move to settings in next phase - hardcoded team memberships for demo only
-DEFAULT_TEAM_MEMBERSHIPS: dict[str, list[str]] = {
-    "devops": ["devops-user", "admin-user"],
-    "codeowners": ["senior-dev", "tech-lead"],
-}
 
 
 class AuthorTeamCondition(BaseCondition):
@@ -66,7 +61,7 @@ class AuthorTeamCondition(BaseCondition):
 
         logger.debug("Checking team membership", author=author_login, team=team_name)
 
-        # TODO: Replace with real GitHub API call—current logic for test/demo only.
+        # Use constants from src.core.constants
         team_memberships = DEFAULT_TEAM_MEMBERSHIPS
         is_member = author_login in team_memberships.get(team_name, [])
 
@@ -262,3 +257,42 @@ class ProtectedBranchesCondition(BaseCondition):
         )
 
         return not is_protected
+
+
+class NoForcePushCondition(BaseCondition):
+    """Validates that no force pushes are performed."""
+
+    name = "no_force_push"
+    description = "Validates that no force pushes are performed"
+    parameter_patterns = ["no_force_push"]
+    event_types = ["push"]
+
+    async def evaluate(self, context: Any) -> list[Violation]:
+        """Evaluate no force push condition.
+
+        Args:
+             context: Dict with 'parameters' and 'event' keys.
+
+        Returns:
+            List of violations if force push is detected.
+        """
+        event = context.get("event", {})
+        push_data = event.get("push", {})
+
+        is_forced = push_data.get("forced", False)
+
+        if is_forced:
+            return [
+                Violation(
+                    rule_description=self.description,
+                    severity=Severity.HIGH,
+                    message="Force push detected on protected branch",
+                    how_to_fix="Avoid force pushing to shared branches. Revert and push clean history.",
+                )
+            ]
+        return []
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        """Legacy validation interface."""
+        push_data = event.get("push", {})
+        return not push_data.get("forced", False)

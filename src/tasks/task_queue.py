@@ -70,7 +70,7 @@ class TaskQueue:
     """
 
     def __init__(self, max_dedup_size: int = MAX_DEDUP_CACHE_SIZE) -> None:
-        self.queue: asyncio.Queue[Task] = asyncio.Queue()
+        self.queue: asyncio.Queue[Task] = asyncio.Queue(maxsize=100)
         # LRU-based deduplication cache (prevents memory leaks)
         self._dedup_cache: OrderedDict[str, bool] = OrderedDict()
         self._max_dedup_size = max_dedup_size

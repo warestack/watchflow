@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.agents.engine_agent.agent import RuleEngineAgent
-from src.agents.engine_agent.models import ValidationStrategy
+from src.agents.engine_agent.models import EngineRequest, ValidationStrategy
 from src.core.models import Severity, Violation
 from src.rules.conditions.base import BaseCondition
 from src.rules.models import Rule, RuleSeverity
@@ -34,6 +34,11 @@ class MockCondition(BaseCondition):
             ]
         return []
 
+    async def validate(self, parameters: dict, event: dict):
+        # Legacy validate support
+        self.evaluate_called = True
+        return not self.violate
+
 
 @pytest.fixture
 def engine_agent():
@@ -46,7 +51,7 @@ async def test_engine_executes_attached_conditions(engine_agent):
 
     # Setup
     parameters = {"param1": "value1"}
-    event_data = {"pull_request": {"title": "test"}}
+    event_data = {"pull_request": {"title": "test"}, "repository": {"full_name": "test/repo"}}
     rule_condition = MockCondition(violate=True, message="Test violation")
 
     rule = Rule(
@@ -70,6 +75,20 @@ async def test_engine_executes_attached_conditions(engine_agent):
     assert len(result.data["evaluation_result"].violations) == 1
     assert result.data["evaluation_result"].violations[0].message == "Test violation"
     assert result.data["evaluation_result"].violations[0].validation_strategy == ValidationStrategy.VALIDATOR
+
+
+@pytest.mark.asyncio
+async def test_engine_accepts_engine_request_object(engine_agent):
+    """Test that execute accepts strictly typed EngineRequest."""
+    request = EngineRequest(
+        event_type="pull_request",
+        event_data={"repository": {"full_name": "test/repo"}},
+        rules=[{"description": "Test Rule", "parameters": {}, "severity": "medium", "event_types": ["pull_request"]}],
+    )
+
+    result = await engine_agent.execute(request=request)
+    assert result.success is True
+    assert result.data["evaluation_result"].total_rules_evaluated == 1
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,7 @@ from langgraph.graph import END, START, StateGraph
 
 from src.agents.base import AgentResult, BaseAgent
 from src.agents.engine_agent.models import (
+    EngineRequest,
     EngineState,
     RuleDescription,
     RuleEvaluationResult,
@@ -76,32 +77,38 @@ class RuleEngineAgent(BaseAgent):
         """
         Hybrid rule evaluation focusing on rule descriptions and parameters.
         Prioritizes fast validators with LLM reasoning as fallback.
-        """
-        event_type = kwargs.get("event_type")
-        event_data = kwargs.get("event_data")
-        rules = kwargs.get("rules")
 
-        if not event_type or event_data is None or rules is None:
-            return AgentResult(
-                success=False, message="Missing required arguments: event_type, event_data, or rules", data={}
-            )
+        Args:
+            **kwargs: Must match EngineRequest: event_type, event_data, rules.
+        """
+        # Strict typing validation via Pydantic using strict=False to allow type coercion if needed
+        # but primarily to ensure structure.
+        try:
+            # If request object is passed directly (future proofing)
+            if "request" in kwargs and isinstance(kwargs["request"], EngineRequest):
+                request = kwargs["request"]
+            else:
+                # Validate kwargs against EngineRequest
+                request = EngineRequest(**kwargs)
+        except Exception as e:
+            return AgentResult(success=False, message=f"Invalid arguments for EngineAgent: {e}", data={})
 
         start_time = time.time()
 
         try:
-            logger.info(f"🔧 Rule Engine starting evaluation for {event_type} with {len(rules)} rules")
+            logger.info(f"🔧 Rule Engine starting evaluation for {request.event_type} with {len(request.rules)} rules")
 
             # Convert rules to rule descriptions (without id/name dependency)
-            rule_descriptions = self._convert_rules_to_descriptions(rules)
+            rule_descriptions = self._convert_rules_to_descriptions(request.rules)
 
             # Get validator descriptions from the validators themselves
             available_validators = self._get_validator_descriptions()
 
             # Prepare initial state
             initial_state = EngineState(
-                event_type=event_type,
-                event_data=event_data,
-                rules=rules,
+                event_type=request.event_type,
+                event_data=request.event_data,
+                rules=request.rules,
                 rule_descriptions=rule_descriptions,
                 available_validators=available_validators,
                 violations=[],
@@ -145,12 +152,12 @@ class RuleEngineAgent(BaseAgent):
 
             # Create evaluation result
             evaluation_result = RuleEvaluationResult(
-                event_type=event_type,
-                repo_full_name=event_data.get("repository", {}).get("full_name", "unknown"),
+                event_type=request.event_type,
+                repo_full_name=request.event_data.get("repository", {}).get("full_name", "unknown"),
                 violations=rule_violations,
-                total_rules_evaluated=len(rules),
+                total_rules_evaluated=len(request.rules),
                 rules_triggered=len(rule_violations),
-                total_rules=len(rules),
+                total_rules=len(request.rules),
                 evaluation_time_ms=execution_time * 1000,
                 validator_usage=result.validator_usage if hasattr(result, "validator_usage") else {},
                 llm_usage=result.llm_usage if hasattr(result, "llm_usage") else 0,

@@ -10,8 +10,56 @@ import pytest
 from src.rules.conditions.access_control import (
     AuthorTeamCondition,
     CodeOwnersCondition,
+    NoForcePushCondition,
     ProtectedBranchesCondition,
 )
+
+
+class TestNoForcePushCondition:
+    """Tests for NoForcePushCondition class."""
+
+    @pytest.mark.asyncio
+    async def test_validate_force_push(self) -> None:
+        """Test that validate returns False when force push is detected."""
+        condition = NoForcePushCondition()
+
+        event = {"push": {"forced": True}}
+
+        result = await condition.validate({}, event)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_validate_normal_push(self) -> None:
+        """Test that validate returns True when normal push is performed."""
+        condition = NoForcePushCondition()
+
+        event = {"push": {"forced": False}}
+
+        result = await condition.validate({}, event)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_evaluate_returns_violations_for_force_push(self) -> None:
+        """Test that evaluate returns violations for force push."""
+        condition = NoForcePushCondition()
+
+        event = {"push": {"forced": True}}
+        context = {"parameters": {}, "event": event}
+
+        violations = await condition.evaluate(context)
+        assert len(violations) == 1
+        assert "Force push detected" in violations[0].message
+
+    @pytest.mark.asyncio
+    async def test_evaluate_returns_empty_for_normal_push(self) -> None:
+        """Test that evaluate returns empty list for normal push."""
+        condition = NoForcePushCondition()
+
+        event = {"push": {"forced": False}}
+        context = {"parameters": {}, "event": event}
+
+        violations = await condition.evaluate(context)
+        assert len(violations) == 0
 
 
 class TestAuthorTeamCondition:

@@ -1,9 +1,14 @@
 import structlog
 
 from src.core.models import EventType, WebhookEvent, WebhookResponse
+from src.event_processors.push import PushProcessor
+from src.tasks.task_queue import task_queue
 from src.webhooks.handlers.base import EventHandler
 
 logger = structlog.get_logger()
+
+# Instantiate processor once
+push_processor = PushProcessor()
 
 
 class PushEventHandler(EventHandler):
@@ -15,7 +20,7 @@ class PushEventHandler(EventHandler):
     async def handle(self, event: WebhookEvent) -> WebhookResponse:
         """
         Orchestrates push event processing.
-        Thin layer—business logic lives in event_processors.
+        Delegates to event_processors via TaskQueue.
         """
         log = logger.bind(
             event_type="push",
@@ -27,10 +32,21 @@ class PushEventHandler(EventHandler):
         log.info("push_handler_invoked")
 
         try:
-            # Handler is thin—just logs and confirms readiness
-            log.info("push_ready_for_processing")
+            # Enqueue the processing task
+            enqueued = await task_queue.enqueue(
+                func=push_processor.process,
+                event_type="push",
+                payload=event.payload,
+            )
 
-            return WebhookResponse(status="ok", detail="Push handler executed", event_type=EventType.PUSH)
+            if enqueued:
+                log.info("push_event_enqueued")
+                return WebhookResponse(
+                    status="ok", detail="Push event enqueued for processing", event_type=EventType.PUSH
+                )
+            else:
+                log.info("push_event_duplicate_skipped")
+                return WebhookResponse(status="ignored", detail="Duplicate event skipped", event_type=EventType.PUSH)
 
         except ImportError:
             # Deployment processor may not exist yet

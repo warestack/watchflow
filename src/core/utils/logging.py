@@ -10,12 +10,10 @@ from __future__ import annotations
 import inspect
 import logging
 import time
+from collections.abc import Callable  # noqa: TCH003
 from contextlib import asynccontextmanager
 from functools import wraps
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 

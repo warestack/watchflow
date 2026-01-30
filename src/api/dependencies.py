@@ -39,7 +39,16 @@ async def get_current_user_optional(request: Request) -> User | None:
         # No external dependencies - token validation would require IdP integration.
         from pydantic import SecretStr
 
-        return User(id=123, username="authenticated_user", email="user@example.com", github_token=SecretStr(token))
+        from src.core.config import config
+
+        if config.use_mock_data:
+            return User(id=123, username="authenticated_user", email="user@example.com", github_token=SecretStr(token))
+
+        # In real usage, we would validate the token here or pass it to endpoints to use against GitHub API
+        # For now, we return a User object wrapping the token so it can be used by services
+        # We use a dummy ID for the anonymous/token-holder user logic
+        logger.debug("Creating user wrapper for provided token")
+        return User(id=0, username="token_user", email="token@user.com", github_token=SecretStr(token))
     except Exception as e:
         logger.warning(f"Failed to parse auth header: {e}")
         return None

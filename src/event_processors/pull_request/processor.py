@@ -5,12 +5,11 @@ from typing import Any
 from src.agents import get_agent
 from src.core.models import Violation
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
+from src.event_processors.pull_request.enricher import PullRequestEnricher
 from src.integrations.github.check_runs import CheckRunManager
 from src.presentation import github_formatter
 from src.rules.loaders.github_loader import RulesFileNotFoundError
 from src.tasks.task_queue import Task
-
-from .enricher import PullRequestEnricher
 
 logger = logging.getLogger(__name__)
 

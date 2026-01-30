@@ -14,6 +14,16 @@ from src.rules.conditions.base import BaseCondition  # noqa: TCH001, TCH002, TC0
 from src.rules.models import Rule  # noqa: TCH001, TCH002, TC001
 
 
+class EngineRequest(BaseModel):
+    """Request model for the Rule Engine Agent."""
+
+    event_type: str = Field(description="The type of event (e.g., pull_request)")
+    event_data: dict[str, Any] = Field(description="Normalized event payload")
+    rules: list[Rule | dict[str, Any]] = Field(description="List of active rules")
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
 class ValidationStrategy(str, Enum):
     """Validation strategies for rule evaluation."""
 

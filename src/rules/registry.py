@@ -11,11 +11,13 @@ from src.rules.acknowledgment import RuleID
 from src.rules.conditions.access_control import (
     AuthorTeamCondition,
     CodeOwnersCondition,
+    NoForcePushCondition,
     ProtectedBranchesCondition,
 )
 from src.rules.conditions.base import BaseCondition
 from src.rules.conditions.filesystem import FilePatternCondition, MaxFileSizeCondition
 from src.rules.conditions.pull_request import (
+    MinApprovalsCondition,
     MinDescriptionLengthCondition,
     RequiredLabelsCondition,
     TitlePatternCondition,
@@ -36,7 +38,8 @@ RULE_ID_TO_CONDITION: dict[RuleID, type[BaseCondition]] = {
     RuleID.PR_DESCRIPTION_REQUIRED: MinDescriptionLengthCondition,
     RuleID.FILE_SIZE_LIMIT: MaxFileSizeCondition,
     RuleID.PROTECTED_BRANCH_PUSH: ProtectedBranchesCondition,
-    # RuleID.NO_FORCE_PUSH: ProtectedBranchesCondition, # Logical mapping, might need specific param
+    RuleID.NO_FORCE_PUSH: NoForcePushCondition,
+    RuleID.MIN_PR_APPROVALS: MinApprovalsCondition,
 }
 
 # List of all available condition classes

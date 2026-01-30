@@ -1,9 +1,14 @@
 import structlog
 
 from src.core.models import EventType, WebhookEvent, WebhookResponse
+from src.event_processors.pull_request.processor import PullRequestProcessor
+from src.tasks.task_queue import task_queue
 from src.webhooks.handlers.base import EventHandler
 
 logger = structlog.get_logger()
+
+# Instantiate processor once (singleton-like)
+pr_processor = PullRequestProcessor()
 
 
 class PullRequestEventHandler(EventHandler):
@@ -15,7 +20,7 @@ class PullRequestEventHandler(EventHandler):
     async def handle(self, event: WebhookEvent) -> WebhookResponse:
         """
         Orchestrates pull request event processing.
-        Thin layer—business logic lives in event_processors.
+        Delegates to event_processors via TaskQueue.
         """
         log = logger.bind(
             event_type="pull_request",
@@ -24,18 +29,34 @@ class PullRequestEventHandler(EventHandler):
             action=event.payload.get("action"),
         )
 
+        # Filter relevant actions to reduce noise (optional but good practice)
+        action = event.payload.get("action")
+        if action not in ["opened", "synchronize", "reopened", "edited"]:
+            log.info("pr_action_ignored", action=action)
+            return WebhookResponse(
+                status="ignored", detail=f"PR action '{action}' is not processed", event_type=EventType.PULL_REQUEST
+            )
+
         log.info("pr_handler_invoked")
 
         try:
-            # Handler is called from TaskQueue worker, so actual processing happens here
-            # The event already contains all necessary data
-            # Processors will need to be updated to accept WebhookEvent instead of Task
-            # For now, log that we're ready to process
-            log.info("pr_ready_for_processing")
-
-            return WebhookResponse(
-                status="ok", detail="Pull request handler executed", event_type=EventType.PULL_REQUEST
+            # Enqueue the processing task
+            enqueued = await task_queue.enqueue(
+                func=pr_processor.process,
+                event_type="pull_request",
+                payload=event.payload,
             )
+
+            if enqueued:
+                log.info("pr_event_enqueued")
+                return WebhookResponse(
+                    status="ok", detail="Pull request event enqueued for processing", event_type=EventType.PULL_REQUEST
+                )
+            else:
+                log.info("pr_event_duplicate_skipped")
+                return WebhookResponse(
+                    status="ignored", detail="Duplicate event skipped", event_type=EventType.PULL_REQUEST
+                )
 
         except Exception as e:
             log.error("pr_processing_failed", error=str(e), exc_info=True)
