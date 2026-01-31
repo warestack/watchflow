@@ -5,6 +5,8 @@ This module provides factory functions to create the appropriate
 provider based on configuration using a simple mapping approach.
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 from src.core.config import config
@@ -73,15 +75,8 @@ def get_provider(
         model = config.ai.get_model_for_provider(canonical_provider)
 
     # Determine tokens and temperature with precedence: explicit params > agent config > global config
-    if max_tokens is not None:
-        tokens = max_tokens
-    else:
-        tokens = config.ai.get_max_tokens_for_agent(agent)
-
-    if temperature is not None:
-        temp = temperature
-    else:
-        temp = config.ai.get_temperature_for_agent(agent)
+    tokens = max_tokens if max_tokens is not None else config.ai.get_max_tokens_for_agent(agent)
+    temp = temperature if temperature is not None else config.ai.get_temperature_for_agent(agent)
 
     # Prepare provider-specific kwargs
     provider_kwargs = kwargs.copy()

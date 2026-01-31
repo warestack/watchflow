@@ -21,7 +21,7 @@ load_dotenv()
 class Config:
     """Main configuration class."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.github = GitHubConfig(
             app_name=os.getenv("APP_NAME_GITHUB", ""),
             app_id=os.getenv("APP_CLIENT_ID_GITHUB", ""),
@@ -111,6 +111,13 @@ class Config:
         self.debug = os.getenv("DEBUG", "false").lower() == "true"
         self.environment = os.getenv("ENVIRONMENT", "development")
 
+        # Repository Analysis Feature Settings (AI Immune System)
+        # CRITICAL: USE_MOCK_DATA must be False for CEO demo (Phase 5)
+        self.use_mock_data = os.getenv("USE_MOCK_DATA", "false").lower() == "true"
+        self.anonymous_rate_limit = int(os.getenv("ANONYMOUS_RATE_LIMIT", "5"))  # Per hour
+        self.authenticated_rate_limit = int(os.getenv("AUTHENTICATED_RATE_LIMIT", "100"))  # Per hour
+        self.analysis_timeout = int(os.getenv("ANALYSIS_TIMEOUT", "60"))  # Seconds
+
     def validate(self) -> bool:
         """Validate configuration."""
         errors = []
@@ -132,14 +139,22 @@ class Config:
 
         if self.ai.provider == "openai" and not self.ai.api_key:
             errors.append("OPENAI_API_KEY is required for OpenAI provider")
-        if self.ai.provider == "bedrock":
-            # Bedrock credentials are read from AWS environment/IMDS; encourage region/model hints
-            if not self.ai.bedrock_model_id:
-                errors.append("BEDROCK_MODEL_ID is required for Bedrock provider")
-        if self.ai.provider in {"vertex_ai", "garden", "vertex", "vertexai", "model_garden", "gcp"}:
-            # Vertex AI typically uses ADC; project/location optional but recommended
-            if not self.ai.vertex_ai_model:
-                errors.append("VERTEX_AI_MODEL is required for Google Vertex AI provider")
+
+        # Bedrock credentials are read from AWS environment/IMDS; encourage region/model hints
+        if self.ai.provider == "bedrock" and not self.ai.bedrock_model_id:
+            errors.append("BEDROCK_MODEL_ID is required for Bedrock provider")
+
+        # Vertex AI typically uses ADC; project/location optional but recommended
+        vertex_aliases = {
+            "vertex_ai",
+            "garden",
+            "vertex",
+            "vertexai",
+            "model_garden",
+            "gcp",
+        }
+        if self.ai.provider in vertex_aliases and not self.ai.vertex_ai_model:
+            errors.append("VERTEX_AI_MODEL is required for Google Vertex AI provider")
 
         if errors:
             raise ValueError(f"Configuration errors: {', '.join(errors)}")

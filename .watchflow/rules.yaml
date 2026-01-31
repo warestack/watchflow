@@ -26,10 +26,19 @@ rules:
     enabled: true
     severity: "high"
     event_types: ["pull_request"]
+    parameters:
+      critical_owners: []
+
+  - description: "When a PR modifies paths with CODEOWNERS, those owners must be added as reviewers"
+    enabled: true
+    severity: "high"
+    event_types: ["pull_request"]
+    parameters:
+      require_code_owner_reviewers: true
 
   - description: "No direct pushes to main branch - all changes must go through PRs"
     enabled: true
     severity: "critical"
     event_types: ["push"]
     parameters:
-      allow_force_push: false
+      no_force_push: true

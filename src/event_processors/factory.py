@@ -35,7 +35,7 @@ class EventProcessorFactory:
         return processor_class()
 
     @classmethod
-    def register_processor(cls, event_type: str, processor_class: type[BaseEventProcessor]):
+    def register_processor(cls, event_type: str, processor_class: type[BaseEventProcessor]) -> None:
         """Register a new processor."""
         cls._processors[event_type] = processor_class
 
@@ -48,6 +48,6 @@ class EventProcessorFactory:
         return processor_class()
 
     @classmethod
-    def get_supported_event_types(cls) -> list:
+    def get_supported_event_types(cls) -> list[str]:
         """Get list of supported event types."""
         return list(cls._processors.keys())

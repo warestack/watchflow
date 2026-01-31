@@ -14,6 +14,7 @@ from src.core.models import EventType
 from src.integrations.github import GitHubClient, github_client
 from src.rules.interface import RuleLoader
 from src.rules.models import Rule, RuleAction, RuleSeverity
+from src.rules.registry import CONDITION_CLASS_TO_RULE_ID, ConditionRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ class RulesFileNotFoundError(Exception):
 class GitHubRuleLoader(RuleLoader):
     """
     Loads rules from a GitHub repository's rules yaml file.
-    This loader does NOT map parameters to condition types; it loads rules as-is.
+    This loader maps parameters to condition types using the ConditionRegistry.
     """
 
     def __init__(self, client: GitHubClient):
@@ -45,13 +46,19 @@ class GitHubRuleLoader(RuleLoader):
                 raise RulesFileNotFoundError(f"Rules file not found: {rules_file_path}")
 
             rules_data = yaml.safe_load(content)
-            if not rules_data or "rules" not in rules_data:
+            if not isinstance(rules_data, dict) or "rules" not in rules_data:
                 logger.warning(f"No rules found in {repository}/{rules_file_path}")
                 return []
 
             rules = []
+            if not isinstance(rules_data["rules"], list):
+                logger.warning(f"Rules key is not a list in {repository}/{rules_file_path}")
+                return []
+
             for rule_data in rules_data["rules"]:
                 try:
+                    if not isinstance(rule_data, dict):
+                        continue
                     rule = GitHubRuleLoader._parse_rule(rule_data)
                     if rule:
                         rules.append(rule)
@@ -84,8 +91,24 @@ class GitHubRuleLoader(RuleLoader):
                 except ValueError:
                     logger.warning(f"Unknown event type: {event_type_str}")
 
-        # No mapping: just pass parameters as-is
-        parameters = rule_data.get("parameters", {})
+        # Get parameters (strip internal "validator" key; engine infers validator from parameter names)
+        parameters = dict(rule_data.get("parameters", {}))
+        parameters.pop("validator", None)
+        # Normalize aliases so conditions match (e.g. max_changed_lines -> max_lines for MaxPrLocCondition)
+        if "max_changed_lines" in parameters and "max_lines" not in parameters:
+            parameters["max_lines"] = parameters["max_changed_lines"]
+
+        # Instantiate conditions using Registry (matches on parameter keys, e.g. max_lines, require_linked_issue)
+        conditions = ConditionRegistry.get_conditions_for_parameters(parameters)
+
+        # Set rule_id from first condition that has a RuleID (for acknowledgment lookup).
+        # Multi-condition rules use the first mapped ID; conditions not in CONDITION_CLASS_TO_RULE_ID yield None.
+        rule_id_val: str | None = None
+        for cond in conditions:
+            rid = CONDITION_CLASS_TO_RULE_ID.get(type(cond))
+            if rid is not None:
+                rule_id_val = rid.value
+                break
 
         # Actions are optional and not mapped
         actions = []
@@ -99,10 +122,10 @@ class GitHubRuleLoader(RuleLoader):
             enabled=rule_data.get("enabled", True),
             severity=RuleSeverity(rule_data.get("severity", "medium")),
             event_types=event_types,
-            # No conditions: parameters are passed as-is
-            conditions=[],
+            conditions=conditions,
             actions=actions,
             parameters=parameters,
+            rule_id=rule_id_val,
         )
         return rule
 

@@ -1,32 +1,37 @@
 import asyncio
-import logging
-from datetime import datetime, timedelta
-from typing import Any
+import contextlib
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Any
+
+import structlog
 
 from src.agents import get_agent
+
+if TYPE_CHECKING:
+    from src.agents.base import BaseAgent
 from src.integrations.github import github_client
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class DeploymentScheduler:
     """Scheduler for re-evaluating time-based deployment rules."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.running = False
         self.pending_deployments: list[dict[str, Any]] = []
-        self.scheduler_task = None
+        self.scheduler_task: asyncio.Task[None] | None = None
         # Lazy-load engine agent to avoid API key validation at import time
-        self._engine_agent = None
+        self._engine_agent: BaseAgent | None = None
 
     @property
-    def engine_agent(self):
+    def engine_agent(self) -> Any:
         """Lazy-load the engine agent to avoid API key validation at import time."""
         if self._engine_agent is None:
             self._engine_agent = get_agent("engine")
         return self._engine_agent
 
-    async def start(self):
+    async def start(self) -> None:
         """Start the scheduler."""
         if self.running:
             logger.warning("Deployment scheduler is already running")
@@ -36,18 +41,17 @@ class DeploymentScheduler:
         self.scheduler_task = asyncio.create_task(self._scheduler_loop())
         logger.info("🕒 Deployment scheduler started - checking every 15 minutes")
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Stop the scheduler."""
         self.running = False
         if self.scheduler_task:
             self.scheduler_task.cancel()
-            try:
+            # SIM105: Use contextlib.suppress instead of try-except-pass
+            with contextlib.suppress(asyncio.CancelledError):
                 await self.scheduler_task
-            except asyncio.CancelledError:
-                pass
         logger.info("🛑 Deployment scheduler stopped")
 
-    async def add_pending_deployment(self, deployment_data: dict[str, Any]):
+    async def add_pending_deployment(self, deployment_data: dict[str, Any]) -> None:
         """
         Add a deployment to the pending list for future re-evaluation.
 
@@ -90,7 +94,7 @@ class DeploymentScheduler:
         except Exception as e:
             logger.error(f"Error adding deployment to scheduler: {e}")
 
-    async def _scheduler_loop(self):
+    async def _scheduler_loop(self) -> None:
         """Main scheduler loop - runs every 15 minutes."""
         while self.running:
             try:
@@ -105,12 +109,12 @@ class DeploymentScheduler:
                 # Wait 1 minute on error before retrying
                 await asyncio.sleep(60)
 
-    async def _check_pending_deployments(self):
+    async def _check_pending_deployments(self) -> None:
         """Check and re-evaluate pending deployments."""
         if not self.pending_deployments:
             return
 
-        current_time = datetime.utcnow()
+        current_time = datetime.now(UTC)
         logger.info(
             f"🔍 Checking {len(self.pending_deployments)} pending deployments at {current_time.strftime('%Y-%m-%d %H:%M:%S')} UTC"
         )
@@ -249,7 +253,7 @@ class DeploymentScheduler:
             logger.error(f"Error re-evaluating deployment: {e}")
             return False
 
-    async def _approve_deployment(self, deployment: dict[str, Any]):
+    async def _approve_deployment(self, deployment: dict[str, Any]) -> None:
         """Approve a previously rejected deployment."""
         try:
             callback_url = deployment.get("callback_url")
@@ -269,7 +273,7 @@ class DeploymentScheduler:
                 "✅ **Deployment Automatically Approved**\n\n"
                 "Time-based restrictions have been lifted. The deployment can now proceed.\n\n"
                 f"**Environment:** {environment}\n"
-                f"**Approved at:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n"
+                f"**Approved at:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n"
                 "The deployment will be automatically approved on GitHub."
             )
 
@@ -290,71 +294,80 @@ class DeploymentScheduler:
     def get_status(self) -> dict[str, Any]:
         """Get current scheduler status."""
         try:
-            return {
-                "running": self.running,
-                "pending_count": len(self.pending_deployments),
-                "pending_deployments": [
+            pending_deployments_status = []
+            for d in self.pending_deployments:
+                created_at = d.get("created_at")
+                created_at_iso = None
+                if created_at:
+                    if isinstance(created_at, int | float):
+                        created_at_iso = datetime.fromtimestamp(created_at).isoformat()
+                    elif hasattr(created_at, "isoformat"):
+                        created_at_iso = created_at.isoformat()
+                    else:
+                        created_at_iso = str(created_at)
+
+                last_checked = d.get("last_checked")
+                last_checked_iso = last_checked.isoformat() if last_checked else None
+
+                pending_deployments_status.append(
                     {
                         "repo": d.get("repo"),
                         "environment": d.get("environment"),
                         "deployment_id": d.get("deployment_id"),
-                        "created_at": datetime.fromtimestamp(d.get("created_at")).isoformat()
-                        if d.get("created_at") and isinstance(d.get("created_at"), int | float)
-                        else (
-                            d.get("created_at").isoformat()
-                            if hasattr(d.get("created_at"), "isoformat")
-                            else str(d.get("created_at"))
-                        ),
-                        "last_checked": d.get("last_checked").isoformat() if d.get("last_checked") else None,
+                        "created_at": created_at_iso,
+                        "last_checked": last_checked_iso,
                         "violations_count": len(d.get("violations", [])),
                         "time_based_violations_count": len(d.get("time_based_violations", [])),
                     }
-                    for d in self.pending_deployments
-                ],
+                )
+
+            return {
+                "running": self.running,
+                "pending_count": len(self.pending_deployments),
+                "pending_deployments": pending_deployments_status,
             }
         except Exception as e:
             logger.error(f"Error getting scheduler status: {e}")
             return {"running": self.running, "pending_count": len(self.pending_deployments), "error": str(e)}
 
-    async def start_background_scheduler(self):
+    async def start_background_scheduler(self) -> None:
         """Start the background scheduler task."""
         if not self.running:
             await self.start()
 
-    async def stop_background_scheduler(self):
+    async def stop_background_scheduler(self) -> None:
         """Stop the background scheduler task."""
         if self.running:
             await self.stop()
 
     @staticmethod
-    def _convert_rules_to_new_format(rules: list[Any]) -> list[dict[str, Any]]:
-        """Convert Rule objects to the new flat schema format."""
-        formatted_rules = []
+    def _convert_rules_to_new_format(rules: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """
+        Convert old rule format to new format if needed.
+        This is for backward compatibility.
+        """
+        if not rules:
+            return []
 
-        for rule in rules:
-            try:
-                # Convert Rule object to dict format
-                rule_dict = {
-                    "description": rule.description,
-                    "enabled": rule.enabled,
-                    "severity": rule.severity.value if hasattr(rule.severity, "value") else rule.severity,
-                    "event_types": [et.value if hasattr(et, "value") else et for et in rule.event_types],
-                    "parameters": rule.parameters if hasattr(rule, "parameters") else {},
-                }
+        # Check if conversion is needed by inspecting the first rule
+        first_rule = rules[0]
+        if "rule_description" in first_rule and "event_types" not in first_rule:
+            # This looks like the old format
+            logger.info("Converting old rule format to new format")
+            converted_rules = []
+            for rule in rules:
+                converted_rules.append(
+                    {
+                        "description": rule.get("rule_description", ""),
+                        "severity": rule.get("severity", "medium"),
+                        "event_types": rule.get("event_types", ["deployment"]),
+                        "parameters": rule.get("parameters", {}),
+                    }
+                )
+            return converted_rules
 
-                # Extract parameters from conditions (flatten them)
-                if hasattr(rule, "conditions"):
-                    for condition in rule.conditions:
-                        if hasattr(condition, "parameters"):
-                            rule_dict["parameters"].update(condition.parameters)
-
-                formatted_rules.append(rule_dict)
-            except Exception as e:
-                logger.error(f"Error converting rule to new format: {e}")
-                # Skip this rule if conversion fails
-                continue
-
-        return formatted_rules
+        # Already in new format
+        return rules
 
 
 # Global instance - lazy loaded to avoid API key validation at import time

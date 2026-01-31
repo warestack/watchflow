@@ -1,63 +1,115 @@
-"""
-RepositoryAnalysisAgent orchestrates repository signal gathering and rule generation.
-"""
+# File: src/agents/repository_analysis_agent/agent.py
+from typing import Any
 
-from __future__ import annotations
-
-import time
+import structlog
+from langgraph.graph import END, StateGraph
 
 from src.agents.base import AgentResult, BaseAgent
-from src.agents.repository_analysis_agent.models import RepositoryAnalysisRequest, RepositoryAnalysisState
-from src.agents.repository_analysis_agent.nodes import (
-    _default_recommendations,
-    analyze_contributing_guidelines,
-    analyze_pr_history,
-    analyze_repository_structure,
-    summarize_analysis,
-    validate_recommendations,
-)
+from src.agents.repository_analysis_agent import nodes
+from src.agents.repository_analysis_agent.models import AnalysisState
+
+logger = structlog.get_logger()
 
 
 class RepositoryAnalysisAgent(BaseAgent):
-    """Agent that inspects a repository and proposes Watchflow rules."""
+    """
+    Agent responsible for inspecting a repository and suggesting Watchflow rules.
 
-    def _build_graph(self):
-        # Graph orchestration is handled procedurally in execute for clarity.
-        return None
+    This agent uses a graph-based orchestration (LangGraph) to:
+    1. Fetch repository metadata (file tree, languages, etc.).
+    2. Analyze PR history for hygiene signals (AI detection, test coverage).
+    3. Generate governance rules using an LLM based on gathered context.
+    """
 
-    async def execute(self, **kwargs) -> AgentResult:
-        started_at = time.perf_counter()
-        request = RepositoryAnalysisRequest(**kwargs)
-        state = RepositoryAnalysisState(
-            repository_full_name=request.repository_full_name,
-            installation_id=request.installation_id,
+    def __init__(self) -> None:
+        super().__init__(agent_name="repository_analysis")
+
+    def _build_graph(self) -> Any:
+        """
+        Constructs the state graph for the analysis workflow.
+
+        Flow:
+        1. `fetch_metadata`: Gathers static repo facts (languages, file structure).
+        2. `fetch_pr_signals`: Analyzes dynamic history (PR hygiene, AI usage).
+        3. `generate_rules`: Synthesizes data into governance recommendations.
+
+        Returns:
+            Compiled StateGraph ready for execution.
+        """
+        workflow: StateGraph[AnalysisState] = StateGraph(AnalysisState)
+
+        # Register Nodes
+        workflow.add_node("fetch_metadata", nodes.fetch_repository_metadata)
+        workflow.add_node("fetch_pr_signals", nodes.fetch_pr_signals)
+        workflow.add_node("generate_report", nodes.generate_analysis_report)
+        workflow.add_node("generate_rules", nodes.generate_rule_recommendations)
+        workflow.add_node("generate_reasonings", nodes.generate_rule_reasonings)
+
+        # Define Edges (Linear Flow)
+        # 1. Gather data → 2. Diagnose problems (report) → 3. Prescribe solutions (rules) → 4. Explain prescriptions (reasonings)
+        workflow.set_entry_point("fetch_metadata")
+        workflow.add_edge("fetch_metadata", "fetch_pr_signals")
+        workflow.add_edge("fetch_pr_signals", "generate_report")
+        workflow.add_edge("generate_report", "generate_rules")
+        workflow.add_edge("generate_rules", "generate_reasonings")
+        workflow.add_edge("generate_reasonings", END)
+
+        return workflow.compile()
+
+    async def execute(self, **kwargs: Any) -> AgentResult:
+        """
+        Executes the repository analysis workflow.
+
+        Args:
+            **kwargs: Must contain `repo_full_name` (str) and optionally:
+                - `is_public` (bool): Whether the repo is public
+                - `user_token` (str | None): Optional GitHub Personal Access Token for authenticated requests
+
+        Returns:
+            AgentResult: Contains the list of recommended rules or error details.
+
+        Raises:
+            TimeoutError: If analysis exceeds the 60-second safety limit.
+        """
+        repo_full_name: str | None = kwargs.get("repo_full_name")
+        is_public: bool = kwargs.get("is_public", False)
+        user_token: str | None = kwargs.get("user_token")
+
+        if not repo_full_name:
+            return AgentResult(success=False, message="repo_full_name is required")
+
+        initial_state = AnalysisState(
+            repo_full_name=repo_full_name,
+            is_public=is_public,
+            user_token=user_token,
+            codeowners_content=None,
         )
 
         try:
-            await analyze_repository_structure(state)
-            await analyze_pr_history(state, request.max_prs)
-            await analyze_contributing_guidelines(state)
+            # Execute Graph with 60-second hard timeout
+            result = await self._execute_with_timeout(self.graph.ainvoke(initial_state), timeout=60.0)
 
-            # Only generate recommendations if we have basic repository data
-            if not state.repository_features.language:
-                raise ValueError("Unable to determine repository language - cannot generate appropriate rules")
+            # LangGraph returns dict, convert back to AnalysisState
+            final_state = AnalysisState(**result) if isinstance(result, dict) else result
 
-            state.recommendations = _default_recommendations(state)
-            validate_recommendations(state)
-            response = summarize_analysis(state, request)
+            if final_state.error:
+                return AgentResult(success=False, message=final_state.error)
 
-            latency_ms = int((time.perf_counter() - started_at) * 1000)
             return AgentResult(
                 success=True,
-                message="Repository analysis completed",
-                data={"analysis_response": response},
-                metadata={"execution_time_ms": latency_ms},
+                message="Analysis complete",
+                data={
+                    "recommendations": final_state.recommendations,
+                    "hygiene_summary": final_state.hygiene_summary,
+                    "rule_reasonings": final_state.rule_reasonings,
+                    "analysis_report": final_state.analysis_report,
+                },
             )
-        except Exception as exc:  # noqa: BLE001
-            latency_ms = int((time.perf_counter() - started_at) * 1000)
-            return AgentResult(
-                success=False,
-                message=f"Repository analysis failed: {exc}",
-                data={},
-                metadata={"execution_time_ms": latency_ms},
-            )
+
+        except TimeoutError:
+            logger.error("agent_execution_timeout", agent="repository_analysis", repo=repo_full_name)
+            return AgentResult(success=False, message="Analysis timed out after 60 seconds")
+        except Exception as e:
+            # Catching Exception here is only for the top-level orchestration safety
+            logger.exception("agent_execution_failed", agent="repository_analysis", error=str(e))
+            return AgentResult(success=False, message=str(e))

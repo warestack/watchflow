@@ -76,12 +76,9 @@ plugins:
   - minify:
       minify_html: true
 
-# Extra CSS and JS
+# Extra CSS (no extra JS - file was not present)
 extra_css:
   - stylesheets/extra.css
-
-extra_javascript:
-  - javascripts/extra.js
 
 # Markdown extensions
 markdown_extensions:

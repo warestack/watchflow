@@ -7,7 +7,7 @@ import logging
 from src.agents.feasibility_agent.models import FeasibilityAnalysis, FeasibilityState, YamlGeneration
 from src.agents.feasibility_agent.prompts import RULE_FEASIBILITY_PROMPT, YAML_GENERATION_PROMPT
 from src.integrations.providers import get_chat_model
-from src.rules.validators import get_validator_descriptions
+from src.rules.registry import AVAILABLE_CONDITIONS
 
 logger = logging.getLogger(__name__)
 
@@ -24,15 +24,18 @@ async def analyze_rule_feasibility(state: FeasibilityState) -> FeasibilityState:
         # Use structured output instead of manual JSON parsing
         structured_llm = llm.with_structured_output(FeasibilityAnalysis)
 
-        # Build validator catalog text for the prompt
+        # Build validator catalog text for the prompt (description + examples when present)
         validator_catalog = []
-        for v in get_validator_descriptions():
-            validator_catalog.append(
-                f"- name: {v.get('name')}\n"
-                f"  event_types: {v.get('event_types')}\n"
-                f"  parameter_patterns: {v.get('parameter_patterns')}\n"
-                f"  description: {v.get('description')}"
+        for condition_cls in AVAILABLE_CONDITIONS:
+            entry = (
+                f"- name: {condition_cls.name}\n"
+                f"  event_types: {condition_cls.event_types}\n"
+                f"  parameter_patterns: {condition_cls.parameter_patterns}\n"
+                f"  description: {condition_cls.description}"
             )
+            if getattr(condition_cls, "examples", None):
+                entry += f"\n  examples: {condition_cls.examples}"
+            validator_catalog.append(entry)
         validators_text = "\n".join(validator_catalog)
 
         # Analyze rule feasibility with awareness of available validators
@@ -77,6 +80,24 @@ async def generate_yaml_config(state: FeasibilityState) -> FeasibilityState:
         return state
 
     try:
+        # Build parameter keys and examples for chosen validators (engine infers validator from these keys)
+        validator_parameters_lines = []
+        for name in state.chosen_validators:
+            for condition_cls in AVAILABLE_CONDITIONS:
+                if condition_cls.name == name:
+                    keys = getattr(condition_cls, "parameter_patterns", []) or []
+                    examples = getattr(condition_cls, "examples", None) or []
+                    line = f"- {name}: use only parameter keys {keys}"
+                    if examples:
+                        line += f"; example(s): {examples[0]}"
+                    validator_parameters_lines.append(line)
+                    break
+        validator_parameters = (
+            "\n".join(validator_parameters_lines)
+            if validator_parameters_lines
+            else "Use only parameter keys from the chosen validators' parameter_patterns."
+        )
+
         # Create LLM client with structured output
         llm = get_chat_model(agent="feasibility_agent")
 
@@ -87,6 +108,7 @@ async def generate_yaml_config(state: FeasibilityState) -> FeasibilityState:
             rule_type=state.rule_type,
             rule_description=state.rule_description,
             chosen_validators=", ".join(state.chosen_validators),
+            validator_parameters=validator_parameters,
         )
 
         # Get structured response with retry logic

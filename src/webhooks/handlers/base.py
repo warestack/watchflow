@@ -1,19 +1,18 @@
 from abc import ABC, abstractmethod
-from typing import Any
 
-from src.core.models import WebhookEvent
+from src.core.models import WebhookEvent, WebhookResponse
 
 
 class EventHandler(ABC):
     """
     Abstract base class for all webhook event handlers.
 
-    Each implementation of this class is responsible for the end-to-end
-    processing of a specific type of webhook event.
+    Each implementation must return a WebhookResponse for standardized results.
+    Handlers should be thin orchestrators that delegate to event_processors.
     """
 
     @abstractmethod
-    async def handle(self, event: WebhookEvent) -> dict[str, Any]:
+    async def handle(self, event: WebhookEvent) -> WebhookResponse:
         """
         Process the incoming webhook event.
 
@@ -21,6 +20,6 @@ class EventHandler(ABC):
             event: The validated and parsed WebhookEvent object.
 
         Returns:
-            A dictionary containing the results of the handling logic.
+            A WebhookResponse containing the results of the handling logic.
         """
         pass

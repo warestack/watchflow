@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from src.core.models import Violation
+
 
 class AcknowledgedViolation(BaseModel):
     """Represents a violation that can be acknowledged."""
@@ -41,7 +43,7 @@ class AcknowledgmentContext(BaseModel):
     """Context for acknowledgment evaluation workflow."""
 
     acknowledgment_reason: str = Field(description="The acknowledgment reason provided by the user")
-    violations: list[dict[str, Any]] = Field(description="List of violations to evaluate", default_factory=list)
+    violations: list[Violation] = Field(description="List of violations to evaluate", default_factory=list)
     pr_data: dict[str, Any] = Field(description="Pull request data", default_factory=dict)
     commenter: str = Field(description="Username of the person making the acknowledgment")
-    rules: list[dict[str, Any]] = Field(description="List of rules", default_factory=dict)
+    rules: list[dict[str, Any]] = Field(description="List of rules", default_factory=list)

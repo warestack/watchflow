@@ -1,325 +1,248 @@
 # Configuration Guide
 
-This guide covers how to configure Watchflow rules to replace static protection rules with context-aware guardrails.
-Learn how to create effective governance rules that adapt to your team's needs and workflow.
+This guide covers how to configure Watchflow rules. Rules are **description + event_types + parameters**; the engine matches parameter keys to built-in conditions. No custom code—just YAML in `.watchflow/rules.yaml` on the default branch.
 
-## Rule Configuration
+**Pro tip:** Test rule ideas at [watchflow.dev](https://watchflow.dev). Use “Evaluate” for feasibility and suggested YAML, or run repo analysis to get a full suggested config. When you land from the app install flow (`?installation_id=...&repo=owner/repo`), no PAT is required.
 
-**💡 Pro Tip**: Not sure if your rule is supported? Test it at [watchflow.dev](https://watchflow.dev) first! Enter your natural language rule description, and the tool will generate the YAML configuration for you. Simply copy and paste it into your `rules.yaml` file.
+---
 
-### Basic Rule Structure
+## Rule structure
 
-Rules are defined in YAML format and stored in `.watchflow/rules.yaml` in your repository. Each rule consists of
-metadata, event triggers, and parameters that define the rule's behavior:
+Each rule has:
 
-```yaml
-rules:
-  - description: All pull requests must have a min num of approvals unless the author is a maintainer
-    enabled: true
-    severity: high
-    event_types: [pull_request]
-    parameters:
-      min_approvals: 2
-```
+| Field | Required | Description |
+|-------|----------|-------------|
+| `description` | Yes | Short human-readable description (used in check runs and comments). |
+| `enabled` | No | Default `true`. Set `false` to disable without deleting. |
+| `severity` | No | `low` \| `medium` \| `high` \| `critical`. Drives presentation, not logic. |
+| `event_types` | Yes | Events this rule runs on: `pull_request`, `push`, `deployment`, etc. |
+| `parameters` | Yes | Key-value map. **Keys determine which condition runs** (e.g. `require_linked_issue`, `max_lines`). |
 
-### Rule Components
+The loader reads `.watchflow/rules.yaml` from the repo default branch and builds `Rule` objects with condition instances from the **condition registry**. Parameter names must match what the conditions expect; see below.
 
-| Component     | Description                       | Required | Type    |
-|---------------|-----------------------------------|----------|---------|
-| `description` | Rule description                  | Yes      | string  |
-| `enabled`     | Whether rule is active            | No       | boolean |
-| `severity`    | Rule severity level               | No       | string  |
-| `event_types` | Applicable events                 | Yes      | array   |
-| `parameters`  | Rule parameters and configuration | Yes      | object  |
+---
 
-## Rule Examples
+## Parameter reference (supported logic)
 
-### Security Review Rule
+### Pull request conditions
 
-This rule ensures that security-sensitive changes are properly reviewed:
-
-```yaml
-rules:
-  - description: Security-sensitive changes require security team review
-    enabled: true
-    severity: critical
-    event_types: [pull_request]
-    parameters:
-      file_patterns: ["**/security/**", "**/auth/**", "**/config/security.yaml"]
-      required_teams: ["security-team"]
-```
-
-### Deployment Protection Rule
-
-This rule prevents deployments during restricted time periods:
-
-```yaml
-rules:
-  - description: Prevent deployments on weekends
-    enabled: true
-    severity: medium
-    event_types: [deployment]
-    parameters:
-      restricted_days: [Saturday, Sunday]
-```
-
-### Large PR Rule
-
-This rule helps maintain code quality by flagging large changes:
-
-```yaml
-rules:
-  - description: Warn about large pull requests that may be difficult to review
-    enabled: true
-    severity: medium
-    event_types: [pull_request]
-    parameters:
-      max_files: 20
-      max_lines: 500
-```
-
-## Parameter Types
-
-### Common Parameters
-
-Watchflow supports various parameter types to create flexible and powerful rules:
+**Linked issue**
 
 ```yaml
 parameters:
-  # Approval requirements
+  require_linked_issue: true
+```
+
+PR must reference an issue (e.g. “Fixes #123”) in title or body.
+
+**Title pattern**
+
+```yaml
+parameters:
+  title_pattern: "^feat|^fix|^docs|^style|^refactor|^test|^chore|^perf|^ci|^build|^revert"
+```
+
+PR title must match the regex (e.g. conventional commits).
+
+**Description length**
+
+```yaml
+parameters:
+  min_description_length: 50
+```
+
+PR body length must be ≥ N characters.
+
+**Required labels**
+
+```yaml
+parameters:
+  required_labels: ["Type/Bug", "Type/Feature", "Status/Review"]
+```
+
+PR must have all of these labels.
+
+**Min approvals**
+
+```yaml
+parameters:
   min_approvals: 2
-  required_teams: ["security-team", "senior-engineers"]
-  excluded_reviewers: ["author"]
+```
 
-  # File patterns (glob syntax)
-  file_patterns: ["**/security/**", "**/auth/**", "*.env*"]
-  excluded_files: ["docs/**", "*.md", "**/test/**"]
+At least N approvals required.
 
-  # Time restrictions
-  restricted_days: [Saturday, Sunday]
-  restricted_hours: [22, 23, 0, 1, 2, 3, 4, 5, 6]
-  timezone: "UTC"
+**Max PR size (lines)**
 
-  # Size limits
-  max_files: 20
+```yaml
+parameters:
   max_lines: 500
-  max_deletions: 100
-  max_additions: 1000
-
-  # Branch patterns
-  protected_branches: ["main", "master", "production"]
-  excluded_branches: ["feature/*", "hotfix/*"]
 ```
 
-### Diff-Aware Validators
+Total additions + deletions must be ≤ N. The loader also accepts `max_changed_lines` as an alias.
 
-Watchflow can now reason about pull-request diffs directly. The following parameter groups plug into diff-aware validators:
-
-#### `diff_pattern`
-
-Use this to require or forbid specific regex patterns inside matched files.
+**CODEOWNERS: require owners as reviewers**
 
 ```yaml
 parameters:
-  file_patterns:
-    - "packages/core/src/**/vector-query.ts"
-  require_patterns:
-    - "throw\\s+new\\s+Error"
-  forbidden_patterns:
-    - "console\\.log"
+  require_code_owner_reviewers: true
 ```
 
-#### `related_tests`
+For every file changed, the corresponding CODEOWNERS entries must be in the requested reviewers (users or teams). If CODEOWNERS is missing, the condition skips (no violation).
 
-Ensure core source changes include matching test updates.
+**CODEOWNERS: path must have owner**
 
 ```yaml
 parameters:
-  source_patterns:
-    - "packages/core/src/**"
-  test_patterns:
-    - "tests/**"
-    - "packages/core/tests/**"
-  min_test_files: 1
+  require_path_has_code_owner: true
 ```
 
-#### `required_field_in_diff`
+Every changed path must have at least one owner in CODEOWNERS. If CODEOWNERS is missing, the condition skips.
 
-Verify that additions to certain files include a text fragment (for example, enforcing `description` on new agents).
+**Critical paths / code owners**
 
 ```yaml
 parameters:
-  file_patterns:
-    - "packages/core/src/agent/**"
-  required_text:
-    - "description"
+  critical_owners: []   # or list of path patterns if supported
 ```
 
-These validators activate automatically when the parameters above are present, so you do not need to declare an `actions` block or manual mapping.
+Changes to critical paths require code-owner review. (See registry for exact semantics.)
 
-## Severity Levels
+**Protected branches**
 
-### Severity Configuration
+```yaml
+parameters:
+  protected_branches: ["main", "master"]
+```
 
-- **low** - Informational violations, no blocking
-- **medium** - Warning-level violations, may block with acknowledgment
-- **high** - Critical violations that should block
-- **critical** - Emergency violations that always block
+Blocks targeting these branches (e.g. merge without going through PR flow as configured).
 
-### Example Severity Usage
+### Push conditions
+
+**No force push**
+
+```yaml
+parameters:
+  no_force_push: true
+```
+
+Reject force pushes. Typically used with `event_types: ["push"]`.
+
+### File conditions
+
+**Max file size**
+
+```yaml
+parameters:
+  max_file_size_mb: 1
+```
+
+No single file in the PR may exceed N MB.
+
+**File pattern**
+
+```yaml
+parameters:
+  pattern: "tests/.*\\.py$|test_.*\\.py$"
+  condition_type: "files_match_pattern"
+```
+
+Changed files must (or must not) match the pattern; exact behavior depends on condition.
+
+### Time and deployment
+
+**Allowed hours, days, weekend** — See condition registry and examples in repo for `allowed_hours`, `timezone`, `days`, and deployment-related parameters.
+
+---
+
+## Example rules
+
+**Linked issue + PR size + CODEOWNERS reviewers**
 
 ```yaml
 rules:
-  - description: Remind developers to update documentation for significant changes
-    severity: low
-    event_types: [pull_request]
+  - description: "PRs must reference a linked issue (e.g. Fixes #123)"
+    enabled: true
+    severity: high
+    event_types: ["pull_request"]
     parameters:
-      file_patterns: ["src/**", "lib/**"]
+      require_linked_issue: true
 
-  - description: Warn about large pull requests that may be difficult to review
+  - description: "PR total lines changed must not exceed 500"
+    enabled: true
     severity: medium
-    event_types: [pull_request]
+    event_types: ["pull_request"]
     parameters:
-      max_files: 20
       max_lines: 500
 
-  - description: Block security-sensitive changes without proper review
-    severity: critical
-    event_types: [pull_request]
-    parameters:
-      file_patterns: ["**/security/**", "**/auth/**"]
-      required_teams: ["security-team"]
-```
-
-## Event Types
-
-### Supported Events
-
-- **pull_request** - PR creation, updates, merges
-- **push** - Code pushes to branches
-- **deployment** - Deployment events
-- **deployment_status** - Deployment status updates
-- **issue_comment** - Comments on issues and PRs
-
-### Event-Specific Rules
-
-```yaml
-rules:
-  # PR-specific rule
-  - description: All pull requests must be reviewed before merging
-    event_types: [pull_request]
-    parameters:
-      min_approvals: 1
-
-  # Deployment-specific rule
-  - description: Production deployments require explicit approval
-    event_types: [deployment]
-    parameters:
-      environment: "production"
-      min_approvals: 2
-
-  # Multi-event rule
-  - description: Security-sensitive changes require security team review
-    event_types: [pull_request, push, deployment]
-    parameters:
-      file_patterns: ["**/security/**", "**/auth/**"]
-      required_teams: ["security-team"]
-```
-
-## Advanced Configuration
-
-### Custom Parameters
-
-```yaml
-rules:
-  - description: Configurable approval requirements based on team and branch
+  - description: "When a PR modifies paths with CODEOWNERS, those owners must be added as reviewers"
     enabled: true
     severity: high
-    event_types: [pull_request]
+    event_types: ["pull_request"]
     parameters:
-      min_approvals: 2
-      required_teams: ["security", "senior-engineers"]
-      excluded_branches: ["feature/*"]
+      require_code_owner_reviewers: true
 ```
 
-### Environment-Specific Rules
+**Title pattern + description length**
 
 ```yaml
 rules:
-  - description: Strict rules for production deployments requiring multiple approvals
+  - description: "PR titles must follow conventional commit format; descriptions must be at least 50 chars"
+    enabled: true
+    severity: medium
+    event_types: ["pull_request"]
+    parameters:
+      title_pattern: "^feat|^fix|^docs|^style|^refactor|^test|^chore"
+      min_description_length: 50
+```
+
+**No force push to main**
+
+```yaml
+rules:
+  - description: "No direct pushes to main - all changes must go through PRs"
     enabled: true
     severity: critical
-    event_types: [deployment]
+    event_types: ["push"]
     parameters:
-      environment: "production"
-      min_approvals: 3
-      required_teams: ["security", "senior-engineers", "product"]
-
-  - description: Moderate rules for staging deployments with basic approval requirements
-    enabled: true
-    severity: high
-    event_types: [deployment]
-    parameters:
-      environment: "staging"
-      min_approvals: 1
-      required_teams: ["senior-engineers"]
+      no_force_push: true
 ```
 
-## Diff-Aware Validators
+---
 
-Watchflow supports advanced validators that inspect actual PR diffs to enforce code-level patterns:
+## Severity levels
 
-### diff_pattern
-Enforce regex requirements or prohibitions within file patches.
+- **low** — Informational; no blocking.
+- **medium** — Warning; often acknowledgable.
+- **high** — Blocking unless acknowledged (when the rule allows).
+- **critical** — Blocking; acknowledgment may not be allowed depending on rule.
 
-```yaml
-parameters:
-  file_patterns: ["packages/core/src/**/vector-query.ts"]
-  require_patterns: ["throw\\s+new\\s+Error"]
-  forbid_patterns: ["silent.*skip"]
-```
+Severity affects how violations are presented in check runs and comments; it does not change the condition logic.
 
-### related_tests
-Require test file updates when core code changes.
+---
 
-```yaml
-parameters:
-  file_patterns: ["packages/core/src/**"]
-  require_test_updates: true
-  min_test_files: 1
-```
+## Event types
 
-### required_field_in_diff
-Ensure new additions include required fields (e.g., agent descriptions).
+- **pull_request** — PR opened, updated, synchronized, etc.
+- **push** — Pushes to branches (use `no_force_push` for branch protection).
+- **deployment** / **deployment_status** / **deployment_review** — Deployment protection and time-based deploy rules.
+- **issue_comment** — Used for parsing `@watchflow acknowledge` and similar commands.
 
-```yaml
-parameters:
-  file_patterns: ["packages/core/src/agent/**"]
-  required_text: "description"
-```
+---
 
-## Best Practices
+## Where rules are read from
 
-### Rule Design
+Rules are loaded from **`.watchflow/rules.yaml` on the repo default branch** (e.g. `main`) via the GitHub API using the installation token. So:
 
-1. **Keep rules simple** and focused on single concerns
-2. **Use descriptive names** and clear descriptions
-3. **Test rules thoroughly** before deployment
-4. **Document rule rationale** and business context
-5. **Review rules regularly** for effectiveness
+- Changes to `.watchflow/rules.yaml` take effect after merge to the default branch.
+- No local clone or filesystem access is required for evaluation; PR data and CODEOWNERS content are fetched by the enricher.
 
-### Rule Management
+---
 
-1. **Version control rules** alongside code
-2. **Use rule templates** for consistency
-3. **Implement gradual rollouts** for new rules
-4. **Monitor rule effectiveness** and adjust as needed
-5. **Provide clear feedback** to developers
+## Best practices
 
-### Rule Optimization
+1. **Start small** — Enable one or two rules (e.g. `require_linked_issue`, `require_code_owner_reviewers`), then add more.
+2. **Use watchflow.dev** — Run repo analysis or feasibility to get suggested YAML that uses the correct parameter names.
+3. **Version control** — Keep `.watchflow/rules.yaml` in the repo and review rule changes in PRs.
+4. **Acknowledgment** — Use `@watchflow acknowledge "reason"` for legitimate one-off exceptions; don’t use it to bypass policy routinely.
 
-1. **Optimize rule conditions** for performance
-2. **Use appropriate severity levels**
-3. **Balance automation with human oversight**
-4. **Regularly review and update rules**
-5. **Collect feedback from teams**
+For the full list of conditions and parameter names, see [Features](../features.md) and the source: `src/rules/conditions/` and `src/rules/registry.py`.

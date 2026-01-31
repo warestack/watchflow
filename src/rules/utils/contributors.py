@@ -7,6 +7,7 @@ and determine if users are new or established contributors.
 
 import logging
 from datetime import datetime, timedelta
+from typing import Any
 
 from src.core.utils.caching import AsyncCache
 
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 class ContributorAnalyzer:
     """Analyzes repository contributors and their contribution history."""
 
-    def __init__(self, github_client):
+    def __init__(self, github_client: Any) -> None:
         self.github_client = github_client
         # Use AsyncCache for better cache management
         self._contributors_cache = AsyncCache(maxsize=100, ttl=3600)  # 1 hour cache
@@ -58,10 +59,11 @@ class ContributorAnalyzer:
                 username = contributor.get("login", "")
                 contributions = contributor.get("contributions", 0)
 
-                if contributions >= min_contributions:
-                    # Check if they have recent activity
-                    if await self._has_recent_activity(repo, username, installation_id, cutoff_date):
-                        past_contributors.add(username)
+                # SIM102: Combined nested if statements
+                if contributions >= min_contributions and await self._has_recent_activity(
+                    repo, username, installation_id, cutoff_date
+                ):
+                    past_contributors.add(username)
 
             # Cache the results
             self._contributors_cache.set(cache_key, list(past_contributors))
@@ -104,7 +106,7 @@ class ContributorAnalyzer:
             # Default to treating as new contributor on error
             return True
 
-    async def get_user_contribution_stats(self, username: str, repo: str, installation_id: int) -> dict:
+    async def get_user_contribution_stats(self, username: str, repo: str, installation_id: int) -> dict[str, Any]:
         """
         Get detailed contribution statistics for a user.
 
@@ -173,12 +175,14 @@ class ContributorAnalyzer:
                 "contribution_days": 0,
             }
 
-    async def _fetch_contributors(self, repo: str, installation_id: int) -> list[dict]:
+    async def _fetch_contributors(self, repo: str, installation_id: int) -> list[dict[str, Any]]:
         """Fetch contributors from GitHub API."""
         try:
             # Get repository contributors (this includes contribution counts)
+            from typing import cast
+
             contributors = await self.github_client.get_repository_contributors(repo, installation_id)
-            return contributors or []
+            return cast("list[dict[str, Any]]", contributors or [])
         except Exception as e:
             logger.error(f"Error fetching contributors for {repo}: {e}")
             return []
@@ -212,28 +216,46 @@ class ContributorAnalyzer:
             logger.error(f"Error checking recent activity for {username} in {repo}: {e}")
             return False
 
-    async def _fetch_user_commits(self, repo: str, username: str, installation_id: int, limit: int = 100) -> list[dict]:
+    async def _fetch_user_commits(
+        self, repo: str, username: str, installation_id: int, limit: int = 100
+    ) -> list[dict[str, Any]]:
         """Fetch commits by a specific user."""
         try:
-            return await self.github_client.get_user_commits(repo, username, installation_id, limit)
+            from typing import cast
+
+            return cast(
+                "list[dict[str, Any]]",
+                await self.github_client.get_user_commits(repo, username, installation_id, limit),
+            )
         except Exception as e:
             logger.error(f"Error fetching commits for {username} in {repo}: {e}")
             return []
 
     async def _fetch_user_pull_requests(
         self, repo: str, username: str, installation_id: int, limit: int = 100
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Fetch pull requests by a specific user."""
         try:
-            return await self.github_client.get_user_pull_requests(repo, username, installation_id, limit)
+            from typing import cast
+
+            return cast(
+                "list[dict[str, Any]]",
+                await self.github_client.get_user_pull_requests(repo, username, installation_id, limit),
+            )
         except Exception as e:
             logger.error(f"Error fetching PRs for {username} in {repo}: {e}")
             return []
 
-    async def _fetch_user_issues(self, repo: str, username: str, installation_id: int, limit: int = 100) -> list[dict]:
+    async def _fetch_user_issues(
+        self, repo: str, username: str, installation_id: int, limit: int = 100
+    ) -> list[dict[str, Any]]:
         """Fetch issues by a specific user."""
         try:
-            return await self.github_client.get_user_issues(repo, username, installation_id, limit)
+            from typing import cast
+
+            return cast(
+                "list[dict[str, Any]]", await self.github_client.get_user_issues(repo, username, installation_id, limit)
+            )
         except Exception as e:
             logger.error(f"Error fetching issues for {username} in {repo}: {e}")
             return []
@@ -243,7 +265,7 @@ class ContributorAnalyzer:
 _contributor_analyzer: ContributorAnalyzer | None = None
 
 
-def get_contributor_analyzer(github_client) -> ContributorAnalyzer:
+def get_contributor_analyzer(github_client: Any) -> ContributorAnalyzer:
     """Get or create the global contributor analyzer instance."""
     global _contributor_analyzer
     if _contributor_analyzer is None:
@@ -251,7 +273,7 @@ def get_contributor_analyzer(github_client) -> ContributorAnalyzer:
     return _contributor_analyzer
 
 
-async def is_new_contributor(username: str, repo: str, github_client, installation_id: int) -> bool:
+async def is_new_contributor(username: str, repo: str, github_client: Any, installation_id: int) -> bool:
     """
     Convenience function to check if a user is a new contributor.
 
@@ -268,7 +290,7 @@ async def is_new_contributor(username: str, repo: str, github_client, installati
     return await analyzer.is_new_contributor(username, repo, installation_id)
 
 
-async def get_past_contributors(repo: str, github_client, installation_id: int) -> set[str]:
+async def get_past_contributors(repo: str, github_client: Any, installation_id: int) -> set[str]:
     """
     Convenience function to get past contributors.
 

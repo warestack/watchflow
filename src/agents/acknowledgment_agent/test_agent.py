@@ -5,6 +5,8 @@ Test script for the Intelligent Acknowledgment Agent.
 import asyncio
 import logging
 
+import pytest
+
 from src.agents.acknowledgment_agent.agent import AcknowledgmentAgent
 
 # Set up logging
@@ -12,7 +14,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def test_acknowledgment_agent():
+@pytest.mark.asyncio
+async def test_acknowledgment_agent() -> None:
     """Test the intelligent acknowledgment agent with sample data."""
 
     # Create agent

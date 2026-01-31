@@ -5,9 +5,12 @@ Provides context managers and decorators for structured operation logging
 with timing, error tracking, and metadata.
 """
 
+from __future__ import annotations
+
+import inspect
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable  # noqa: TCH003
 from contextlib import asynccontextmanager
 from functools import wraps
 from typing import Any
@@ -20,7 +23,7 @@ async def log_operation(
     operation: str,
     subject_ids: dict[str, str] | None = None,
     **context: Any,
-):
+) -> Any:  # AsyncGenerator[None, None]
     """
     Context manager for structured operation logging.
 
@@ -62,7 +65,7 @@ async def log_operation(
         )
 
 
-def log_function_call(operation: str | None = None):
+def log_function_call(operation: str | None = None) -> Any:
     """
     Decorator for logging function calls with timing.
 
@@ -78,11 +81,11 @@ def log_function_call(operation: str | None = None):
             return await api_call()
     """
 
-    def decorator(func):
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         op_name = operation or func.__name__
 
         @wraps(func)
-        async def async_wrapper(*args, **kwargs):
+        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
             start_time = time.time()
             logger.info(f"🚀 Calling {op_name}")
 
@@ -100,7 +103,7 @@ def log_function_call(operation: str | None = None):
                 raise
 
         @wraps(func)
-        def sync_wrapper(*args, **kwargs):
+        def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
             start_time = time.time()
             logger.info(f"🚀 Calling {op_name}")
 
@@ -118,8 +121,6 @@ def log_function_call(operation: str | None = None):
                 raise
 
         # Return appropriate wrapper based on whether function is async
-        import inspect
-
         if inspect.iscoroutinefunction(func):
             return async_wrapper
         return sync_wrapper
@@ -142,5 +143,6 @@ def log_structured(
         level: Logging level (info|warning|error).
         **context: Arbitrary key/value metadata.
     """
+    # Callable is now only needed for typing, so it's safe to use the string name or handled by __future__
     log_fn: Callable[..., Any] = getattr(logger_obj, level, logger_obj.info)
     log_fn(event, extra=context)

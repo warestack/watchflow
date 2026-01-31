@@ -1,183 +1,102 @@
 # Quick Start Guide
 
-Get Watchflow up and running in minutes to replace static protection rules with context-aware rule guardrails.
+Get Watchflow running in a few minutes: install the app, add `.watchflow/rules.yaml`, and verify with a PR or push. No new dashboards—everything stays in GitHub.
 
-## What You'll Get
+---
 
-- **Context-aware rule evaluation** for issues, pull requests and deployments
-- **Intelligent governance** that adapts to your context and team dynamics
-- **Plug n play GitHub integration** via GitHub App - no additional UI required
-- **Comment-based acknowledgments** for rule violations with AI-powered evaluation
-- **Real-time feedback** to developers through status checks and comments
-- **Audit trails** for compliance and transparency
+## What you get
+
+- **Rule evaluation** on every PR and push against your YAML rules.
+- **Check runs** and **PR comments** when rules are violated (or when no rules file exists, a welcome comment with a link to set one up).
+- **Acknowledgment** in-thread: `@watchflow acknowledge "reason"` where the rule allows it.
+- **One config file** — `.watchflow/rules.yaml` on the default branch; rules are loaded from there via the GitHub API.
+
+---
 
 ## Prerequisites
 
-- **GitHub repository** with admin access
-- **5 minutes** to set up
-- **Team understanding** of governance rules you want to enforce
+- **GitHub repo** where you have admin (or can install a GitHub App).
+- **A few minutes** to install the app and add a rules file.
 
-## Step 1: Install Watchflow GitHub App
+---
 
-1. **Install the GitHub App**
-   - Visit [Watchflow GitHub App](https://github.com/apps/watchflow)
-   - Click "Install" and select your repositories
-   - Grant required permissions (Watchflow only reads content and responds to events)
+## Step 1: Install the GitHub App
 
-2. **Verify Installation**
-   - Check that Watchflow appears in your repository's "Installed GitHub Apps"
-   - The app will start monitoring your repository immediately
+1. Go to [Watchflow GitHub App](https://github.com/apps/watchflow).
+2. Click **Install** and choose the org/repos you want to protect.
+3. Grant the requested permissions (webhooks, repo content for rules and PR data).
 
-## Step 2: Create Your Rules
+Watchflow will start receiving webhooks. If there’s no `.watchflow/rules.yaml` yet, the first PR will get a **welcome comment** with a link to [watchflow.dev](https://watchflow.dev) (including `installation_id` and `repo`) so you can run repo analysis and create a rules PR **without entering a PAT**.
 
-**💡 Pro Tip**: Before writing rules manually, test your natural language rules at [watchflow.dev](https://watchflow.dev) to see if they're supported. The tool will generate the YAML configuration for you - just copy and paste it into your `rules.yaml` file!
+---
 
-Create `.watchflow/rules.yaml` in your repository root to define your governance rules:
+## Step 2: Add rules
+
+**Option A — From the welcome comment (no PAT)**
+
+1. Open a PR (or any PR) and find the Watchflow welcome comment.
+2. Click the link to **watchflow.dev/analyze?installation_id=…&repo=owner/repo**.
+3. Run repo analysis; review suggested rules and click **Create PR** to add `.watchflow/rules.yaml` to a branch.
+
+**Option B — Manual**
+
+Create `.watchflow/rules.yaml` in the repo root on the default branch, for example:
 
 ```yaml
 rules:
-  - description: All pull requests must have a min num of approvals unless the author is a maintainer
+  - description: "PRs must reference a linked issue (e.g. Fixes #123)"
     enabled: true
     severity: high
-    event_types: [pull_request]
+    event_types: ["pull_request"]
     parameters:
-      min_approvals: 2
+      require_linked_issue: true
 
-  - description: Prevent deployments on weekends
+  - description: "When a PR modifies paths with CODEOWNERS, those owners must be added as reviewers"
     enabled: true
-    severity: medium
-    event_types: [deployment]
+    severity: high
+    event_types: ["pull_request"]
     parameters:
-      restricted_days: [Saturday, Sunday]
+      require_code_owner_reviewers: true
+
+  - description: "No direct pushes to main - all changes via PRs"
+    enabled: true
+    severity: critical
+    event_types: ["push"]
+    parameters:
+      no_force_push: true
 ```
 
-**Pro Tip**: Start with simple rules and gradually add complexity as your team gets comfortable with the tool.
+Parameter names must match the [supported conditions](configuration.md); see [Configuration](configuration.md) for the full reference.
 
-## Step 3: Test Your Setup
+---
 
-1. **Create a test pull request**
-   - Make a small change to trigger rule evaluation
-   - Watch for Watchflow comments and status checks
-   - Verify that rules are being applied correctly
+## Step 3: Verify
 
-2. **Try acknowledgment workflow**
-   - When a rule violation occurs, comment: `@watchflow acknowledge "Emergency fix, all comments have been resolved"` or
-     `@watchflow ack "Emergency fix, all comments have been resolved"`
-   - Watch how AI evaluates your acknowledgment request
+1. **Open a PR** (or push to a protected branch if you use `no_force_push`).
+2. Check **GitHub Checks** for the Watchflow check run (pass / fail / neutral).
+3. If a rule is violated, you should see a **PR comment** with the violation and remediation hint.
+4. Where the rule allows it, reply with:
+   `@watchflow acknowledge "Documentation-only change, no code impact"`
+   (or `@watchflow ack "…"`).
 
-3. **Verify rule enforcement**
-   - Check that blocking rules prevent merging when appropriate
-   - Verify comments provide clear guidance and explanations
-   - Test both acknowledgable and non-acknowledgable violations
+---
 
-## How It Works
+## Comment commands
 
-### Rule Evaluation Flow
+| Command | Purpose |
+|--------|--------|
+| `@watchflow acknowledge "reason"` / `@watchflow ack "reason"` | Record an acknowledgment for a violation (when the rule allows it). |
+| `@watchflow evaluate "rule in plain English"` | Ask whether a rule is feasible and get suggested YAML. |
+| `@watchflow help` | List commands. |
 
-1. **Event Trigger**: GitHub event (PR, deployment, etc.) occurs
-2. **Rule Matching**: Watchflow identifies applicable rules
-3. **Context Analysis**: AI agents evaluate context and rule conditions
-4. **Decision Making**: Intelligent decision based on multiple factors
-5. **Action Execution**: Block, comment, or approve based on evaluation
-6. **Feedback Loop**: Developers can acknowledge or appeal decisions
+---
 
-### Acknowledgment Workflow
+## Next steps
 
-When a rule violation occurs:
+- **Tune rules** — [Configuration](configuration.md) for parameter reference and examples.
+- **See supported logic** — [Features](../features.md) for all conditions and capabilities.
+- **Architecture** — [Concepts / Overview](../concepts/overview.md) for flow and components.
 
-1. **Violation Detected**: Watchflow identifies rule violation
-2. **Comment Posted**: Clear explanation of the violation
-3. **Developer Response**: Comment with acknowledgment command
-4. **AI Evaluation**: AI agent evaluates acknowledgment request
-5. **Decision**: Approve, reject, or escalate based on context
-6. **Action**: Update PR status and provide feedback
+---
 
-### Comment Commands
-
-Use these commands in PR comments to interact with Watchflow:
-
-```bash
-# Acknowledge a violation
-@watchflow acknowledge "Documentation updates only, no code changes"
-@watchflow ack "Documentation updates only, no code changes"
-
-# Acknowledge with reasoning
-@watchflow acknowledge "Emergency fix, all comments have been resolved"
-@watchflow ack "Emergency fix, all comments have been resolved"
-
-# Evaluate the feasibility of a rule
-@watchflow evaluate "Add a rule that requires 2 approvals for PRs to main"
-
-# Get help and available commands
-@watchflow help
-```
-
-**Pro Tips:**
-- Be specific in your reasoning for better AI evaluation
-- Use acknowledgment for legitimate exceptions, not to bypass important rules
-- Escalation is for truly urgent cases that require immediate attention
-
-## Key Features
-
-### Context-Aware Intelligence
-
-- **Context Awareness**: Understands repository structure and team dynamics
-- **Adaptive Decisions**: Considers historical patterns and current context
-- **Intelligent Reasoning**: Provides detailed explanations for decisions
-- **Learning Capability**: Improves over time based on team feedback
-
-### Plug n Play Integration
-
-- **Native GitHub Experience**: Works through comments and checks
-- **No UI Required**: Everything happens in GitHub interface
-- **Real-time Feedback**: Immediate responses to events
-- **Team Collaboration**: Supports team-based acknowledgments
-
-### Flexible Governance
-
-- **Custom Rules**: Define rules specific to your organization
-- **Multiple Severity Levels**: From warnings to critical blocks
-- **Environment Awareness**: Different rules for different environments
-- **Exception Handling**: Acknowledgment workflow for legitimate exceptions
-
-## Example Scenarios
-
-### Can Acknowledge: Emergency Fix
-
-**Situation**: PR lacks required approvals but it's an emergency fix
-**Watchflow Action**: Blocks PR, requires acknowledgment
-**Developer Response**: `@watchflow acknowledge "Emergency fix, team is unavailable"` or `@watchflow ack "Emergency fix,
-   team is unavailable"`
-**Result**: PR approved with documented exception
-
-### Remains Blocked: Security Review
-
-**Situation**: Deploying to production without security review
-**Watchflow Action**: Deployment stays blocked even with acknowledgment
-**Developer Response**: Cannot acknowledge - security review is mandatory
-**Result**: Deployment blocked until security review completed
-
-### Can Acknowledge: Weekend Deployment
-
-**Situation**: Weekend deployment rules are violated for critical issue
-**Watchflow Action**: Blocks deployment, allows acknowledgment
-**Developer Response**: `@watchflow acknowledge "Critical production fix needed"` or `@watchflow ack "Critical
-   production fix needed"`
-**Result**: Deployment proceeds with documented exception
-
-### Remains Blocked: Sensitive Files
-
-**Situation**: Sensitive files modified without proper review
-**Watchflow Action**: PR remains blocked until security team approval
-**Developer Response**: Cannot acknowledge - security team approval required
-**Result**: PR blocked until security team reviews and approves
-
-## Next Steps
-
-- **Explore Advanced Configuration**: See the [Configuration Guide](configuration.md) for detailed rule options
-- **Learn About Features**: Check out [Features](../features.md) to understand all capabilities
-- **View Performance**: See [Performance Benchmarks](../benchmarks.md) for real-world results
-- **Get Support**: Visit our [GitHub Discussions](https://github.com/warestack/watchflow/discussions) for help
-
-**Congratulations!** You've successfully set up Watchflow with context-aware rule guardrails. Your team can now focus on
-building while maintaining consistent quality standards.
+*Watchflow: the immune system for your repo. Rules in YAML, enforcement in GitHub.*

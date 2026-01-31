@@ -1,12 +1,14 @@
 """
-Rule Feasibility Agent implementation with error handling and retry logic.
+Rule Feasibility Agent implementation with error handling  and retry logic.
 """
 
 import asyncio
 import logging
 import time
+from typing import Any
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from src.agents.base import AgentResult, BaseAgent
 from src.agents.feasibility_agent.models import FeasibilityState
@@ -31,7 +33,7 @@ class RuleFeasibilityAgent(BaseAgent):
         self.timeout = timeout
         logger.info(f"🔧 FeasibilityAgent initialized with max_retries={max_retries}, timeout={timeout}s")
 
-    def _build_graph(self) -> StateGraph:
+    def _build_graph(self) -> CompiledStateGraph:
         """Build the LangGraph workflow for rule feasibility checking."""
         workflow = StateGraph(FeasibilityState)
 
@@ -54,10 +56,14 @@ class RuleFeasibilityAgent(BaseAgent):
         logger.info("🔧 FeasibilityAgent graph built with conditional structured output workflow")
         return workflow.compile()
 
-    async def execute(self, rule_description: str) -> AgentResult:
+    async def execute(self, **kwargs: Any) -> AgentResult:
         """
         Check if a rule description is feasible and return YAML or feedback.
         """
+        rule_description = kwargs.get("rule_description")
+        if not rule_description:
+            return AgentResult(success=False, message="Missing 'rule_description' in arguments", data={})
+
         start_time = time.time()
 
         try:
@@ -128,7 +134,7 @@ class RuleFeasibilityAgent(BaseAgent):
         """
         for attempt in range(self.max_retries):
             try:
-                result = await self.execute(rule_description)
+                result = await self.execute(rule_description=rule_description)
                 if result.success:
                     result.metadata = result.metadata or {}
                     result.metadata["retry_count"] = attempt

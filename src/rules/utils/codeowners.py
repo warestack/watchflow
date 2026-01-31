@@ -128,7 +128,7 @@ class CodeOwnersParser:
         # Exact match
         return f"^{re.escape(pattern)}$"
 
-    def get_critical_files(self, critical_owners: list[str] = None) -> list[str]:
+    def get_critical_files(self, critical_owners: list[str] | None = None) -> list[str]:
         """
         Get a list of file patterns that are considered critical.
 
@@ -159,6 +159,21 @@ class CodeOwnersParser:
             True if the file has owners defined
         """
         return len(self.get_owners_for_file(file_path)) > 0
+
+
+def path_has_owner(file_path: str, codeowners_content: str) -> bool:
+    """
+    Check if a path has any code owner defined using CODEOWNERS content (no disk read).
+
+    Args:
+        file_path: Path to the file relative to repository root
+        codeowners_content: Raw content of the CODEOWNERS file
+
+    Returns:
+        True if the path matches at least one pattern and has owners
+    """
+    parser = CodeOwnersParser(codeowners_content)
+    return parser.has_owners(file_path)
 
 
 def load_codeowners(repo_path: str = ".") -> CodeOwnersParser | None:
@@ -205,7 +220,7 @@ def get_file_owners(file_path: str, repo_path: str = ".") -> list[str]:
     return parser.get_owners_for_file(file_path)
 
 
-def is_critical_file(file_path: str, repo_path: str = ".", critical_owners: list[str] = None) -> bool:
+def is_critical_file(file_path: str, repo_path: str = ".", critical_owners: list[str] | None = None) -> bool:
     """
     Check if a file is considered critical based on CODEOWNERS.
 

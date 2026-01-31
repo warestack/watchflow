@@ -1,45 +1,79 @@
-import logging
-from typing import Any
+from functools import lru_cache
 
-from src.core.models import WebhookEvent
-from src.rules.utils import validate_rules_yaml_from_repo
+import structlog
+
+from src.core.models import EventType, WebhookEvent, WebhookResponse
+from src.event_processors.pull_request.processor import PullRequestProcessor
 from src.tasks.task_queue import task_queue
 from src.webhooks.handlers.base import EventHandler
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
+
+
+# Instantiate processor once (singleton-like) but lazily
+@lru_cache(maxsize=1)
+def get_pr_processor() -> PullRequestProcessor:
+    return PullRequestProcessor()
 
 
 class PullRequestEventHandler(EventHandler):
-    """Handler for pull request webhook events using task queue."""
+    """Thin handler for pull request webhook events—delegates to event processor."""
 
     async def can_handle(self, event: WebhookEvent) -> bool:
         return event.event_type.name == "PULL_REQUEST"
 
-    async def handle(self, event: WebhookEvent) -> dict[str, Any]:
-        """Handle pull request events by enqueuing them for background processing."""
-        logger.info(f"🔄 Enqueuing pull request event for {event.repo_full_name}")
-
-        # If the pull request is opened, validate the rules.yaml file
-        if event.payload.get("action") == "opened":
-            pr_number = event.payload.get("pull_request", {}).get("number")
-            if pr_number:
-                await validate_rules_yaml_from_repo(
-                    repo_full_name=event.repo_full_name,
-                    installation_id=event.installation_id,
-                    pr_number=pr_number,
-                )
-
-        task_id = await task_queue.enqueue(
+    async def handle(self, event: WebhookEvent) -> WebhookResponse:
+        """
+        Orchestrates pull request event processing.
+        Delegates to event_processors via TaskQueue.
+        """
+        log = logger.bind(
             event_type="pull_request",
-            repo_full_name=event.repo_full_name,
-            installation_id=event.installation_id,
-            payload=event.payload,
+            repo=event.repo_full_name,
+            pr_number=event.payload.get("pull_request", {}).get("number"),
+            action=event.payload.get("action"),
         )
 
-        logger.info(f"✅ Pull request event enqueued with task ID: {task_id}")
+        # Filter relevant actions to reduce noise (optional but good practice)
+        action = event.payload.get("action")
+        if action not in ["opened", "synchronize", "reopened", "edited"]:
+            log.info("pr_action_ignored", action=action)
+            return WebhookResponse(
+                status="ignored", detail=f"PR action '{action}' is not processed", event_type=EventType.PULL_REQUEST
+            )
 
-        return {
-            "status": "enqueued",
-            "task_id": task_id,
-            "message": "Pull request event has been queued for processing",
-        }
+        log.info("pr_handler_invoked")
+
+        try:
+            # Build Task so process(task: Task) receives the correct type (not WebhookEvent)
+            processor = get_pr_processor()
+            task = task_queue.build_task(
+                "pull_request",
+                event.payload,
+                processor.process,
+                delivery_id=event.delivery_id,
+            )
+            enqueued = await task_queue.enqueue(
+                processor.process,
+                "pull_request",
+                event.payload,
+                task,
+                delivery_id=event.delivery_id,
+            )
+
+            if enqueued:
+                log.info("pr_event_enqueued")
+                return WebhookResponse(
+                    status="ok", detail="Pull request event enqueued for processing", event_type=EventType.PULL_REQUEST
+                )
+            else:
+                log.info("pr_event_duplicate_skipped")
+                return WebhookResponse(
+                    status="ignored", detail="Duplicate event skipped", event_type=EventType.PULL_REQUEST
+                )
+
+        except Exception as e:
+            log.error("pr_processing_failed", error=str(e), exc_info=True)
+            return WebhookResponse(
+                status="error", detail=f"PR processing failed: {str(e)}", event_type=EventType.PULL_REQUEST
+            )

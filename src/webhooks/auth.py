@@ -1,14 +1,23 @@
 import hashlib
 import hmac
-import logging
+from collections.abc import Mapping
 
+import structlog
 from fastapi import HTTPException, Request
 
 from src.core.config import config
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 GITHUB_WEBHOOK_SECRET = config.github.webhook_secret
+
+# Headers that should never be logged (security-sensitive)
+_SENSITIVE_HEADERS = frozenset({"authorization", "cookie", "x-hub-signature-256", "x-hub-signature"})
+
+
+def _redact_headers(headers: Mapping[str, str]) -> dict[str, str]:
+    """Redact sensitive headers for safe logging."""
+    return {k: "[REDACTED]" if k.lower() in _SENSITIVE_HEADERS else v for k, v in headers.items()}
 
 
 async def verify_github_signature(request: Request) -> bool:
@@ -25,18 +34,22 @@ async def verify_github_signature(request: Request) -> bool:
         True if the signature is valid.
     """
     signature = request.headers.get("X-Hub-Signature-256")
+
+    # Log headers with sensitive values redacted
+    logger.debug("request_headers_received", headers=_redact_headers(request.headers))
+
     if not signature:
         logger.warning("Received a request without the X-Hub-Signature-256 header.")
         raise HTTPException(status_code=401, detail="Missing GitHub webhook signature.")
 
-    # Get the raw request payload  as bytes
+    # Raw bytes—GitHub signs body, not parsed JSON.
     payload = await request.body()
 
-    # Calculate the expected signature
+    # HMAC-SHA256—GitHub standard. Brittle if GitHub changes algo.
     mac = hmac.new(GITHUB_WEBHOOK_SECRET.encode(), msg=payload, digestmod=hashlib.sha256)
     expected_signature = f"sha256={mac.hexdigest()}"
 
-    # Securely compare the signatures
+    # Constant-time compare—prevents timing attacks.
     if not hmac.compare_digest(signature, expected_signature):
         logger.error("Invalid webhook signature.")
         raise HTTPException(status_code=401, detail="Invalid GitHub webhook signature.")

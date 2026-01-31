@@ -7,7 +7,7 @@ Functions for validating rule YAML files and posting validation results.
 import logging
 from typing import Any
 
-import yaml
+import yaml  # type: ignore
 
 from src.integrations.github import github_client
 from src.rules.models import Rule
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 DOCS_URL = "https://github.com/warestack/watchflow/blob/main/docs/getting-started/configuration.md"
 
 
-async def validate_rules_yaml_from_repo(repo_full_name: str, installation_id: int, pr_number: int):
+async def validate_rules_yaml_from_repo(repo_full_name: str, installation_id: int, pr_number: int) -> None:
     """Validate rules YAML and post results to PR comment."""
     validation_result = await _validate_rules_yaml(repo_full_name, installation_id)
     # Only post a comment if the result is not a success

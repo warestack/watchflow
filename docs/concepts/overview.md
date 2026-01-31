@@ -1,137 +1,75 @@
 # Architecture Overview
 
-Watchflow replaces static protection rules with context-aware monitoring. Our hybrid architecture combines rule-based
-logic with AI intelligence to ensure consistent quality standards so teams can focus on building, increase trust, and
-move fast.
+Watchflow is a **rule engine** for GitHub: you define rules in YAML; we evaluate them on PR and push events and surface violations as check runs and PR comments. No custom code in the repo—just conditions and parameters that map to built-in logic. Built for maintainers who want consistent enforcement without another dashboard or “AI-powered” abstraction.
 
-> **Experience the power of agentic governance** - then scale to enterprise with [Warestack](https://www.warestack.com/)
+## Design principles
 
-## Hybrid Architecture
+- **Repo-native** — Rules live in `.watchflow/rules.yaml` on the default branch; same mental model as branch protection and CODEOWNERS.
+- **Condition-based enforcement** — Rule evaluation is deterministic: parameters map to conditions (e.g. `require_linked_issue`, `max_lines`, `require_code_owner_reviewers`). No LLM in the hot path for “did this PR violate the rule?”
+- **Webhook-first** — Each delivery is identified by `X-GitHub-Delivery`; handler and processor get distinct task IDs so both run and comments/check runs stay in sync.
+- **Optional intelligence** — Repo analysis and feasibility checks use LLMs to *suggest* rules; enforcement stays rule-driven.
 
-Watchflow uses a unique hybrid architecture that combines rule-based logic with AI-powered intelligence:
+## Flow
 
 ```mermaid
 graph TD
-    A[GitHub Events] --> B[Webhook Receiver]
-    B --> C[Event Processor]
-    C --> D[AI Rule Engine]
-    C --> E[Static Fallback]
-    D --> F[Decision Maker]
-    E --> F
-    F --> G[Action Executor]
-    G --> H[GitHub API]
-    G --> I[Slack Notifications]
-    G --> J[Linear Integration]
+    A[GitHub Event] --> B[Webhook Router]
+    B --> C[Delivery ID + Payload]
+    C --> D[Handler: enqueue processor]
+    C --> E[Processor: load rules, enrich, evaluate]
+    E --> F[Rule Engine: conditions only]
+    F --> G[Violations / Pass]
+    G --> H[Check Run + PR Comment]
+    G --> I[Acknowledgment parsing on comment]
 ```
 
-## Core Components
+1. **Webhook** — GitHub sends `pull_request` or `push`; router reads `X-GitHub-Delivery`, builds `WebhookEvent` with `delivery_id`.
+2. **Handler** — Enqueues a processor task with `event_type + delivery_id + func` so dedup doesn’t skip the processor.
+3. **Processor** — Loads `.watchflow/rules.yaml` from default branch (via GitHub API). If missing, creates a neutral check run and posts a **welcome comment** with a link to watchflow.dev (`installation_id` + `repo`).
+4. **Enrichment** — Fetches PR files, reviews, CODEOWNERS content so conditions can run without a local clone.
+5. **Rule engine** — Passes **Rule objects** (with attached condition instances) to the engine. Engine runs each rule’s conditions; no conversion to dicts that would drop conditions.
+6. **Output** — Violations → check run + PR comment; developers can reply `@watchflow acknowledge "reason"` where the rule allows it.
 
-### Rule Engine
-- **Static Rule Processing**: Fast, deterministic rule evaluation
-- **Condition Matching**: Pattern-based condition checking
-- **Action Execution**: Immediate enforcement actions
-- **Validation**: Rule syntax and logic validation
+## Core components
 
-### AI Agents
-- **Feasibility Agent**: Determines if rules can be enforced
-- **Engine Agent**: Evaluates complex scenarios and context
-- **Acknowledgment Agent**: Processes violation acknowledgments
-- **Context Awareness**: Understands repository and team dynamics
+### Rule loader
 
-### Decision Orchestrator
-- **Hybrid Logic**: Combines rule and AI outputs intelligently
-- **Conflict Resolution**: Handles conflicting recommendations
-- **Business Logic**: Applies organizational policies
-- **Audit Trail**: Maintains decision history and reasoning
+- Reads `.watchflow/rules.yaml` from the repo default branch (GitHub App installation token).
+- Normalizes parameter aliases (e.g. `max_changed_lines` → `max_lines` for `MaxPrLocCondition`).
+- Builds `Rule` objects with condition instances from the **condition registry** (parameter keys map to conditions).
 
-## Key Benefits
+### Condition registry
 
-### Context-Aware Guardrails
-- **Intelligent Decisions**: Considers repository structure, team roles, and historical patterns
-- **Adaptive Enforcement**: Adjusts behavior based on team feedback and patterns
-- **Learning Capability**: Improves accuracy over time through feedback loops
-- **Nuanced Understanding**: Distinguishes between legitimate exceptions and actual violations
+- Maps parameter names to condition classes (e.g. `require_linked_issue` → `RequireLinkedIssueCondition`, `max_lines` → `MaxPrLocCondition`, `require_code_owner_reviewers` → `RequireCodeOwnerReviewersCondition`).
+- Supported conditions: linked issue, title pattern, description length, labels, approvals, PR size (lines), CODEOWNERS (path has owner, require owners as reviewers), protected branches, no force push, file size, file pattern, time/deploy rules. See [Configuration](../getting-started/configuration.md).
 
-### Developer Experience
-- **Plug n Play Integration**: Works within GitHub interface
-- **Clear Communication**: Provides detailed explanations for decisions
-- **Acknowledgment Workflow**: Allows legitimate exceptions with proper documentation
-- **Real-time Feedback**: Immediate responses to events and actions
+### PR enricher
 
-### Operational Efficiency
-- **Reduced False Positives**: AI-powered context analysis minimizes unnecessary blocks
-- **Automated Enforcement**: Handles routine governance tasks automatically
-- **Scalable Architecture**: Grows with your organization and repository complexity
-- **Audit Compliance**: Maintains complete audit trails for compliance requirements
+- Adds to event data: PR files, reviews, **CODEOWNERS file content** (from `.github/CODEOWNERS`, `CODEOWNERS`, or `docs/CODEOWNERS`) so CODEOWNERS-based conditions don’t need a local clone.
 
-## How It Works
+### Task queue
 
-### 1. Event Processing
-When a GitHub event occurs (PR creation, deployment, etc.), Watchflow:
-- Receives the webhook event
-- Analyzes the context and repository state
-- Identifies applicable rules based on event type and content
+- Task ID = `hash(event_type + delivery_id + func_qualname)` when `delivery_id` is present so handler and processor both run per delivery.
 
-### 2. Hybrid Evaluation
-For each applicable rule, Watchflow:
-- **Rule Engine**: Evaluates static conditions and patterns
-- **AI Agents**: Analyze context, team dynamics, and historical patterns
-- **Decision Orchestrator**: Combines both outputs to make final decision
+## Where AI is used (and where it isn’t)
 
-### 3. Action Execution
-Based on the evaluation, Watchflow:
-- Executes appropriate actions (block, comment, approve)
-- Provides clear explanations for decisions
-- Maintains audit trail for compliance
+- **Rule evaluation** — No. Violations are determined by conditions only.
+- **Acknowledgment parsing** — Optional LLM to interpret reason; can be extended.
+- **Repo analysis** — Yes. `POST /api/v1/rules/recommend` uses an agent to suggest rules from repo structure and PR history; you copy/paste or create a PR.
+- **Feasibility** — Yes. “Can I enforce this rule?” uses an agent to map natural language to supported conditions and suggest YAML.
 
-### 4. Feedback Loop
-Developers can:
-- Acknowledge violations with reasoning
-- Request escalations for urgent cases
-- Provide feedback to improve AI accuracy
+So: **enforcement is deterministic and condition-based**; **suggestions and feasibility are agent-assisted**. That keeps the hot path simple and auditable.
 
-## Use Cases
+## Use cases
 
-### Security Governance
-- **Code Security**: Detect security-sensitive changes and require review
-- **Access Control**: Enforce team-based approval requirements
-- **Compliance**: Ensure security policies are followed
-- **Audit Trail**: Maintain complete security decision history
+- **CODEOWNERS enforcement** — Require that owners for modified paths are requested as reviewers; or require every changed path to have an owner.
+- **Traceability** — Require linked issue, title pattern, minimum description length.
+- **Review quality** — Max PR size (lines), min approvals, required labels.
+- **Branch safety** — No force push, protected branch targets.
+- **Deploy safety** — Time windows, environment approvals (deployment events).
 
-### Quality Assurance
-- **Code Review**: Ensure proper review coverage and quality
-- **Testing Requirements**: Enforce testing standards and coverage
-- **Documentation**: Require documentation for complex changes
-- **Standards Compliance**: Enforce coding standards and practices
+## Docs
 
-### Deployment Safety
-- **Environment Protection**: Prevent unauthorized production deployments
-- **Approval Workflows**: Require explicit approval for critical deployments
-- **Rollback Protection**: Ensure safe deployment practices
-- **Change Management**: Track and control deployment changes
-
-### Team Collaboration
-- **Review Distribution**: Ensure balanced review workload
-- **Knowledge Sharing**: Require cross-team reviews for critical changes
-- **Mentorship**: Encourage senior developer involvement
-- **Onboarding**: Guide new team members through proper processes
-
-## Evaluation Benchmarks
-
-### Performance Metrics
-- **Response Time**: < 2 seconds for rule evaluation
-- **Accuracy**: > 95% correct rule enforcement
-- **False Positive Rate**: < 5% of total evaluations
-- **Scalability**: Handles 1000+ repositories simultaneously
-
-### Impact Metrics
-- **Security Incidents**: 80% reduction in security-related incidents
-- **Review Time**: 60% faster review cycles through intelligent routing
-- **Compliance**: 100% audit trail coverage for governance decisions
-- **Developer Satisfaction**: 90% positive feedback on governance experience
-
-### Adoption Metrics
-- **Time to Value**: Teams see benefits within first week
-- **Rule Effectiveness**: 85% of rules work correctly out of the box
-- **Acknowledgment Rate**: 70% of violations properly acknowledged
-- **Escalation Rate**: < 10% of decisions require human escalation
+- [Quick Start](../getting-started/quick-start.md)
+- [Configuration](../getting-started/configuration.md)
+- [Features](../features.md)

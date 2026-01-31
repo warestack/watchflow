@@ -1,278 +1,116 @@
 # Features
 
-Watchflow replaces static protection rules with context-aware monitoring. Our features ensure consistent quality
-standards so teams can focus on building, increase trust, and move fast.
+Watchflow is a rule engine for GitHub: rules in YAML, enforcement on PR and push, check runs and comments in-repo. This page summarizes supported logic and capabilities in a **maintainer-first**, tech-forward way—no marketing fluff.
 
-## Core Features
+## Supported conditions (rule logic)
 
-### Repository Analysis → One-Click PR
-- Paste a repo URL, get diff-aware rule recommendations (structure, PR history, CONTRIBUTING).
-- Click “Proceed with PR” to auto-create `.watchflow/rules.yaml` on a branch with a ready-to-review PR body.
-- Supports GitHub App installations or user tokens; logs are structured and safe for ops visibility.
+Rules are **description + event_types + parameters**. The engine matches **parameter keys** to built-in conditions. You don’t specify “validator” by name; the loader infers it from the parameters.
 
-### Context-Aware Rule Evaluation
+### Pull request
 
-**Intelligent Context Analysis**
-- Understands repository structure and team dynamics
-- Considers historical patterns and current context
-- Distinguishes between legitimate exceptions and actual violations
-- Adapts enforcement based on team feedback and learning
+| Parameter | Condition | Description |
+|-----------|-----------|-------------|
+| `require_linked_issue: true` | RequireLinkedIssueCondition | PR must reference an issue (e.g. Fixes #123). |
+| `title_pattern: "<regex>"` | TitlePatternCondition | PR title must match regex (e.g. conventional commits). |
+| `min_description_length: N` | MinDescriptionLengthCondition | PR body length ≥ N characters. |
+| `required_labels: ["A", "B"]` | RequiredLabelsCondition | PR must have these labels. |
+| `min_approvals: N` | MinApprovalsCondition | At least N approvals. |
+| `max_lines: N` | MaxPrLocCondition | Total additions + deletions ≤ N. (Loader accepts `max_changed_lines` as alias.) |
+| `require_code_owner_reviewers: true` | RequireCodeOwnerReviewersCondition | Owners for modified paths (from CODEOWNERS) must be requested as reviewers. |
+| `critical_owners: []` | CodeOwnersCondition | Changes to critical paths require code-owner review. |
+| `require_path_has_code_owner: true` | PathHasCodeOwnerCondition | Every changed path must have an owner in CODEOWNERS. |
+| `protected_branches: ["main"]` | ProtectedBranchesCondition | Block direct merge/target to these branches. |
 
-**Hybrid Decision Making**
-- Combines rule-based logic with AI intelligence
-- Reduces false positives through context awareness
-- Provides detailed reasoning for all decisions
-- Maintains audit trails for compliance requirements
+### Push
 
-### Plug n Play GitHub Integration
+| Parameter | Condition | Description |
+|-----------|-----------|-------------|
+| `no_force_push: true` | NoForcePushCondition | Reject force pushes. |
 
-**Native GitHub Experience**
-- Works entirely within GitHub interface
-- No additional UI or dashboard required
-- Real-time feedback through comments and status checks
-- Integrates with existing GitHub workflows
+### Files
 
-**Comment-Based Interactions**
-- Acknowledge violations with simple comments
-- Request escalations for urgent cases
-- Get help and status information
-- Maintain conversation history in PR threads
+| Parameter | Condition | Description |
+|-----------|-----------|-------------|
+| `max_file_size_mb: N` | MaxFileSizeCondition | No single file > N MB. |
+| `pattern` + `condition_type: "files_match_pattern"` | FilePatternCondition | Changed files must (or must not) match pattern. |
 
-### Flexible Rule System
+### Time and deployment
 
-**Declarative Rule Definition**
-- YAML-based rule configuration
-- Simple, readable rule syntax
-- Version-controlled rule management
-- Environment-specific rule variations
+| Parameter | Condition | Description |
+|-----------|-----------|-------------|
+| `allowed_hours`, `timezone` | AllowedHoursCondition | Restrict when actions can run. |
+| `days` | DaysCondition | Restrict by day. |
+| Weekend / deployment | WeekendCondition, WorkflowDurationCondition | Deployment and workflow rules. |
 
-**Rich Condition Support**
-- File patterns and content analysis
-- Team and role-based conditions
-- Approval and review requirements
-- Custom business logic integration
+### Team
 
-## Key Capabilities
+| Parameter | Condition | Description |
+|-----------|-----------|-------------|
+| `team: "<name>"` | AuthorTeamCondition | Event author must be in the given team. |
 
-### Pull Request Governance
+---
 
-**Automated Review Enforcement**
-- Ensure required approvals are obtained
-- Enforce team-based review requirements
-- Prevent self-approval scenarios
-- Track review coverage and quality
+## Repository analysis → one-click rules PR
 
-**Security and Compliance**
-- Detect security-sensitive changes
-- Require security team review for critical files
-- Enforce coding standards and practices
-- Maintain compliance audit trails
+- **Endpoint**: `POST /api/v1/rules/recommend` with `repo_url`; optional `installation_id` (from install link) or user token for private repos and higher rate limits.
+- **Behavior**: Analyzes repo structure and recent PR history; returns suggested rules (YAML) and a PR plan. No PAT required when you hit the link from the app install flow (`?installation_id=...&repo=owner/repo`).
+- **Create PR**: `POST /api/v1/rules/recommend/proceed-with-pr` creates a branch and PR that adds `.watchflow/rules.yaml`. Auth: Bearer token or `installation_id` in body.
 
-**Quality Assurance**
-- Enforce testing requirements
-- Require documentation for complex changes
-- Check for code quality indicators
-- Prevent technical debt accumulation
+Suggested rules use the **same parameter names** as above so they work out of the box when you merge the PR.
 
-### Deployment Protection
+---
 
-**Environment Safety**
-- Protect production environments
-- Require explicit approval for critical deployments
-- Prevent unauthorized deployment changes
-- Track deployment history and approvals
+## Welcome comment when no rules file
 
-**Rollback Protection**
-- Ensure safe deployment practices
-- Require rollback plans for major changes
-- Track deployment success rates
-- Maintain deployment audit trails
+When `.watchflow/rules.yaml` is missing and a PR is opened, Watchflow:
 
-### Team Collaboration
+1. Creates a **neutral check run** (“Rules not configured”).
+2. Posts a **welcome comment** with:
+   - Link to [watchflow.dev/analyze](https://watchflow.dev/analyze)?installation_id=…&repo=owner/repo (no PAT needed from install flow).
+   - Short “manual setup” instructions and a minimal YAML example.
+   - Note that rules are read from the default branch.
 
-**Review Distribution**
-- Balance review workload across teams
-- Ensure cross-team knowledge sharing
-- Encourage senior developer involvement
-- Guide new team members through processes
+So maintainers get one clear next step instead of a silent skip.
 
-**Mentorship and Onboarding**
-- Require senior review for junior developers
-- Enforce pair programming for complex changes
-- Guide new team members through proper processes
-- Track learning and development progress
+---
 
-## Advanced Features
+## Webhook and task dedup
 
-### Acknowledgment Workflow
+- Each delivery is identified by **`X-GitHub-Delivery`**; we store it on `WebhookEvent` as `delivery_id`.
+- **Task ID** = `hash(event_type + delivery_id + func_qualname)` when `delivery_id` is present so the “run handler” and “run processor” tasks are **both** executed per delivery. That fixes “nothing delivered to the PR as comment” when the processor was previously skipped as a duplicate.
 
-**Flexible Exception Handling**
-- Allow legitimate exceptions with proper documentation
-- Support team-based acknowledgment decisions
-- Maintain audit trails for all exceptions
-- Provide escalation paths for urgent cases
+---
 
-**Intelligent Acknowledgment Processing**
-- AI-powered acknowledgment evaluation
-- Context-aware approval decisions
-- Automatic escalation for high-risk exceptions
-- Learning from acknowledgment patterns
+## Comment commands
 
-### Real-Time Monitoring
+| Command | Purpose |
+|--------|--------|
+| `@watchflow acknowledge "reason"` / `@watchflow ack "reason"` | Record an acknowledgment for a violation (when the rule allows it). |
+| `@watchflow evaluate "rule in plain English"` | Ask whether a rule is feasible and get suggested YAML. |
+| `@watchflow help` | List commands. |
 
-**Live Status Updates**
-- Real-time rule evaluation status
-- Immediate feedback on violations
-- Live acknowledgment processing
-- Instant escalation notifications
+---
 
-**Comprehensive Logging**
-- Complete audit trail for all decisions
-- Detailed reasoning for each action
-- Historical pattern analysis
-- Performance and accuracy metrics
+## GitHub integration
 
-### Scalable Architecture
+- **GitHub App** — Install per org/repo; we use installation tokens for API access and webhooks.
+- **Webhooks** — `pull_request`, `push`; we also support `issue_comment` for acknowledgments, and deployment/workflow events for time-based and deploy rules.
+- **Check runs** — Violations show up as failed/neutral check runs with a summary and link to the rules file.
+- **PR comments** — Violation summary and remediation hints; acknowledgment replies parsed in-thread.
 
-**Multi-Repository Support**
-- Manage rules across multiple repositories
-- Organization-wide rule templates
-- Repository-specific customizations
-- Centralized governance management
+---
 
-**High Performance**
-- Sub-second response times
-- Concurrent rule evaluation
-- Efficient resource utilization
-- Scalable to enterprise workloads
+## Rate limiting and auth
 
-## User Experience Features
+- **Repo analysis** — Public repos: anonymous allowed (rate limit per IP). Private repos or higher limits: send `installation_id` (from install link) or Bearer token.
+- **Proceed-with-PR** — Requires either Bearer token or `installation_id` in the request body.
 
-### Developer-Friendly Interface
+---
 
-**Simple Comment Commands**
-```bash
-# Acknowledge a violation
-@watchflow acknowledge "Security review completed offline"
-@watchflow ack "Security review completed offline"
+## What we don’t do (by design)
 
-# Acknowledge with reasoning
-@watchflow acknowledge "Emergency fix, team is unavailable"
-@watchflow ack "Emergency fix, team is unavailable"
+- **No “natural language” enforcement** — Rules are YAML with fixed parameter names; the engine doesn’t interpret freeform text in the hot path.
+- **No custom code in repo** — All logic is in conditions; you only edit YAML.
+- **No separate dashboard** — Everything stays in GitHub: check runs, comments, CODEOWNERS, branch protection.
 
-# Evaluate the feasibility of a rule
-@watchflow evaluate "Require 2 approvals for PRs to main"
-
-# Get help
-@watchflow help
-```
-
-**Clear Communication**
-- Detailed explanations for all decisions
-- Actionable guidance for resolving violations
-- Context-aware recommendations
-- Helpful error messages and suggestions
-
-### Team Collaboration
-
-**Role-Based Interactions**
-- Different capabilities for different team roles
-- Senior developer override capabilities
-- Team-based acknowledgment decisions
-- Escalation workflows for urgent cases
-
-**Knowledge Sharing**
-- Cross-team review requirements
-- Documentation enforcement
-- Best practice guidance
-- Learning and development tracking
-
-## Integration Features
-
-### GitHub Ecosystem
-
-**Native GitHub Integration**
-- GitHub App installation and management
-- Webhook-based event processing
-- Status check integration
-- Comment thread management
-
-**GitHub Features Support**
-- Pull request reviews and approvals
-- Deployment protection rules
-- Branch protection integration
-- Issue and project integration
-
-### External Integrations
-
-**AI Service Integration**
-- OpenAI GPT models for intelligent evaluation
-- LangSmith for AI debugging and monitoring
-- Custom AI model support
-- Multi-provider AI integration
-
-**Monitoring and Observability**
-- Prometheus metrics integration
-- Grafana dashboard support
-- Log aggregation and analysis
-- Performance monitoring and alerting
-
-## Security Features
-
-### Access Control
-
-**GitHub App Security**
-- Secure webhook signature validation
-- GitHub App authentication
-- Role-based access control
-- Audit trail for all actions
-
-**Data Protection**
-- Encrypted data transmission
-- Secure credential management
-- Privacy-compliant data handling
-- GDPR and SOC2 compliance
-
-### Compliance and Audit
-
-**Complete Audit Trail**
-- All decisions logged with reasoning
-- User action tracking and attribution
-- Compliance report generation
-- Historical analysis and reporting
-
-**Policy Enforcement**
-- Consistent rule application
-- Policy violation tracking
-- Compliance monitoring and alerting
-- Regulatory requirement support
-
-## Performance Features
-
-### High Availability
-
-**Reliable Operation**
-- 99.9% uptime guarantee
-- Automatic failover and recovery
-- Load balancing and scaling
-- Disaster recovery capabilities
-
-**Performance Optimization**
-- Sub-second response times
-- Efficient resource utilization
-- Caching and optimization
-- Scalable architecture design
-
-### Monitoring and Analytics
-
-**Real-Time Metrics**
-- Response time monitoring
-- Accuracy and performance tracking
-- Usage analytics and insights
-- Cost optimization recommendations
-
-**Proactive Alerts**
-- Performance degradation alerts
-- Error rate monitoring
-- Capacity planning insights
-- Predictive maintenance
+For enterprise features (team management, Slack/Linear/Jira, SOC2), see [Warestack](https://www.warestack.com/).

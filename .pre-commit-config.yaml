@@ -2,50 +2,30 @@ default_stages:
   - pre-commit
   - pre-push
 
-# Configuration for pre-commit hooks
 repos:
-  # General hooks from the pre-commit-hooks repository
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
-        # Removes any trailing whitespace from lines in text files
       - id: end-of-file-fixer
-        # Ensures files end with a newline
       - id: check-yaml
         exclude: '^helm-chart/templates.*\.yaml$|^mkdocs\.yml$'
-        # Checks YAML files for syntax errors
       - id: check-json
-        # Checks JSON files for syntax errors
-      - id: check-ast
-        name: "Check Python syntax (AST validation)"
-        # Validates that Python files have valid syntax
+      - id: check-added-large-files
 
-  # Ruff hooks for Python linting and formatting
+  # Ruff: The One Tool to Rule Them All
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.9
+    rev: v0.3.0
     hooks:
-      # First, run ruff format - won't change imports but will format them
-      - id: ruff-format
-        name: "Format code (without changing imports)"
-
-      # Then, use a single ruff pass for both import sorting and linting
+      # Linter (Fixes imports, modernizes syntax, checks bugs)
       - id: ruff
-        name: "Linting and import sorting"
-        args: ["--fix"]
+        args: [--fix, --exit-non-zero-on-fix]
+      # Formatter (Replaces Black)
+      - id: ruff-format
 
-  # Pyupgrade: Check and fix Python version incompatibilities and outdated syntax
-  - repo: https://github.com/asottile/pyupgrade
-    rev: v3.15.2
-    hooks:
-      - id: pyupgrade
-        name: "Upgrade syntax for Python 3.12+"
-        args: [--py312-plus]
-        # Auto-fixes outdated syntax to Python 3.12+ compatible code
-
-  # Conventional pre-commit hooks for commit messages
+  # Convention Enforcement
   - repo: https://github.com/compilerla/conventional-pre-commit
-    rev: v4.0.0
+    rev: v4.3.0
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]

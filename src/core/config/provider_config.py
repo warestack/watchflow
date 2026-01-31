@@ -3,6 +3,7 @@ Provider configuration.
 """
 
 from dataclasses import dataclass
+from typing import cast
 
 
 @dataclass
@@ -58,17 +59,17 @@ class ProviderConfig:
         """Get max tokens for agent with fallback to global config."""
         if agent and hasattr(self, agent):
             agent_config = getattr(self, agent)
-            if agent_config and hasattr(agent_config, "max_tokens"):
-                return agent_config.max_tokens
-        return self.max_tokens
+            if agent_config and isinstance(agent_config, AgentConfig) and hasattr(agent_config, "max_tokens"):
+                return int(cast("int", agent_config.max_tokens))
+        return int(self.max_tokens)
 
     def get_temperature_for_agent(self, agent: str | None = None) -> float:
         """Get temperature for agent with fallback to global config."""
         if agent and hasattr(self, agent):
             agent_config = getattr(self, agent)
-            if agent_config and hasattr(agent_config, "temperature"):
-                return agent_config.temperature
-        return self.temperature
+            if agent_config and isinstance(agent_config, AgentConfig) and hasattr(agent_config, "temperature"):
+                return float(cast("float", agent_config.temperature))
+        return float(self.temperature)
 
 
 # Backward compatibility aliases

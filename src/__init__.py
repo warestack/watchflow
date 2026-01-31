@@ -1,1 +1,1 @@
-# Watchflow application package
+# App package—root for imports, keep minimal.

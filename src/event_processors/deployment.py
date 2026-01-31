@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class DeploymentProcessor(BaseEventProcessor):
     """Processor for deployment events - for logging only."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Call super class __init__ first
         super().__init__()
 
