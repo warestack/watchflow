@@ -4,7 +4,7 @@ This module contains conditions that validate security and access control
 aspects like team membership, code ownership, and branch protection.
 """
 
-from typing import Any
+from typing import Any, cast
 
 import structlog
 
@@ -182,6 +182,182 @@ class CodeOwnersCondition(BaseCondition):
             return cast("list[str]", pull_request.get("changed_files", []))
 
         return []
+
+
+def _get_changed_files_from_event(event: dict[str, Any]) -> list[str]:
+    """Extract changed file paths from the event (shared by path-has-code-owner)."""
+    files = event.get("files", [])
+    if files:
+        return [f.get("filename", "") for f in files if f.get("filename")]
+    changed = event.get("changed_files", [])
+    if changed:
+        return [
+            f.get("filename", f) if isinstance(f, dict) else f
+            for f in changed
+            if (f.get("filename") if isinstance(f, dict) else f)
+        ]
+    pull_request = event.get("pull_request_details", {})
+    if pull_request:
+        return cast("list[str]", pull_request.get("changed_files", []))
+    return []
+
+
+class PathHasCodeOwnerCondition(BaseCondition):
+    """Validates that every changed path has a code owner defined in CODEOWNERS."""
+
+    name = "require_path_has_code_owner"
+    description = "Validates that every changed path has a code owner defined in the CODEOWNERS file"
+    parameter_patterns = ["require_path_has_code_owner"]
+    event_types = ["pull_request"]
+    examples = [{"require_path_has_code_owner": True}]
+
+    async def evaluate(self, context: Any) -> list[Violation]:
+        """Evaluate path-has-code-owner condition.
+
+        Args:
+            context: Dict with 'parameters' and 'event' keys. Event may include
+                codeowners_content (str) when enricher has fetched CODEOWNERS.
+
+        Returns:
+            List of violations if any changed path has no code owner defined.
+        """
+        event = context.get("event", {})
+        changed_files = _get_changed_files_from_event(event)
+        if not changed_files:
+            logger.debug("PathHasCodeOwnerCondition: No files to check")
+            return []
+
+        codeowners_content = event.get("codeowners_content")
+        if not codeowners_content:
+            logger.debug("PathHasCodeOwnerCondition: No CODEOWNERS content in event, skipping")
+            return []
+
+        from src.rules.utils.codeowners import path_has_owner
+
+        unowned = [p for p in changed_files if not path_has_owner(p, codeowners_content)]
+        if not unowned:
+            return []
+
+        return [
+            Violation(
+                rule_description=self.description,
+                severity=Severity.HIGH,
+                message=f"Paths without a code owner in CODEOWNERS: {', '.join(unowned)}",
+                details={"unowned_paths": unowned},
+                how_to_fix="Add entries for these paths in the repository CODEOWNERS file.",
+            )
+        ]
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        """Legacy validation interface for backward compatibility."""
+        changed_files = _get_changed_files_from_event(event)
+        if not changed_files:
+            return True
+
+        codeowners_content = event.get("codeowners_content")
+        if not codeowners_content:
+            return True
+
+        from src.rules.utils.codeowners import path_has_owner
+
+        unowned = [p for p in changed_files if not path_has_owner(p, codeowners_content)]
+        logger.debug(
+            "PathHasCodeOwnerCondition: paths checked",
+            changed=changed_files,
+            unowned=unowned,
+        )
+        return len(unowned) == 0
+
+
+def _required_code_owner_reviewers(event: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """
+    Return (required_owners, missing_owners) for the code-owner-reviewers rule.
+
+    required_owners: all code owner logins/teams that own at least one changed path.
+    missing_owners: subset of required_owners that are not in the PR's requested reviewers/teams.
+    """
+    changed_files = _get_changed_files_from_event(event)
+    codeowners_content = event.get("codeowners_content")
+    if not changed_files or not codeowners_content:
+        return ([], [])
+
+    from src.rules.utils.codeowners import CodeOwnersParser
+
+    parser = CodeOwnersParser(codeowners_content)
+    required: set[str] = set()
+    for path in changed_files:
+        owners = parser.get_owners_for_file(path)
+        required.update(owners)
+
+    if not required:
+        return ([], [])
+
+    pr = event.get("pull_request_details", {})
+    requested_users = pr.get("requested_reviewers") or []
+    requested_teams = pr.get("requested_teams") or []
+    requested_logins = {u.get("login") for u in requested_users if u.get("login")}
+    requested_slugs = {t.get("slug") for t in requested_teams if t.get("slug")}
+
+    # Owner can be a user (login) or a team (slug or org/slug). Match user by login, team by slug.
+    requested_identifiers = requested_logins | requested_slugs
+
+    missing: list[str] = []
+    for owner in sorted(required):
+        if "/" in owner:
+            # Team: CODEOWNERS has "org/team-name", API has slug "team-name"
+            slug = owner.split("/")[-1]
+            if slug not in requested_slugs:
+                missing.append(owner)
+        else:
+            # User or team slug (e.g. @docs-team); match if in requested reviewers or requested teams
+            if owner not in requested_identifiers:
+                missing.append(owner)
+
+    return (sorted(required), missing)
+
+
+class RequireCodeOwnerReviewersCondition(BaseCondition):
+    """Validates that when a PR modifies paths with CODEOWNERS, those owners are requested as reviewers."""
+
+    name = "require_code_owner_reviewers"
+    description = "When a PR modifies paths that have owners defined in CODEOWNERS, the corresponding code owners must be added as reviewers"
+    parameter_patterns = ["require_code_owner_reviewers"]
+    event_types = ["pull_request"]
+    examples = [{"require_code_owner_reviewers": True}]
+
+    async def evaluate(self, context: Any) -> list[Violation]:
+        """Evaluate require-code-owner-reviewers condition.
+
+        Args:
+            context: Dict with 'parameters' and 'event' keys. Event must include
+                codeowners_content and pull_request_details.requested_reviewers / requested_teams.
+
+        Returns:
+            List of violations if required code owners are not requested as reviewers.
+        """
+        event = context.get("event", {})
+        required, missing = _required_code_owner_reviewers(event)
+        if not missing:
+            return []
+
+        return [
+            Violation(
+                rule_description=self.description,
+                severity=Severity.HIGH,
+                message=f"Code owners for modified paths must be added as reviewers: {', '.join(missing)}",
+                details={"missing_reviewers": missing, "required_owners": required},
+                how_to_fix="Add the listed code owners as requested reviewers on the PR.",
+            )
+        ]
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        """Legacy validation interface for backward compatibility."""
+        _, missing = _required_code_owner_reviewers(event)
+        logger.debug(
+            "RequireCodeOwnerReviewersCondition: required vs requested",
+            missing=missing,
+        )
+        return len(missing) == 0
 
 
 class ProtectedBranchesCondition(BaseCondition):

@@ -9,6 +9,7 @@ from src.rules.conditions.pull_request import (
     MinApprovalsCondition,
     MinDescriptionLengthCondition,
     RequiredLabelsCondition,
+    RequireLinkedIssueCondition,
     TitlePatternCondition,
 )
 
@@ -302,5 +303,75 @@ class TestRequiredLabelsCondition:
         event = {"pull_request_details": {"labels": [{"name": "bug"}, {"name": "security"}]}}
         context = {"parameters": {"required_labels": ["bug"]}, "event": event}
 
+        violations = await condition.evaluate(context)
+        assert len(violations) == 0
+
+
+class TestRequireLinkedIssueCondition:
+    """Tests for RequireLinkedIssueCondition class."""
+
+    @pytest.mark.asyncio
+    async def test_validate_with_issue_ref_in_body(self) -> None:
+        """Validate returns True when body contains #123."""
+        condition = RequireLinkedIssueCondition()
+        event = {"pull_request_details": {"title": "Fix bug", "body": "Fixes #123"}}
+        result = await condition.validate({"require_linked_issue": True}, event)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_validate_with_issue_ref_in_title(self) -> None:
+        """Validate returns True when title contains #456."""
+        condition = RequireLinkedIssueCondition()
+        event = {"pull_request_details": {"title": "Closes #456", "body": ""}}
+        result = await condition.validate({"require_linked_issue": True}, event)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_validate_with_plain_hash_number(self) -> None:
+        """Validate returns True when body contains plain #789."""
+        condition = RequireLinkedIssueCondition()
+        event = {"pull_request_details": {"title": "Update", "body": "See #789 for context"}}
+        result = await condition.validate({"require_linked_issue": True}, event)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_validate_no_issue_ref_returns_false(self) -> None:
+        """Validate returns False when no issue reference in body or title."""
+        condition = RequireLinkedIssueCondition()
+        event = {"pull_request_details": {"title": "Fix bug", "body": "No issue ref here"}}
+        result = await condition.validate({"require_linked_issue": True}, event)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_validate_param_false_returns_true(self) -> None:
+        """Validate returns True when require_linked_issue is not set."""
+        condition = RequireLinkedIssueCondition()
+        event = {"pull_request_details": {"title": "Fix", "body": "No ref"}}
+        result = await condition.validate({}, event)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_validate_no_pr_details_returns_true(self) -> None:
+        """Validate returns True when PR details are missing."""
+        condition = RequireLinkedIssueCondition()
+        result = await condition.validate({"require_linked_issue": True}, {})
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_evaluate_returns_violation_when_no_ref(self) -> None:
+        """Evaluate returns one violation when PR has no issue reference."""
+        condition = RequireLinkedIssueCondition()
+        event = {"pull_request_details": {"title": "Fix", "body": "Description only"}}
+        context = {"parameters": {"require_linked_issue": True}, "event": event}
+        violations = await condition.evaluate(context)
+        assert len(violations) == 1
+        assert "does not reference a linked issue" in violations[0].message
+
+    @pytest.mark.asyncio
+    async def test_evaluate_returns_empty_when_ref_present(self) -> None:
+        """Evaluate returns empty list when PR references an issue."""
+        condition = RequireLinkedIssueCondition()
+        event = {"pull_request_details": {"title": "Fix", "body": "Resolves #42"}}
+        context = {"parameters": {"require_linked_issue": True}, "event": event}
         violations = await condition.evaluate(context)
         assert len(violations) == 0

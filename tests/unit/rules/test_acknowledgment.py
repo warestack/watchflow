@@ -35,8 +35,8 @@ class TestRuleIDEnum:
             assert len(rule_id.value) > 0
 
     def test_rule_id_count(self):
-        """Verify we have exactly 7 standardized rule IDs."""
-        assert len(RuleID) == 7
+        """Verify we have exactly 11 standardized rule IDs."""
+        assert len(RuleID) == 11
 
     def test_all_rule_ids_have_descriptions(self):
         """Every RuleID should have a corresponding description."""
@@ -145,8 +145,18 @@ class TestMapViolationTextToRuleId:
             ("Pull request title does not match the required pattern", RuleID.PR_TITLE_PATTERN),
             ("Pull request description is too short (20 chars)", RuleID.PR_DESCRIPTION_REQUIRED),
             ("Individual files cannot exceed 10MB limit", RuleID.FILE_SIZE_LIMIT),
+            ("Pull request exceeds maximum lines changed (1234 > 500)", RuleID.MAX_PR_LOC),
+            (
+                "PR does not reference a linked issue (e.g. #123 or closes #123 in body/title)",
+                RuleID.REQUIRE_LINKED_ISSUE,
+            ),
             ("Force pushes are not allowed on this branch", RuleID.NO_FORCE_PUSH),
             ("Direct pushes to main/master branches prohibited", RuleID.PROTECTED_BRANCH_PUSH),
+            ("Paths without a code owner in CODEOWNERS: src/bar.py", RuleID.PATH_HAS_CODE_OWNER),
+            (
+                "Code owners for modified paths must be added as reviewers: alice",
+                RuleID.REQUIRE_CODE_OWNER_REVIEWERS,
+            ),
         ],
     )
     def test_maps_violation_text_correctly(self, text: str, expected_rule_id: RuleID):

@@ -298,3 +298,70 @@ class MinApprovalsCondition(BaseCondition):
                 approved_count += 1
 
         return approved_count >= min_approvals
+
+
+# Regex to detect issue references in PR body/title: #123, closes #123, fixes #123, etc.
+_ISSUE_REF_PATTERN = re.compile(
+    r"(?:closes?|fixes?|resolves?|refs?)\s+#\d+|#\d+",
+    re.IGNORECASE,
+)
+
+
+class RequireLinkedIssueCondition(BaseCondition):
+    """Validates that the PR body or title references at least one linked issue (e.g. #123, closes #123)."""
+
+    name = "require_linked_issue"
+    description = "Checks PR description (body) and title for a linked issue reference (e.g. #123, Fixes #123, Closes #456). Use when the rule requires issue refs in either field."
+    parameter_patterns = ["require_linked_issue"]
+    event_types = ["pull_request"]
+    examples = [{"require_linked_issue": True}]
+
+    async def evaluate(self, context: Any) -> list[Violation]:
+        """Evaluate linked-issue condition.
+
+        Args:
+            context: Dict with 'parameters' and 'event' keys.
+
+        Returns:
+            List of violations if PR does not reference an issue.
+        """
+        parameters = context.get("parameters", {})
+        event = context.get("event", {})
+
+        if not parameters.get("require_linked_issue"):
+            return []
+
+        pull_request = event.get("pull_request_details", {})
+        if not pull_request:
+            return []
+
+        body = pull_request.get("body") or ""
+        title = pull_request.get("title") or ""
+        combined = f"{title}\n{body}"
+
+        if _ISSUE_REF_PATTERN.search(combined):
+            logger.debug("RequireLinkedIssueCondition: PR references an issue")
+            return []
+
+        return [
+            Violation(
+                rule_description=self.description,
+                severity=Severity.MEDIUM,
+                message="PR does not reference a linked issue (e.g. #123 or closes #123 in body/title)",
+                how_to_fix="Add an issue reference in the PR title or description (e.g. Fixes #123).",
+            )
+        ]
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        """Legacy validation interface for backward compatibility."""
+        if not parameters.get("require_linked_issue"):
+            return True
+
+        pull_request = event.get("pull_request_details", {})
+        if not pull_request:
+            return True
+
+        body = pull_request.get("body") or ""
+        title = pull_request.get("title") or ""
+        combined = f"{title}\n{body}"
+        return bool(_ISSUE_REF_PATTERN.search(combined))

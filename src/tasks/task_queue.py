@@ -97,10 +97,25 @@ class TaskQueue:
         """Check if task_id is in deduplication cache."""
         return task_id in self._dedup_cache
 
-    def _generate_task_id(self, event_type: str, payload: dict[str, Any]) -> str:
-        """Creates a unique hash for deduplication."""
-        payload_str = json.dumps(payload, sort_keys=True)
-        raw_string = f"{event_type}:{payload_str}"
+    def _generate_task_id(
+        self,
+        event_type: str,
+        payload: dict[str, Any],
+        delivery_id: str | None = None,
+        func: Any = None,
+    ) -> str:
+        """Creates a unique hash for deduplication.
+
+        When delivery_id (X-GitHub-Delivery) is present, use it (plus func qualname
+        so "run handler" and "run processor" get distinct IDs) so each webhook
+        delivery is processed. Otherwise fall back to payload hash.
+        """
+        if delivery_id:
+            qualname = getattr(func, "__qualname__", "") or ""
+            raw_string = f"{event_type}:{delivery_id}:{qualname}"
+        else:
+            payload_str = json.dumps(payload, sort_keys=True)
+            raw_string = f"{event_type}:{payload_str}"
         return hashlib.sha256(raw_string.encode()).hexdigest()
 
     async def enqueue(
@@ -109,10 +124,11 @@ class TaskQueue:
         event_type: str,
         payload: dict[str, Any],
         *args: Any,
+        delivery_id: str | None = None,
         **kwargs: Any,
     ) -> bool:
         """Adds a task to the queue if it is not a duplicate."""
-        task_id = self._generate_task_id(event_type, payload)
+        task_id = self._generate_task_id(event_type, payload, delivery_id=delivery_id, func=func)
 
         if self._is_duplicate(task_id):
             logger.info("task_skipped_duplicate", task_id=task_id, event_type=event_type)

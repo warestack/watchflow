@@ -41,8 +41,10 @@ class WebhookDispatcher:
             log.warning("handler_not_found")
             return {"status": "skipped", "reason": f"No handler for event type {event_type}"}
 
-        # Offload to TaskQueue for background execution
-        success = await self.queue.enqueue(handler, event_type, event.payload, event)
+        # Offload to TaskQueue for background execution (delivery_id so each webhook delivery is processed)
+        success = await self.queue.enqueue(
+            handler, event_type, event.payload, event, delivery_id=getattr(event, "delivery_id", None)
+        )
 
         if success:
             log.info("event_dispatched_to_queue")

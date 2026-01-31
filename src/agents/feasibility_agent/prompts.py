@@ -20,11 +20,14 @@ Decide:
 """
 
 YAML_GENERATION_PROMPT = """
-Generate a complete Watchflow rules.yaml for the rule below using ONLY the selected validators. Do not introduce parameters that the chosen validators do not support.
+Generate a complete Watchflow rules.yaml for the rule below using ONLY the selected validators.
 
 Rule Type: {rule_type}
 Description: {rule_description}
 Chosen Validators: {chosen_validators}
+
+Parameter keys to use (use only these keys under parameters; the engine infers which validator runs from them):
+{validator_parameters}
 
 Rules YAML format:
 ```yaml
@@ -34,10 +37,11 @@ rules:
     severity: "medium"
     event_types: ["pull_request"]
     parameters:
-      <validator-appropriate-parameters>
+      <only the parameter keys listed above, with appropriate values>
 ```
 
 Guidelines:
+- Under parameters use ONLY the parameter keys listed above. Do not add a "validator" key; end users do not specify validators—the engine selects them from the parameter names.
 - Keep severity appropriate (low/medium/high/critical).
 - event_types must align with the validators chosen.
 - For regex, use single quotes.

@@ -12,14 +12,21 @@ from src.rules.conditions.access_control import (
     AuthorTeamCondition,
     CodeOwnersCondition,
     NoForcePushCondition,
+    PathHasCodeOwnerCondition,
     ProtectedBranchesCondition,
+    RequireCodeOwnerReviewersCondition,
 )
 from src.rules.conditions.base import BaseCondition
-from src.rules.conditions.filesystem import FilePatternCondition, MaxFileSizeCondition
+from src.rules.conditions.filesystem import (
+    FilePatternCondition,
+    MaxFileSizeCondition,
+    MaxPrLocCondition,
+)
 from src.rules.conditions.pull_request import (
     MinApprovalsCondition,
     MinDescriptionLengthCondition,
     RequiredLabelsCondition,
+    RequireLinkedIssueCondition,
     TitlePatternCondition,
 )
 from src.rules.conditions.temporal import (
@@ -37,9 +44,13 @@ RULE_ID_TO_CONDITION: dict[RuleID, type[BaseCondition]] = {
     RuleID.PR_TITLE_PATTERN: TitlePatternCondition,
     RuleID.PR_DESCRIPTION_REQUIRED: MinDescriptionLengthCondition,
     RuleID.FILE_SIZE_LIMIT: MaxFileSizeCondition,
+    RuleID.MAX_PR_LOC: MaxPrLocCondition,
+    RuleID.REQUIRE_LINKED_ISSUE: RequireLinkedIssueCondition,
     RuleID.PROTECTED_BRANCH_PUSH: ProtectedBranchesCondition,
     RuleID.NO_FORCE_PUSH: NoForcePushCondition,
     RuleID.MIN_PR_APPROVALS: MinApprovalsCondition,
+    RuleID.PATH_HAS_CODE_OWNER: PathHasCodeOwnerCondition,
+    RuleID.REQUIRE_CODE_OWNER_REVIEWERS: RequireCodeOwnerReviewersCondition,
 }
 
 # List of all available condition classes
@@ -47,10 +58,15 @@ AVAILABLE_CONDITIONS: list[type[BaseCondition]] = [
     RequiredLabelsCondition,
     TitlePatternCondition,
     MinDescriptionLengthCondition,
+    RequireLinkedIssueCondition,
     MaxFileSizeCondition,
+    MaxPrLocCondition,
+    MinApprovalsCondition,
     ProtectedBranchesCondition,
     AuthorTeamCondition,
     CodeOwnersCondition,
+    PathHasCodeOwnerCondition,
+    RequireCodeOwnerReviewersCondition,
     FilePatternCondition,
     AllowedHoursCondition,
     DaysCondition,

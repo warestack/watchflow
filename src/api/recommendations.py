@@ -12,6 +12,7 @@ from src.api.rate_limit import rate_limiter
 
 # Internal: User model, auth assumed present—see core/api for details.
 from src.core.models import User
+from src.integrations.github.api import github_client
 
 logger = structlog.get_logger()
 
@@ -468,7 +469,7 @@ async def recommend_rules(
 
     # Step 2: Rate limiting—in-memory for open-source version (no external dependencies).
 
-    # Step 3: Extract GitHub token (from User object or request body)
+    # Step 3: Extract GitHub token (User/body > installation_id > none)
     github_token = None
     if user and user.github_token:
         # Extract from SecretStr if present
@@ -480,6 +481,12 @@ async def recommend_rules(
     elif payload.github_token:
         # Allow token to be passed directly in request body (alternative to Authorization header)
         github_token = payload.github_token
+    elif payload.installation_id:
+        # When installation_id is in URL (e.g. from welcome comment), use installation token so PAT is not required
+        installation_token = await github_client.get_installation_access_token(payload.installation_id)
+        if installation_token:
+            github_token = installation_token
+        # If installation token fails, proceed with None (public repo / low rate limits)
 
     # Step 4: Agent execution—public flow only. Private repo: expect 404/403, handled below.
     try:

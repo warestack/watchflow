@@ -9,6 +9,7 @@ from src.rules.utils.codeowners import (
     get_file_owners,
     is_critical_file,
     load_codeowners,
+    path_has_owner,
 )
 from src.rules.utils.contributors import (
     get_contributor_analyzer,
@@ -24,6 +25,7 @@ __all__ = [
     "get_file_owners",
     "is_critical_file",
     "load_codeowners",
+    "path_has_owner",
     "get_contributor_analyzer",
     "get_past_contributors",
     "is_new_contributor",

@@ -1,13 +1,17 @@
 """Tests for filesystem conditions.
 
-Tests for FilePatternCondition and MaxFileSizeCondition classes.
+Tests for FilePatternCondition, MaxFileSizeCondition, and MaxPrLocCondition classes.
 """
 
 from unittest.mock import patch
 
 import pytest
 
-from src.rules.conditions.filesystem import FilePatternCondition, MaxFileSizeCondition
+from src.rules.conditions.filesystem import (
+    FilePatternCondition,
+    MaxFileSizeCondition,
+    MaxPrLocCondition,
+)
 
 
 class TestFilePatternCondition:
@@ -187,3 +191,102 @@ class TestMaxFileSizeCondition:
         violations = await condition.evaluate(context)
 
         assert len(violations) == 0
+
+
+class TestMaxPrLocCondition:
+    """Tests for MaxPrLocCondition class."""
+
+    @pytest.mark.asyncio
+    async def test_evaluate_under_limit(self) -> None:
+        """Test that evaluate returns empty when total lines are under limit."""
+        condition = MaxPrLocCondition()
+
+        event = {
+            "changed_files": [
+                {"filename": "a.py", "additions": 100, "deletions": 50},
+                {"filename": "b.py", "additions": 200, "deletions": 0},
+            ]
+        }
+        context = {"parameters": {"max_lines": 500}, "event": event}
+        violations = await condition.evaluate(context)
+
+        assert len(violations) == 0
+
+    @pytest.mark.asyncio
+    async def test_evaluate_over_limit(self) -> None:
+        """Test that evaluate returns violation when total lines exceed limit."""
+        condition = MaxPrLocCondition()
+
+        event = {
+            "changed_files": [
+                {"filename": "a.py", "additions": 400, "deletions": 150},
+            ]
+        }
+        context = {"parameters": {"max_lines": 500}, "event": event}
+        violations = await condition.evaluate(context)
+
+        assert len(violations) == 1
+        assert "Pull request exceeds maximum lines changed" in violations[0].message
+        assert "550" in violations[0].message
+        assert "500" in violations[0].message
+        assert violations[0].details["total_lines"] == 550
+        assert violations[0].details["max_lines"] == 500
+
+    @pytest.mark.asyncio
+    async def test_evaluate_missing_max_lines_returns_empty(self) -> None:
+        """Test that evaluate returns empty when max_lines is 0 or missing."""
+        condition = MaxPrLocCondition()
+
+        event = {"changed_files": [{"filename": "a.py", "additions": 1000, "deletions": 500}]}
+        context = {"parameters": {}, "event": event}
+        violations = await condition.evaluate(context)
+
+        assert len(violations) == 0
+
+        context_no_param = {"parameters": {"max_lines": 0}, "event": event}
+        violations2 = await condition.evaluate(context_no_param)
+        assert len(violations2) == 0
+
+    @pytest.mark.asyncio
+    async def test_evaluate_empty_changed_files_returns_empty(self) -> None:
+        """Test that evaluate returns empty when no changed files."""
+        condition = MaxPrLocCondition()
+
+        context = {"parameters": {"max_lines": 500}, "event": {"changed_files": []}}
+        violations = await condition.evaluate(context)
+
+        assert len(violations) == 0
+
+    @pytest.mark.asyncio
+    async def test_evaluate_uses_fallback_files_when_no_changed_files(self) -> None:
+        """Test that evaluate uses event.files when changed_files is missing."""
+        condition = MaxPrLocCondition()
+
+        event = {
+            "files": [
+                {"filename": "a.py", "additions": 300, "deletions": 100},
+            ]
+        }
+        context = {"parameters": {"max_lines": 300}, "event": event}
+        violations = await condition.evaluate(context)
+
+        assert len(violations) == 1
+        assert violations[0].details["total_lines"] == 400
+
+    @pytest.mark.asyncio
+    async def test_validate_under_limit(self) -> None:
+        """Test that validate returns True when under limit."""
+        condition = MaxPrLocCondition()
+
+        event = {"changed_files": [{"filename": "a.py", "additions": 100, "deletions": 50}]}
+        result = await condition.validate({"max_lines": 500}, event)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_validate_over_limit(self) -> None:
+        """Test that validate returns False when over limit."""
+        condition = MaxPrLocCondition()
+
+        event = {"changed_files": [{"filename": "a.py", "additions": 600, "deletions": 0}]}
+        result = await condition.validate({"max_lines": 500}, event)
+        assert result is False

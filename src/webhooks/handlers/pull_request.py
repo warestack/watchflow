@@ -45,11 +45,13 @@ class PullRequestEventHandler(EventHandler):
         log.info("pr_handler_invoked")
 
         try:
-            # Enqueue the processing task
+            # Enqueue the processing task (delivery_id so each delivery is processed, e.g. redeliveries)
             enqueued = await task_queue.enqueue(
-                func=get_pr_processor().process,
-                event_type="pull_request",
-                payload=event.payload,
+                get_pr_processor().process,
+                "pull_request",
+                event.payload,
+                event,
+                delivery_id=getattr(event, "delivery_id", None),
             )
 
             if enqueued:

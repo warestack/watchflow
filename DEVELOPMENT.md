@@ -269,15 +269,38 @@ The project includes comprehensive tests that run **without making real API call
 
 ### Running Tests
 
+CI runs tests the same way (see [.github/workflows/tests.yaml](.github/workflows/tests.yaml)). To run tests locally **like CI** (and avoid the wrong interpreter):
+
+1. **Use this repo's environment only.** If you have another project's venv activated (e.g. PyCharm's watchflow), **deactivate it first** so `uv` uses this project's `.venv`:
+   ```powershell
+   deactivate
+   ```
+2. **From this repo root** (`D:\watchflow-env\watchflow` or `watchflow/`):
+   ```bash
+   uv sync --all-extras
+   uv run pytest tests/unit/ tests/integration/ -v
+   ```
+
+If you skip step 1 and another venv is activated, `uv run pytest` can still use that interpreter and you may see `ModuleNotFoundError: No module named 'structlog'` or `respx`. Deactivating ensures `uv` creates/uses the venv in **this** repo.
+
+**Alternative (always use this repo's venv):** From this repo root, run pytest with the project's Python explicitly so the interpreter is unambiguous:
+```powershell
+# Windows
+.\.venv\Scripts\python.exe -m pytest tests/unit/ tests/integration/ -v
+```
+
 ```bash
-# Run all tests (mocked - no API costs)
-pytest
+# Install deps (matches CI)
+uv sync --all-extras
 
-# Run only unit tests (very fast)
-pytest tests/unit/
+# Run all tests (same as GitHub Action)
+uv run pytest tests/unit/ tests/integration/ -v
 
-# Run only integration tests (mocked)
-pytest tests/integration/
+# Run only unit tests
+uv run pytest tests/unit/ -v
+
+# Run only integration tests
+uv run pytest tests/integration/ -v
 ```
 
 ### Test Structure

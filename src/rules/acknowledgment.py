@@ -28,8 +28,12 @@ class RuleID(StrEnum):
     PR_TITLE_PATTERN = "pr-title-pattern"
     PR_DESCRIPTION_REQUIRED = "pr-description-required"
     FILE_SIZE_LIMIT = "file-size-limit"
+    MAX_PR_LOC = "max-pr-loc"
+    REQUIRE_LINKED_ISSUE = "require-linked-issue"
     NO_FORCE_PUSH = "no-force-push"
     PROTECTED_BRANCH_PUSH = "protected-branch-push"
+    PATH_HAS_CODE_OWNER = "path-has-code-owner"
+    REQUIRE_CODE_OWNER_REVIEWERS = "require-code-owner-reviewers"
 
 
 # Mapping from violation text patterns to RuleID
@@ -39,8 +43,12 @@ VIOLATION_TEXT_TO_RULE_MAPPING: dict[str, RuleID] = {
     "Pull request title does not match the required pattern": RuleID.PR_TITLE_PATTERN,
     "Pull request description is too short": RuleID.PR_DESCRIPTION_REQUIRED,
     "Individual files cannot exceed": RuleID.FILE_SIZE_LIMIT,
+    "Pull request exceeds maximum lines changed": RuleID.MAX_PR_LOC,
+    "does not reference a linked issue": RuleID.REQUIRE_LINKED_ISSUE,
     "Force pushes are not allowed": RuleID.NO_FORCE_PUSH,
     "Direct pushes to main/master branches": RuleID.PROTECTED_BRANCH_PUSH,
+    "Paths without a code owner in CODEOWNERS": RuleID.PATH_HAS_CODE_OWNER,
+    "Code owners for modified paths must be added as reviewers": RuleID.REQUIRE_CODE_OWNER_REVIEWERS,
 }
 
 # Mapping from RuleID to human-readable descriptions
@@ -50,8 +58,12 @@ RULE_ID_TO_DESCRIPTION: dict[RuleID, str] = {
     RuleID.PR_TITLE_PATTERN: "PR titles must follow conventional commit format",
     RuleID.PR_DESCRIPTION_REQUIRED: "Pull requests must have descriptions with at least 50 characters",
     RuleID.FILE_SIZE_LIMIT: "Files must not exceed 10MB",
+    RuleID.MAX_PR_LOC: "Pull requests must not exceed the configured maximum lines changed (LOC).",
+    RuleID.REQUIRE_LINKED_ISSUE: "PR must reference a linked issue (e.g. closes #123).",
     RuleID.NO_FORCE_PUSH: "Force pushes are not allowed",
     RuleID.PROTECTED_BRANCH_PUSH: "Direct pushes to main branch are not allowed",
+    RuleID.PATH_HAS_CODE_OWNER: "Every changed path must have a code owner defined in CODEOWNERS.",
+    RuleID.REQUIRE_CODE_OWNER_REVIEWERS: "When a PR modifies paths with CODEOWNERS, those owners must be added as reviewers.",
 }
 
 # Comment markers that indicate an acknowledgment comment

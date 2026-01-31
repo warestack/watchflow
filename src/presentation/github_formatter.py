@@ -54,7 +54,7 @@ def format_check_run_output(
                     "**Manual setup:**\n"
                     "1. Create a file at `.watchflow/rules.yaml` in your repository root\n"
                     "2. Add your rules in the following format:\n"
-                    "   ```yaml\n   rules:\n     - key: require_linked_issue\n       name: Require Linked Issue\n       description: All pull requests must reference an existing issue\n       enabled: true\n       severity: high\n       category: quality\n   ```\n\n"
+                    '   ```yaml\n   rules:\n     - description: "PRs must reference a linked issue (e.g. Fixes #123)"\n       enabled: true\n       severity: medium\n       event_types: [pull_request]\n       parameters:\n         require_linked_issue: true\n   ```\n\n'
                     "**Note:** Rules are currently read from the main branch only.\n\n"
                     "[Read the documentation for more examples](https://github.com/warestack/watchflow/blob/main/docs/getting-started/configuration.md)\n\n"
                     "After adding the file, push your changes to re-run validation."
@@ -116,6 +116,37 @@ def format_check_run_output(
     text += "*To configure rules, edit the `.watchflow/rules.yaml` file in this repository.*"
 
     return {"title": f"{len(violations)} rule violations found", "summary": summary, "text": text}
+
+
+def format_rules_not_configured_comment(
+    repo_full_name: str | None = None,
+    installation_id: int | None = None,
+) -> str:
+    """Format the welcome/instructions comment when no rules file exists (for PR comment)."""
+    landing_url = "https://watchflow.dev"
+    if repo_full_name and installation_id:
+        landing_url = f"https://watchflow.dev/analyze?installation_id={installation_id}&repo={repo_full_name}"
+    elif repo_full_name:
+        landing_url = f"https://watchflow.dev/analyze?repo={repo_full_name}"
+
+    return (
+        "## ⚙️ Watchflow rules not configured\n\n"
+        "No rules file found in your repository. Watchflow can help enforce governance rules for your team.\n\n"
+        "**Quick setup:**\n"
+        f"1. [Analyze your repository and generate rules]({landing_url}) – Get AI-powered rule recommendations based on your repository patterns\n"
+        "2. Review and customize the generated rules\n"
+        "3. Create a PR with the recommended rules\n"
+        "4. Merge to activate automated enforcement\n\n"
+        "**Manual setup:**\n"
+        "1. Create a file at `.watchflow/rules.yaml` in your repository root\n"
+        "2. Add your rules in the following format:\n\n"
+        '   ```yaml\n   rules:\n     - description: "PRs must reference a linked issue (e.g. Fixes #123)"\n       enabled: true\n       severity: medium\n       event_types: [pull_request]\n       parameters:\n         require_linked_issue: true\n   ```\n\n'
+        "**Note:** Rules are currently read from the main branch only.\n\n"
+        "[Read the documentation for more examples](https://github.com/warestack/watchflow/blob/main/docs/getting-started/configuration.md)\n\n"
+        "After adding the file, push your changes to re-run validation.\n\n"
+        "---\n"
+        "*This comment was automatically posted by [Watchflow](https://watchflow.dev).*"
+    )
 
 
 def format_violations_comment(violations: list[Violation]) -> str:

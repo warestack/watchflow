@@ -41,6 +41,11 @@ restore *args:
 test *args:
     docker compose exec app pytest {{args}}
 
+# Run pytest with this repo's venv (avoids wrong interpreter from another project)
+# Windows: just test-local   |  Unix: ./.venv/bin/python -m pytest tests/ -v
+test-local *args:
+    .\.venv\Scripts\python.exe -m pytest {{args}}
+
 # Database migration commands
 # Usage: just db-migrate [cmd] [args]
 # Examples:

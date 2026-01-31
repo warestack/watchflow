@@ -83,6 +83,18 @@ class PullRequestProcessor(BaseEventProcessor):
                         conclusion="neutral",
                         error="Rules not configured. Please create `.watchflow/rules.yaml` in your repository.",
                     )
+                # Post welcome comment with instructions and link to watchflow.dev (installation_id as URL param)
+                if pr_number and installation_id:
+                    try:
+                        welcome_comment = github_formatter.format_rules_not_configured_comment(
+                            repo_full_name=repo_full_name,
+                            installation_id=installation_id,
+                        )
+                        await self.github_client.create_pull_request_comment(
+                            repo_full_name, pr_number, welcome_comment, installation_id
+                        )
+                    except Exception as comment_err:
+                        logger.warning(f"Could not post rules-not-configured comment: {comment_err}")
                 return ProcessingResult(
                     success=True,
                     violations=[],
@@ -90,8 +102,6 @@ class PullRequestProcessor(BaseEventProcessor):
                     processing_time_ms=int((time.time() - start_time) * 1000),
                     error="Rules not configured",
                 )
-
-            formatted_rules = self._convert_rules_to_new_format(rules)
 
             # 3. Check for existing acknowledgments
             previous_acknowledgments = {}
@@ -102,10 +112,8 @@ class PullRequestProcessor(BaseEventProcessor):
                 if previous_acknowledgments:
                     logger.info(f"📋 Found {len(previous_acknowledgments)} previous acknowledgments")
 
-            # 4. Run engine-based rule evaluation
-            result = await self.engine_agent.execute(
-                event_type="pull_request", event_data=event_data, rules=formatted_rules
-            )
+            # 4. Run engine-based rule evaluation (pass Rule objects so .conditions are preserved)
+            result = await self.engine_agent.execute(event_type="pull_request", event_data=event_data, rules=rules)
 
             # 5. Extract and filter violations
             violations: list[Violation] = []

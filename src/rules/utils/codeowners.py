@@ -161,6 +161,21 @@ class CodeOwnersParser:
         return len(self.get_owners_for_file(file_path)) > 0
 
 
+def path_has_owner(file_path: str, codeowners_content: str) -> bool:
+    """
+    Check if a path has any code owner defined using CODEOWNERS content (no disk read).
+
+    Args:
+        file_path: Path to the file relative to repository root
+        codeowners_content: Raw content of the CODEOWNERS file
+
+    Returns:
+        True if the path matches at least one pattern and has owners
+    """
+    parser = CodeOwnersParser(codeowners_content)
+    return parser.has_owners(file_path)
+
+
 def load_codeowners(repo_path: str = ".") -> CodeOwnersParser | None:
     """
     Load and parse CODEOWNERS file from repository.

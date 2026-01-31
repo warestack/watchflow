@@ -218,3 +218,58 @@ class MaxFileSizeCondition(BaseCondition):
             logger.debug(f"MaxFileSizeCondition: {len(oversized_files)} files exceed size limit: {oversized_files}")
 
         return is_valid
+
+
+class MaxPrLocCondition(BaseCondition):
+    """Validates that total lines changed (additions + deletions) in a PR do not exceed a maximum."""
+
+    name = "max_pr_loc"
+    description = "Validates that total lines changed (additions + deletions) in a PR do not exceed a maximum; enforces a maximum LOC per pull request."
+    parameter_patterns = ["max_lines"]
+    event_types = ["pull_request"]
+    examples = [{"max_lines": 500}, {"max_lines": 1000}]
+
+    async def evaluate(self, context: Any) -> list[Violation]:
+        """Evaluate max PR LOC condition.
+
+        Args:
+            context: Dict with 'parameters' and 'event' keys.
+
+        Returns:
+            List of violations if total lines changed exceed the limit.
+        """
+        parameters = context.get("parameters", {})
+        event = context.get("event", {})
+
+        max_lines = parameters.get("max_lines", 0)
+        if not max_lines:
+            logger.debug("MaxPrLocCondition: No max_lines specified, skipping validation")
+            return []
+
+        changed_files = event.get("changed_files", []) or event.get("files", [])
+        total = sum(int(f.get("additions", 0) or 0) + int(f.get("deletions", 0) or 0) for f in changed_files)
+
+        if total > max_lines:
+            message = f"Pull request exceeds maximum lines changed ({total} > {max_lines})"
+            return [
+                Violation(
+                    rule_description=self.description,
+                    severity=Severity.MEDIUM,
+                    message=message,
+                    details={"total_lines": total, "max_lines": max_lines},
+                    how_to_fix=f"Reduce the size of this PR to at most {max_lines} lines changed (additions + deletions).",
+                )
+            ]
+
+        logger.debug(f"MaxPrLocCondition: PR within limit ({total} <= {max_lines})")
+        return []
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        """Legacy validation interface for backward compatibility."""
+        max_lines = parameters.get("max_lines", 0)
+        if not max_lines:
+            return True
+
+        changed_files = event.get("changed_files", []) or event.get("files", [])
+        total = sum(int(f.get("additions", 0) or 0) + int(f.get("deletions", 0) or 0) for f in changed_files)
+        return total <= max_lines

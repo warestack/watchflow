@@ -119,9 +119,15 @@ class WebhookEvent:
     Reference: project_detail_med.md [cite: 33]
     """
 
-    def __init__(self, event_type: EventType, payload: dict[str, Any]):
+    def __init__(
+        self,
+        event_type: EventType,
+        payload: dict[str, Any],
+        delivery_id: str | None = None,
+    ):
         self.event_type = event_type
         self.payload = payload
+        self.delivery_id = delivery_id  # X-GitHub-Delivery header; used for dedup so each delivery is processed
         self.repository = payload.get("repository", {})
         self.sender = payload.get("sender", {})
         self.installation_id = payload.get("installation", {}).get("id")

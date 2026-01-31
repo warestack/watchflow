@@ -1,6 +1,7 @@
 """Tests for access control conditions.
 
-Tests for AuthorTeamCondition, CodeOwnersCondition, and ProtectedBranchesCondition classes.
+Tests for AuthorTeamCondition, CodeOwnersCondition, PathHasCodeOwnerCondition,
+RequireCodeOwnerReviewersCondition, and ProtectedBranchesCondition classes.
 """
 
 from unittest.mock import patch
@@ -11,7 +12,9 @@ from src.rules.conditions.access_control import (
     AuthorTeamCondition,
     CodeOwnersCondition,
     NoForcePushCondition,
+    PathHasCodeOwnerCondition,
     ProtectedBranchesCondition,
+    RequireCodeOwnerReviewersCondition,
 )
 
 
@@ -171,6 +174,143 @@ class TestCodeOwnersCondition:
             violations = await condition.evaluate(context)
             assert len(violations) == 1
             assert "code owner review" in violations[0].message
+
+
+class TestPathHasCodeOwnerCondition:
+    """Tests for PathHasCodeOwnerCondition class."""
+
+    CODEOWNERS_WITH_PY = "# Owners\n*.py @py-owners\nsrc/ @src-team\n"
+    CODEOWNERS_ROOT_ONLY = "/ @root-team\n"
+
+    @pytest.mark.asyncio
+    async def test_validate_no_files(self) -> None:
+        """When no files are present, validate returns True."""
+        condition = PathHasCodeOwnerCondition()
+        result = await condition.validate({"require_path_has_code_owner": True}, {"files": []})
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_validate_no_codeowners_content_skips(self) -> None:
+        """When event has no codeowners_content, condition passes (rule not applicable)."""
+        condition = PathHasCodeOwnerCondition()
+        event = {"files": [{"filename": "foo/bar.py"}]}
+        result = await condition.validate({"require_path_has_code_owner": True}, event)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_validate_all_paths_have_owner(self) -> None:
+        """When all changed paths match CODEOWNERS, validate returns True."""
+        condition = PathHasCodeOwnerCondition()
+        event = {
+            "codeowners_content": self.CODEOWNERS_WITH_PY,
+            "files": [{"filename": "src/main.py"}, {"filename": "README.py"}],
+        }
+        result = await condition.validate({"require_path_has_code_owner": True}, event)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_validate_some_paths_without_owner(self) -> None:
+        """When some changed paths have no owner in CODEOWNERS, validate returns False."""
+        condition = PathHasCodeOwnerCondition()
+        event = {
+            "codeowners_content": "/docs/ @docs-team\n",
+            "files": [{"filename": "docs/readme.md"}, {"filename": "src/foo.py"}],
+        }
+        result = await condition.validate({"require_path_has_code_owner": True}, event)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_evaluate_returns_violation_for_unowned_paths(self) -> None:
+        """evaluate returns a violation listing paths without code owner."""
+        condition = PathHasCodeOwnerCondition()
+        event = {
+            "codeowners_content": "/docs/ @docs\n",
+            "files": [{"filename": "docs/a.md"}, {"filename": "src/bar.py"}],
+        }
+        context = {"parameters": {"require_path_has_code_owner": True}, "event": event}
+        violations = await condition.evaluate(context)
+        assert len(violations) == 1
+        assert "Paths without a code owner" in violations[0].message
+        assert "src/bar.py" in violations[0].message
+
+
+class TestRequireCodeOwnerReviewersCondition:
+    """Tests for RequireCodeOwnerReviewersCondition class."""
+
+    # Use "docs/" (no leading slash) so path "docs/a.md" matches
+    CODEOWNERS_DOCS = "docs/ @docs-team\n"
+    CODEOWNERS_DOCS_AND_ALICE = "docs/ @docs-team @alice\n*.py @alice\n"
+
+    @pytest.mark.asyncio
+    async def test_validate_no_codeowners_skips(self) -> None:
+        """When event has no codeowners_content, condition passes (rule not applicable)."""
+        condition = RequireCodeOwnerReviewersCondition()
+        event = {"files": [{"filename": "docs/readme.md"}]}
+        result = await condition.validate({"require_code_owner_reviewers": True}, event)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_validate_no_changed_files_passes(self) -> None:
+        """When no changed files, validate returns True."""
+        condition = RequireCodeOwnerReviewersCondition()
+        event = {"codeowners_content": self.CODEOWNERS_DOCS, "files": []}
+        result = await condition.validate({"require_code_owner_reviewers": True}, event)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_validate_required_owners_already_requested_passes(self) -> None:
+        """When all required code owners are in requested_reviewers/requested_teams, validate returns True."""
+        condition = RequireCodeOwnerReviewersCondition()
+        event = {
+            "codeowners_content": self.CODEOWNERS_DOCS_AND_ALICE,
+            "files": [{"filename": "docs/a.md"}, {"filename": "src/foo.py"}],
+            "pull_request_details": {
+                "requested_reviewers": [{"login": "alice"}],
+                "requested_teams": [{"slug": "docs-team"}],
+            },
+        }
+        result = await condition.validate({"require_code_owner_reviewers": True}, event)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_validate_missing_reviewer_fails(self) -> None:
+        """When a required code owner is not requested, validate returns False."""
+        condition = RequireCodeOwnerReviewersCondition()
+        event = {
+            "codeowners_content": self.CODEOWNERS_DOCS_AND_ALICE,
+            "files": [{"filename": "docs/a.md"}],
+            "pull_request_details": {"requested_reviewers": [], "requested_teams": []},
+        }
+        result = await condition.validate({"require_code_owner_reviewers": True}, event)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_evaluate_returns_violation_with_missing_reviewers(self) -> None:
+        """evaluate returns a violation listing code owners that must be added as reviewers."""
+        condition = RequireCodeOwnerReviewersCondition()
+        event = {
+            "codeowners_content": self.CODEOWNERS_DOCS_AND_ALICE,
+            "files": [{"filename": "src/bar.py"}],
+            "pull_request_details": {"requested_reviewers": [], "requested_teams": []},
+        }
+        context = {"parameters": {"require_code_owner_reviewers": True}, "event": event}
+        violations = await condition.evaluate(context)
+        assert len(violations) == 1
+        assert "Code owners for modified paths must be added as reviewers" in violations[0].message
+        assert "alice" in violations[0].message
+
+    @pytest.mark.asyncio
+    async def test_evaluate_no_pull_request_details_treats_no_reviewers_requested(self) -> None:
+        """When pull_request_details is missing, required owners are considered missing (violation)."""
+        condition = RequireCodeOwnerReviewersCondition()
+        event = {
+            "codeowners_content": self.CODEOWNERS_DOCS_AND_ALICE,
+            "files": [{"filename": "src/bar.py"}],
+        }
+        context = {"parameters": {"require_code_owner_reviewers": True}, "event": event}
+        violations = await condition.evaluate(context)
+        assert len(violations) == 1
+        assert "alice" in violations[0].message
 
 
 class TestProtectedBranchesCondition:

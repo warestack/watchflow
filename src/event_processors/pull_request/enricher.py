@@ -76,6 +76,17 @@ class PullRequestEnricher:
                 ]
                 event_data["diff_summary"] = self.summarize_files(files)
 
+            # Fetch CODEOWNERS so path-has-code-owner rule can evaluate without a local repo
+            codeowners_paths = [".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"]
+            for path in codeowners_paths:
+                try:
+                    content = await self.github_client.get_file_content(repo_full_name, path, installation_id)
+                    if content:
+                        event_data["codeowners_content"] = content
+                        break
+                except Exception:
+                    continue
+
         return event_data
 
     async def fetch_acknowledgments(self, repo: str, pr_number: int, installation_id: int) -> dict[str, Acknowledgment]:

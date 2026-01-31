@@ -16,7 +16,11 @@ def get_dispatcher() -> WebhookDispatcher:
     return dispatcher
 
 
-def _create_event_from_request(event_name: str | None, payload: dict) -> WebhookEvent:
+def _create_event_from_request(
+    event_name: str | None,
+    payload: dict,
+    delivery_id: str | None = None,
+) -> WebhookEvent:
     """Factory function to create a WebhookEvent from raw request data."""
     if not event_name:
         raise HTTPException(status_code=400, detail="Missing X-GitHub-Event header")
@@ -33,7 +37,7 @@ def _create_event_from_request(event_name: str | None, payload: dict) -> Webhook
         # Defensive: Accept unknown events, but don't process—avoids GitHub retries/spam.
         raise HTTPException(status_code=202, detail=f"Event type '{event_name}' is received but not supported.") from e
 
-    return WebhookEvent(event_type=event_type, payload=payload)
+    return WebhookEvent(event_type=event_type, payload=payload, delivery_id=delivery_id)
 
 
 @router.post("/github", summary="Endpoint for all GitHub webhooks")
@@ -55,6 +59,7 @@ async def github_webhook_endpoint(
 
     payload = cast("dict[str, Any]", await request.json())
     event_name = request.headers.get("X-GitHub-Event")
+    delivery_id = request.headers.get("X-GitHub-Delivery")
 
     # Parse and validate incoming event payload
     try:
@@ -70,7 +75,7 @@ async def github_webhook_endpoint(
         raise HTTPException(status_code=400, detail="Invalid webhook payload structure") from e
 
     try:
-        event = _create_event_from_request(event_name, payload)
+        event = _create_event_from_request(event_name, payload, delivery_id=delivery_id)
         await dispatcher_instance.dispatch(event)
         return WebhookResponse(
             status="success",

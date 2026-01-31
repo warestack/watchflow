@@ -91,10 +91,14 @@ class GitHubRuleLoader(RuleLoader):
                 except ValueError:
                     logger.warning(f"Unknown event type: {event_type_str}")
 
-        # Get parameters
-        parameters = rule_data.get("parameters", {})
+        # Get parameters (strip internal "validator" key; engine infers validator from parameter names)
+        parameters = dict(rule_data.get("parameters", {}))
+        parameters.pop("validator", None)
+        # Normalize aliases so conditions match (e.g. max_changed_lines -> max_lines for MaxPrLocCondition)
+        if "max_changed_lines" in parameters and "max_lines" not in parameters:
+            parameters["max_lines"] = parameters["max_changed_lines"]
 
-        # Instantiate conditions using Registry
+        # Instantiate conditions using Registry (matches on parameter keys, e.g. max_lines, require_linked_issue)
         conditions = ConditionRegistry.get_conditions_for_parameters(parameters)
 
         # Actions are optional and not mapped

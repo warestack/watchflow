@@ -152,6 +152,24 @@ class TestTaskQueue:
         assert task_id_1 != task_id_2
 
     @pytest.mark.asyncio
+    async def test_task_id_with_delivery_id_unique_per_delivery(
+        self, queue: TaskQueue, sample_payload: dict[str, object]
+    ) -> None:
+        """Test that with delivery_id, same payload but different delivery_id gets different task_ids (redeliveries processed)."""
+        task_id_1 = queue._generate_task_id(
+            "pull_request", sample_payload, delivery_id="delivery-abc", func=AsyncMock()
+        )
+        task_id_2 = queue._generate_task_id(
+            "pull_request", sample_payload, delivery_id="delivery-xyz", func=AsyncMock()
+        )
+        assert task_id_1 != task_id_2
+        # Same delivery_id + same func = same task_id
+        task_id_3 = queue._generate_task_id(
+            "pull_request", sample_payload, delivery_id="delivery-abc", func=AsyncMock()
+        )
+        assert task_id_1 == task_id_3
+
+    @pytest.mark.asyncio
     async def test_enqueue_with_args_and_kwargs(self, queue: TaskQueue, sample_payload: dict[str, object]) -> None:
         """Test enqueue passes args and kwargs to handler."""
         handler = AsyncMock()

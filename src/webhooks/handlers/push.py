@@ -32,11 +32,13 @@ class PushEventHandler(EventHandler):
         log.info("push_handler_invoked")
 
         try:
-            # Enqueue the processing task
+            # Enqueue the processing task (delivery_id so each delivery is processed)
             enqueued = await task_queue.enqueue(
-                func=push_processor.process,
-                event_type="push",
-                payload=event.payload,
+                push_processor.process,
+                "push",
+                event.payload,
+                event,
+                delivery_id=getattr(event, "delivery_id", None),
             )
 
             if enqueued:
