@@ -2,244 +2,137 @@
 
 [![Works with GitHub](https://img.shields.io/badge/Works%20with-GitHub-1f1f23?style=for-the-badge&logo=github)](https://github.com/warestack/watchflow)
 
-![Watchflow - Agentic GitHub Guardrails](docs/images/Watchflow%20-%20Agentic%20GitHub%20Guardrails.png)
+GitHub governance that runs where you already work. No new dashboards, no “AI-powered” fluff—just rules in YAML, evaluated on every PR and push, with check runs and comments that maintainers actually read.
 
-Replace static protection rules with agentic guardrails. Watchflow ensures consistent quality standards with smarter,
-context-aware protection for every repo.
+Watchflow is the governance layer for your repo: it enforces the policies you define (CODEOWNERS, approvals, linked issues, PR size, title patterns, branch protection) so you don’t have to chase reviewers or guess what’s allowed. Built for teams that still care about traceability and review quality.
 
-> **Experience the power of agentic governance** - then scale to enterprise with [Warestack](https://www.warestack.com/)
-
-## Overview
-
-Watchflow is the open-source rule engine that powers [Warestack's](https://www.warestack.com/) enterprise-grade agentic guardrails. Start with Watchflow to understand the technology, then upgrade to Warestack for production-scale deployment with advanced features.
-
-Watchflow is a governance tool that uses AI agents to automate policy enforcement across your GitHub repositories. By
-combining rule-based logic with AI-powered intelligence, Watchflow provides context-aware governance that adapts to your
-team's workflow and scales with your organization.
+---
 
 ## Why Watchflow?
 
-Traditional governance tools are rigid and often fail to capture the complexity of real-world development scenarios.
-Teams need:
+Static branch protection can’t see *who* changed *what* or whether CODEOWNERS were actually requested. Generic “AI governance” tools add another layer of abstraction and another place to look. We wanted something that:
 
-- **Intelligent rule evaluation** that understands context and intent
-- **Flexible acknowledgment systems** that allow for legitimate exceptions
-- **Real-time governance** that scales with repository activity
-- **Plug n play GitHub integration** that works within existing workflows
+- **Lives in the repo** — `.watchflow/rules.yaml` next to your CODEOWNERS and workflows
+- **Uses the same mental model** — conditions, parameters, event types; no “natural language” magic that doesn’t map to code
+- **Fits the maintainer workflow** — check runs, PR comments, acknowledgments in-thread
+- **Scales with your stack** — GitHub App, webhooks, one config file
 
-## How It Works
+So we built Watchflow: a rule engine that evaluates PRs and pushes against your rules, posts violations as check runs and comments, and lets developers acknowledge with a reason when the rule doesn’t fit the case. Optional repo analysis suggests rules from your PR history; you keep full control.
 
-Watchflow addresses these challenges through:
+---
 
-- **AI-Powered Rule Engine**: Uses AI agents to intelligently evaluate rules against repository events
-- **Hybrid Architecture**: Combines rule-based logic with AI intelligence for optimal performance
-- **Intelligent ACKs**: Processes acknowledgment requests through PR comments with context-aware
-  decision-making
-- **Plug n play Integration**: Works within GitHub interface with no additional UI required
+## How it works
 
-## Key Features
+1. **Install the GitHub App** and point it at your repos.
+2. **Add `.watchflow/rules.yaml`** (or get a suggested one from [watchflow.dev](https://watchflow.dev) using repo analysis).
+3. On **pull_request** and **push** events, Watchflow loads rules, enriches with PR data (files, reviews, CODEOWNERS), runs **condition-based evaluation** (no LLM in the hot path for rule checks).
+4. Violations show up as **check runs** and **PR comments**; developers can reply with `@watchflow acknowledge "reason"` where the rule allows it.
 
-### Natural Language Rules
+Rules are **description + event_types + parameters**. The engine matches parameters to built-in conditions (e.g. `require_linked_issue`, `max_lines`, `require_code_owner_reviewers`, `no_force_push`). No custom code in the repo—just YAML.
 
-Define governance rules in plain English. Watchflow translates these into actionable YAML configurations and provides
-intelligent evaluation.
+---
 
-```yaml
-rules:
-  - description: All pull requests must have a min num of approvals unless the author is a maintainer
-    enabled: true
-    severity: high
-    event_types: [pull_request]
-    parameters:
-      min_approvals: 2
+## Supported logic (conditions)
 
-  - description: Prevent deployments on weekends
-    enabled: true
-    severity: medium
-    event_types: [deployment]
-    parameters:
-      restricted_days: [Saturday, Sunday]
-```
+| Area | Condition / parameter | Event | What it does |
+|------|------------------------|-------|----------------|
+| **PR** | `require_linked_issue: true` | pull_request | PR must reference an issue (e.g. Fixes #123). |
+| **PR** | `title_pattern: "^feat\|^fix\|..."` | pull_request | PR title must match regex. |
+| **PR** | `min_description_length: 50` | pull_request | Body length ≥ N characters. |
+| **PR** | `required_labels: ["Type/Bug", "Status/Review"]` | pull_request | PR must have these labels. |
+| **PR** | `min_approvals: 2` | pull_request | At least N approvals. |
+| **PR** | `max_lines: 500` | pull_request | Total additions + deletions ≤ N (alias: `max_changed_lines`). |
+| **PR** | `require_code_owner_reviewers: true` | pull_request | Owners for modified paths (CODEOWNERS) must be requested as reviewers. |
+| **PR** | `critical_owners: []` / code owners | pull_request | Changes to critical paths require code-owner review. |
+| **PR** | `require_path_has_code_owner: true` | pull_request | Every changed path must have an owner in CODEOWNERS. |
+| **PR** | `protected_branches: ["main"]` | pull_request | Block direct targets to these branches. |
+| **Push** | `no_force_push: true` | push | Reject force pushes. |
+| **Files** | `max_file_size_mb: 1` | pull_request | No single file > N MB. |
+| **Files** | `pattern` + `condition_type: "files_match_pattern"` | pull_request | Changed files must (or must not) match glob/regex. |
+| **Time** | `allowed_hours`, `days`, weekend | deployment / workflow | Restrict when actions can run. |
+| **Deploy** | `environment`, approvals | deployment | Deployment protection. |
 
-### Flexible Rule System
+Rules are read from the **default branch** (e.g. `main`). Each webhook delivery is deduplicated by `X-GitHub-Delivery` so handler and processor both run; comments and check runs stay in sync.
 
-Define governance rules in YAML format with rich conditions and actions. Support for approval requirements, security
-reviews, deployment protection, and more.
+---
 
-### Intelligent Acknowledgment Workflow
-
-When rules are violated, developers can acknowledge them with simple comments. AI agents evaluate requests and provide
-context-aware decisions.
-
-## Hybrid Architecture
-
-Watchflow uses a unique hybrid architecture that combines rule-based logic with AI-powered intelligence:
-
-- **Rule Engine**: Fast, deterministic rule evaluation for common scenarios
-- **AI Agents**: Intelligent context analysis and decision making
-- **Decision Orchestrator**: Combines both approaches for optimal results
-- **GitHub Integration**: Plug n play event processing and action execution
-
-## Quick Start
-
-Get Watchflow up and running in minutes to start enforcing governance rules in your GitHub repositories.
-
-### Step 1: Install GitHub App
-
-**Go to GitHub App Installation**
-  - Visit [Watchflow GitHub App](https://github.com/apps/watchflow)
-  - Click "Install"
-  - Select the repositories you want to protect
-  - Grant the necessary permissions for webhook access and repository content
-
-### Step 2: Create Rules Configuration
-
-Create `.watchflow/rules.yaml` in your repository root:
+## Rule format
 
 ```yaml
 rules:
-  - description: All pull requests must have a min num of approvals unless the author is a maintainer
+  - description: "PRs must reference a linked issue (e.g. Fixes #123)"
     enabled: true
     severity: high
-    event_types: [pull_request]
+    event_types: ["pull_request"]
     parameters:
-      min_approvals: 2
+      require_linked_issue: true
 
-  - description: Prevent deployments on weekends
+  - description: "When a PR modifies paths with CODEOWNERS, those owners must be added as reviewers"
+    enabled: true
+    severity: high
+    event_types: ["pull_request"]
+    parameters:
+      require_code_owner_reviewers: true
+
+  - description: "PR total lines changed must not exceed 500"
     enabled: true
     severity: medium
-    event_types: [deployment]
+    event_types: ["pull_request"]
     parameters:
-      restricted_days: [Saturday, Sunday]
+      max_lines: 500
+
+  - description: "No direct pushes to main - all changes via PRs"
+    enabled: true
+    severity: critical
+    event_types: ["push"]
+    parameters:
+      no_force_push: true
 ```
 
-### Step 3: Test Your Setup
+Severity drives how violations are presented; `event_types` limit which events the rule runs on. Parameters are fixed per condition—see the [configuration guide](docs/getting-started/configuration.md) for the full set.
 
-1. **Create a test pull request**
-2. **Try acknowledgment workflow**: Comment `@watchflow acknowledge` when rules are violated
-3. **Verify rule enforcement**: Check that blocking rules prevent merging
+---
 
-## Configuration
+## Quick start
 
-For advanced configuration options, see the [Configuration Guide](docs/getting-started/configuration.md).
+1. **Install** — [Watchflow GitHub App](https://github.com/apps/watchflow), select repos.
+2. **Configure** — Add `.watchflow/rules.yaml` in the repo root (or use [watchflow.dev](https://watchflow.dev) to generate one from repo analysis; use `?installation_id=...&repo=owner/repo` from the app install flow so no PAT is required).
+3. **Verify** — Open a PR or push; check runs and comments will reflect your rules. Use `@watchflow acknowledge "reason"` where acknowledgments are allowed.
 
-## Usage
+Detailed steps: [Quick Start](docs/getting-started/quick-start.md). Configuration reference: [Configuration](docs/getting-started/configuration.md).
 
-### Comment Commands
+---
 
-Use these commands in PR comments to interact with Watchflow:
+## Comment commands
 
-```bash
-# Acknowledge a violation
-@watchflow acknowledge "Documentation updates only, no code changes"
-@watchflow ack "Documentation updates only, no code changes"
+| Command | Purpose |
+|--------|--------|
+| `@watchflow acknowledge "reason"` / `@watchflow ack "reason"` | Record an acknowledgment for a violation (when the rule allows it). |
+| `@watchflow evaluate "rule in plain English"` | Ask whether a rule is feasible and get suggested YAML. |
+| `@watchflow help` | List commands. |
 
-# Acknowledge with reasoning
-@watchflow acknowledge "Emergency fix, team is unavailable"
-@watchflow ack "Emergency fix, team is unavailable"
+---
 
-# Evaluate the feasibility of a rule
-@watchflow evaluate "Require 2 approvals for PRs to main"
+## API and repo analysis
 
-# Get help
-@watchflow help
-```
+- **`POST /api/v1/rules/recommend`** — Analyze a repo (structure, PR history) and return suggested rules. Accepts `repo_url`; optional `installation_id` (from install link) or user token for private repos and higher rate limits.
+- **`POST /api/v1/rules/recommend/proceed-with-pr`** — Create a PR that adds `.watchflow/rules.yaml` from recommended rules. Auth: Bearer token or `installation_id` in body.
 
-### Example Scenarios
+When no `.watchflow/rules.yaml` exists and a PR is opened, Watchflow posts a **welcome comment** with a link to watchflow.dev (including `installation_id` and `repo`) so maintainers can run analysis and create a rules PR without entering a PAT.
 
-**Can Acknowledge**: When a PR lacks required approvals but it's an emergency fix, developers can acknowledge with
-`@watchflow acknowledge "Emergency fix, team is unavailable"` or `@watchflow ack "Emergency fix, team is unavailable"`.
+---
 
-**Remains Blocked**: When deploying to production without security review, the deployment stays blocked even with
-acknowledgment - security review is mandatory.
+## Docs and support
 
-**Can Acknowledge**: When weekend deployment rules are violated for a critical issue, developers can acknowledge with
-`@watchflow acknowledge "Critical production fix needed"`.
+- [Quick Start](docs/getting-started/quick-start.md)
+- [Configuration](docs/getting-started/configuration.md)
+- [Features](docs/features.md)
+- [Development](DEVELOPMENT.md)
 
-**Remains Blocked**: When sensitive files are modified without proper review, the PR remains blocked until security team
-approval - no acknowledgment possible.
+Issues and discussions: [GitHub](https://github.com/warestack/watchflow). For enterprise features (team management, Slack/Linear/Jira, SOC2), see [Warestack](https://www.warestack.com/).
 
-## GitHub Integration
-
-Watchflow integrates seamlessly with GitHub through:
-
-- **GitHub App**: Secure, scoped access to your repositories
-- **Webhooks**: Real-time event processing for immediate rule evaluation
-- **Check Runs**: Visual status updates in your GitHub interface
-- **Comments**: Natural interaction through PR and issue comments
-- **Deployment Protection**: Intelligent deployment approval workflows
-
-### Supported GitHub Events
-
-Watchflow processes the following GitHub events:
-- `push` - Code pushes and branch updates
-- `pull_request` - PR creation, updates, and merges
-- `issue_comment` - Comments on issues and PRs
-- `check_run` - CI/CD check run status
-- `deployment` - Deployment creation and updates
-- `deployment_status` - Deployment status changes
-- `deployment_review` - Deployment protection rule reviews
-- `deployment_protection_rule` - Deployment protection rule events
-- `workflow_run` - GitHub Actions workflow runs
-
-## Looking for enterprise-grade features on top?
-
-[Move to Warestack](https://www.warestack.com/) for:
-- **Team Management**: Assign teams to repos with custom rules
-- **Advanced Integrations**: Slack, Linear, Jira, Vanta
-- **Real-Time Monitoring**: Comprehensive dashboard and analytics
-- **Enterprise Support**: 24/7 support and SLA guarantees
-- **SOC-2 Compliance**: Audit reports and compliance tracking
-- **Custom Onboarding**: Dedicated success management
-
-## Documentation
-
-- [Quick Start Guide](docs/getting-started/quick-start.md) - Get up and running in 5 minutes
-- [Configuration Guide](docs/getting-started/configuration.md) - Advanced rule configuration
-- [Features](docs/features.md) - Platform capabilities and benefits
-- [Performance Benchmarks](docs/benchmarks.md) - Impact metrics and results
-
-## Support
-
-- **GitHub Issues**: [Report problems](https://github.com/warestack/watchflow/issues)
-- **Discussions**: [Ask questions](https://github.com/warestack/watchflow/discussions)
-- **Documentation**: [Full documentation](docs/)
+---
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Rule Format
-
-Watchflow uses a simple, description-based rule format that eliminates hardcoded if-else logic:
-
-```yaml
-rules:
-  - description: All pull requests must have a min num of approvals unless the author is a maintainer
-    enabled: true
-    severity: high
-    event_types: [pull_request]
-    parameters:
-      min_approvals: 2
-
-  - description: Prevent deployments on weekends
-    enabled: true
-    severity: medium
-    event_types: [deployment]
-    parameters:
-      restricted_days: [Saturday, Sunday]
-```
-
-This format allows for intelligent, context-aware rule evaluation while maintaining simplicity and readability.
-
-## Contributing & Development
-
-For instructions on running tests, local development, and contributing, see [DEVELOPMENT.md](DEVELOPMENT.md).
-
-## Unauthenticated Analysis & Rate Limiting
-
-- The repository analysis endpoint `/v1/rules/recommend` now supports unauthenticated access for public GitHub repositories.
-- Anonymous users are limited to 5 requests per hour per IP. Authenticated users are limited to 100 requests per hour.
-- Exceeding the limit returns a 429 error with a `Retry-After` header.
-- For private repositories, authentication is required.
-- The frontend is now fully connected to the backend and no longer uses mock data.
+MIT — see [LICENSE](LICENSE).

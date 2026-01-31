@@ -1,6 +1,6 @@
 # Performance Insights
 
-Watchflow's agentic approach to DevOps governance has shown promising results in early testing and evaluation. This document shares key insights from our research and development process.
+Early testing and research on Watchflow’s rule engine and optional repo-analysis flow. Shared for maintainers and contributors—no marketing fluff; numbers are from internal evaluation and early feedback.
 
 ## Key Research Findings
 

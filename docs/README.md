@@ -1,7 +1,6 @@
 # Watchflow Documentation
 
-This directory contains the documentation for Watchflow, built with [MkDocs](https://www.mkdocs.org/) and the
-[Material theme](https://squidfunk.github.io/mkdocs-material/).
+This directory contains the documentation for Watchflow, built with [MkDocs](https://www.mkdocs.org/) and the [Material theme](https://squidfunk.github.io/mkdocs-material/). Docs are **maintainer-first** and tech-forward: speak to engineers, not marketing; anchor Watchflow as the immune system for the repo, not another AI tool.
 
 ## Local Development
 

@@ -2,6 +2,8 @@
 
 This guide covers setting up the Watchflow development environment for local development and testing.
 
+**Direction (for contributors):** Watchflow is a **rule engine** for GitHub—rules in YAML, enforcement on PR and push. The hot path is **condition-based** (no LLM for “did this PR violate the rule?”). Optional AI is used for repo analysis and feasibility suggestions. We aim for maintainer-first docs and code: tech-forward, slightly retro, no marketing fluff. See [README](README.md) and [docs](docs/) for the supported logic and architecture.
+
 ## Quick Start
 
 🚀 **New to Watchflow?** Start with our [Local Development Setup Guide](./LOCAL_SETUP.md) for a complete end-to-end setup including GitHub App configuration and webhook testing.

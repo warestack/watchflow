@@ -8,100 +8,65 @@
 
 -   :fontawesome-solid-shield: __[Features](features.md)__
 
-    Explore context-aware monitoring capabilities
+    Supported conditions and capabilities
 
--   :fontawesome-solid-chart-line: __[Comparative Analysis](benchmarks.md)__
+-   :fontawesome-solid-chart-line: __[Benchmarks](benchmarks.md)__
 
-    See real-world impact and results
+    Real-world impact and results
 
 -   :fontawesome-solid-cog: __[Configuration](getting-started/configuration.md)__
 
-    Advanced rule configuration
+    Rule reference and parameter details
 
 </div>
 
 ## What is Watchflow?
 
-Watchflow replaces static protection rules with **context-aware monitoring**. We ensure consistent quality standards so
-teams can focus on building, increase trust, and move fast.
+Watchflow is a **rule engine for GitHub** that runs where you already work: no new dashboards, no “AI-powered” hand-waving. You define rules in `.watchflow/rules.yaml`; we evaluate them on every PR and push and surface violations as check runs and PR comments. Think of it as the **immune system** for your repo—consistent enforcement so maintainers don’t have to chase reviewers or guess what’s allowed.
 
-Instead of rigid, binary rules, Watchflow uses **AI agents** to make intelligent decisions about pull requests,
-deployments, and workflow changes based on real context.
+We built it for teams that still care about traceability, CODEOWNERS, and review quality. Rules are description + event types + parameters; the engine matches parameters to built-in conditions (linked issues, PR size, code owner reviewers, title patterns, branch protection, and more). Optional repo analysis suggests rules from your PR history; you keep full control.
 
-### The Problem
+### The problem we solve
 
-Traditional GitHub protection rules are:
+- **Static branch protection** can’t enforce “CODEOWNERS must be requested” or “PR must reference an issue.”
+- **Generic governance tools** add another abstraction layer and another place to look.
+- **Maintainers** end up manually checking the same things on every PR.
 
-- **Static**: Rigid true/false decisions
-- **Context-blind**: Don't consider urgency, roles, or circumstances
-- **High maintenance**: Require constant updates
-- **Limited coverage**: Catch only obvious violations
+### What Watchflow does
 
-### The Solution
+- **Lives in the repo** — one config file, version-controlled, next to CODEOWNERS and workflows.
+- **Deterministic rule evaluation** — condition-based checks on PR/push; no LLM in the hot path for enforcement.
+- **Maintainer-first** — check runs and comments in GitHub; acknowledgments in-thread with `@watchflow acknowledge "reason"`.
+- **Optional intelligence** — repo analysis and feasibility checks when you want suggestions; enforcement stays rule-driven.
 
-Watchflow introduces **Agentic GitHub Guardrails**, where decisions are made dynamically by AI agents that understand:
+## Key features
 
-- **Developer roles** and permissions
-- **Project urgency** and business context
-- **Code complexity** and risk factors
-- **Temporal patterns** (time of day, day of week)
-- **Historical context** and team patterns
+- **Condition-based rules** — `require_linked_issue`, `max_lines`, `require_code_owner_reviewers`, `no_force_push`, title patterns, approvals, labels, and more.
+- **CODEOWNERS-aware** — Require owners for modified paths to be requested as reviewers; or require every changed path to have an owner.
+- **Webhook-native** — Uses GitHub delivery IDs so handler and processor both run; comments and check runs stay in sync.
+- **Install-flow friendly** — When no rules file exists, we post a welcome comment with a link to watchflow.dev (installation_id + repo) so you can run analysis and create a rules PR without a PAT.
 
-## Key Features
+## Quick example
 
-### Context-Aware Monitoring
-- **Intelligent decisions** based on real context
-- **Natural language rules** written in plain English
-- **Clear explanations** for all actions
-- **Learning capabilities** that improve over time
+Instead of hoping everyone remembers to request CODEOWNERS:
 
-### Plug n Play Integration
-- **GitHub App** for instant setup
-- **Comment-based interactions** for team communication
-- **Real-time feedback** through status checks
-- **No additional UI** required
-
-### Quality Standards
-- **Consistent enforcement** across all repositories
-- **Trust building** through transparent decisions
-- **Fast iteration** with intelligent exceptions
-- **Audit trails** for compliance
-
-## Quick Example
-
-Instead of a static rule like:
 ```yaml
-# Traditional approach
-require_approvals: 2
+rules:
+  - description: "When a PR modifies paths with CODEOWNERS, those owners must be added as reviewers"
+    enabled: true
+    severity: high
+    event_types: ["pull_request"]
+    parameters:
+      require_code_owner_reviewers: true
 ```
 
-Watchflow uses context-aware rules like:
-```yaml
-# Agentic approach
-"Require 2 approvals for PRs to main unless it's a hotfix by a senior engineer on-call"
-```
+Watchflow checks modified files, resolves owners from CODEOWNERS, and ensures they’re in the requested reviewers list. One rule, no custom code.
 
-The system automatically:
-- Detects if it's a hotfix
-- Identifies the developer's role
-- Checks if they're on-call
-- Makes a contextual decision
-- Provides clear justification
+## Get started
 
-## Architecture
-
-Watchflow combines the best of both worlds:
-
-- **Real-time processing** via GitHub webhooks for immediate response
-- **AI reasoning** for complex decision-making
-- **Static fallbacks** for reliability
-- **Hybrid architecture** for optimal performance
-
-## Get Started
-
-Ready to replace static protection rules with context-aware monitoring? Start with our
-[Quick Start Guide](getting-started/quick-start.md) or explore the [Features](features.md) to see how Agentic GitHub
-Guardrails work.
+- [Quick Start](getting-started/quick-start.md) — Install the app, add `.watchflow/rules.yaml`, verify.
+- [Configuration](getting-started/configuration.md) — Full parameter reference and examples.
+- [Features](features.md) — Supported conditions and capabilities.
 
 ## Community
 
@@ -111,4 +76,4 @@ Guardrails work.
 
 ---
 
-*Watchflow ensures consistent quality standards so teams can focus on building, increase trust, and move fast.*
+*Watchflow: the immune system for your repo. Rules in YAML, enforcement in GitHub.*

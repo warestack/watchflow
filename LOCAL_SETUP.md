@@ -1,6 +1,6 @@
 # Local Development Setup Guide
 
-This guide covers setting up Watchflow for complete end-to-end local development, including GitHub App configuration, webhook setup, and API integration.
+This guide covers setting up Watchflow for complete end-to-end local development, including GitHub App configuration, webhook setup, and API integration. For direction and supported logic, see [README](README.md) and [docs](docs/).
 
 ## Why This Setup?
 
