@@ -298,7 +298,7 @@ async def _execute_conditions(rule_desc: RuleDescription, event_data: dict[str, 
             violation_dicts = []
             for v in all_violations:
                 v_dict = v.model_dump()
-                # Ensure validation_strategy is set
+                v_dict["rule_id"] = rule_desc.rule_id
                 v_dict["validation_strategy"] = ValidationStrategy.VALIDATOR
                 v_dict["execution_time_ms"] = execution_time
                 violation_dicts.append(v_dict)
@@ -387,6 +387,7 @@ async def _execute_single_llm_evaluation(
             "execution_time_ms": execution_time,
             "violation": {
                 "rule_description": rule_desc.description,
+                "rule_id": rule_desc.rule_id,
                 "severity": rule_desc.severity,
                 "message": f"LLM evaluation failed: {str(e)}",
                 "details": {"error_type": type(e).__name__, "error_message": str(e)},

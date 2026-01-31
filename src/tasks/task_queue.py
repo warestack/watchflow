@@ -118,6 +118,24 @@ class TaskQueue:
             raw_string = f"{event_type}:{payload_str}"
         return hashlib.sha256(raw_string.encode()).hexdigest()
 
+    def build_task(
+        self,
+        event_type: str,
+        payload: dict[str, Any],
+        func: Callable[..., Coroutine[Any, Any, Any]],
+        delivery_id: str | None = None,
+    ) -> Task:
+        """Build a Task for a processor; pass as single arg to enqueue."""
+        task_id = self._generate_task_id(event_type, payload, delivery_id=delivery_id, func=func)
+        return Task(
+            task_id=task_id,
+            event_type=event_type,
+            payload=payload,
+            func=func,
+            args=(),
+            kwargs={},
+        )
+
     async def enqueue(
         self,
         func: Callable[..., Coroutine[Any, Any, Any]],

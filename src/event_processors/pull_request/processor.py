@@ -127,7 +127,9 @@ class PullRequestProcessor(BaseEventProcessor):
             require_acknowledgment_violations = []
 
             for violation in violations:
-                if violation.rule_description in previous_acknowledgments:
+                # Match by rule_id so acknowledgment lookup matches parsed comments
+                ack_key = violation.rule_id or violation.rule_description
+                if ack_key in previous_acknowledgments:
                     acknowledgable_violations.append(violation)
                 else:
                     require_acknowledgment_violations.append(violation)

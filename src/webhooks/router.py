@@ -80,14 +80,15 @@ async def github_webhook_endpoint(
         return WebhookResponse(
             status="success",
             detail="Event dispatched successfully",
-            event_type=event_name,
+            event_type=event.event_type.value,
         )
     except HTTPException as e:
         # Don't 500 on unknown event—keeps GitHub happy, avoids alert noise.
         if e.status_code == 202:
+            normalized = event_name.split(".")[0] if event_name else None
             return WebhookResponse(
                 status="received",
                 detail=e.detail,
-                event_type=event_name,
+                event_type=normalized,
             )
         raise e

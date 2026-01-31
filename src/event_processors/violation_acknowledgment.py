@@ -241,13 +241,14 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
 
                 # Update check run to reflect post-acknowledgment state
                 if sha:
-                    # Create Ack map
-                    acknowledgments = {
-                        v.rule_description: Acknowledgment(
-                            rule_id=v.rule_description, reason=acknowledgment_reason, commenter=commenter
+                    acknowledgments = {}
+                    for v in acknowledgable_violations:
+                        key = v.rule_id or v.rule_description
+                        acknowledgments[key] = Acknowledgment(
+                            rule_id=key,
+                            reason=acknowledgment_reason,
+                            commenter=commenter,
                         )
-                        for v in acknowledgable_violations
-                    }
 
                     await self.check_run_manager.create_acknowledgment_check_run(
                         repo=repo,
@@ -427,8 +428,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             comment_parts.append("The following violations have been overridden:")
 
             for violation in acknowledgable_violations:
-                # Handle objects
-                message = getattr(violation, "message", "Rule violation detected")
+                message = violation.message
                 comment_parts.append(f"• {message}")
 
             comment_parts.append("")
@@ -444,10 +444,9 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             comment_parts.append("")
 
             for violation in require_fixes:
-                # Handle objects
-                rule_description = getattr(violation, "rule_description", "Unknown Rule")
-                message = getattr(violation, "message", "Rule violation detected")
-                how_to_fix = getattr(violation, "how_to_fix", "")
+                rule_description = violation.rule_description or "Unknown Rule"
+                message = violation.message
+                how_to_fix = violation.how_to_fix or ""
 
                 comment_parts.append(f"**{rule_description}**")
                 comment_parts.append(f"• {message}")
@@ -493,10 +492,9 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             comment_parts.append("")
 
             for violation in require_fixes:
-                # Handle objects
-                rule_description = getattr(violation, "rule_description", "Unknown Rule")
-                message = getattr(violation, "message", "Rule violation detected")
-                how_to_fix = getattr(violation, "how_to_fix", "")
+                rule_description = violation.rule_description or "Unknown Rule"
+                message = violation.message
+                how_to_fix = violation.how_to_fix or ""
 
                 comment_parts.append(f"**{rule_description}**")
                 comment_parts.append(f"• {message}")

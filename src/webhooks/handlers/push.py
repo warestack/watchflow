@@ -32,13 +32,19 @@ class PushEventHandler(EventHandler):
         log.info("push_handler_invoked")
 
         try:
-            # Enqueue the processing task (delivery_id so each delivery is processed)
+            # Build Task so process(task: Task) receives the correct type (not WebhookEvent)
+            task = task_queue.build_task(
+                "push",
+                event.payload,
+                push_processor.process,
+                delivery_id=event.delivery_id,
+            )
             enqueued = await task_queue.enqueue(
                 push_processor.process,
                 "push",
                 event.payload,
-                event,
-                delivery_id=getattr(event, "delivery_id", None),
+                task,
+                delivery_id=event.delivery_id,
             )
 
             if enqueued:

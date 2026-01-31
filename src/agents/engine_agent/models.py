@@ -76,7 +76,7 @@ class HowToFixResponse(BaseModel):
 class RuleViolation(Violation):
     """Represents a violation of a specific rule."""
 
-    # Inherits: rule_description, severity, message, details, how_to_fix from Violation
+    # Inherits: rule_description, rule_id, severity, message, details, how_to_fix from Violation
 
     docs_url: str | None = None
     validation_strategy: ValidationStrategy = ValidationStrategy.VALIDATOR
@@ -101,6 +101,7 @@ class RuleDescription(BaseModel):
     """Enhanced rule description with parameters and validation strategy."""
 
     description: str = Field(description="Human-readable description of the rule")
+    rule_id: str | None = Field(default=None, description="Stable rule ID for acknowledgment lookup")
     parameters: dict[str, Any] = Field(default_factory=dict, description="Rule parameters")
     event_types: list[str] = Field(default_factory=list, description="Supported event types")
     severity: str = Field(default="medium", description="Rule severity level")

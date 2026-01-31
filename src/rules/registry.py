@@ -53,6 +53,9 @@ RULE_ID_TO_CONDITION: dict[RuleID, type[BaseCondition]] = {
     RuleID.REQUIRE_CODE_OWNER_REVIEWERS: RequireCodeOwnerReviewersCondition,
 }
 
+# Reverse map: condition class -> RuleID (for populating rule_id on violations)
+CONDITION_CLASS_TO_RULE_ID: dict[type[BaseCondition], RuleID] = {cls: rid for rid, cls in RULE_ID_TO_CONDITION.items()}
+
 # List of all available condition classes
 AVAILABLE_CONDITIONS: list[type[BaseCondition]] = [
     RequiredLabelsCondition,

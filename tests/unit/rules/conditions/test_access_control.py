@@ -109,25 +109,27 @@ class TestAuthorTeamCondition:
     @pytest.mark.asyncio
     async def test_evaluate_returns_violations_for_non_member(self) -> None:
         """Test that evaluate returns violations when author is not team member."""
-        condition = AuthorTeamCondition()
+        with patch("src.rules.conditions.access_control.DEFAULT_TEAM_MEMBERSHIPS", {"devops": ["devops-user"]}):
+            condition = AuthorTeamCondition()
 
-        event = {"sender": {"login": "random-user"}}
-        context = {"parameters": {"team": "devops"}, "event": event}
+            event = {"sender": {"login": "random-user"}}
+            context = {"parameters": {"team": "devops"}, "event": event}
 
-        violations = await condition.evaluate(context)
-        assert len(violations) == 1
-        assert "not a member of team" in violations[0].message
+            violations = await condition.evaluate(context)
+            assert len(violations) == 1
+            assert "not a member of team" in violations[0].message
 
     @pytest.mark.asyncio
     async def test_evaluate_returns_empty_for_member(self) -> None:
         """Test that evaluate returns empty list when author is team member."""
-        condition = AuthorTeamCondition()
+        with patch("src.rules.conditions.access_control.DEFAULT_TEAM_MEMBERSHIPS", {"devops": ["devops-user"]}):
+            condition = AuthorTeamCondition()
 
-        event = {"sender": {"login": "devops-user"}}
-        context = {"parameters": {"team": "devops"}, "event": event}
+            event = {"sender": {"login": "devops-user"}}
+            context = {"parameters": {"team": "devops"}, "event": event}
 
-        violations = await condition.evaluate(context)
-        assert len(violations) == 0
+            violations = await condition.evaluate(context)
+            assert len(violations) == 0
 
 
 class TestCodeOwnersCondition:

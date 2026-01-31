@@ -45,13 +45,20 @@ class PullRequestEventHandler(EventHandler):
         log.info("pr_handler_invoked")
 
         try:
-            # Enqueue the processing task (delivery_id so each delivery is processed, e.g. redeliveries)
-            enqueued = await task_queue.enqueue(
-                get_pr_processor().process,
+            # Build Task so process(task: Task) receives the correct type (not WebhookEvent)
+            processor = get_pr_processor()
+            task = task_queue.build_task(
                 "pull_request",
                 event.payload,
-                event,
-                delivery_id=getattr(event, "delivery_id", None),
+                processor.process,
+                delivery_id=event.delivery_id,
+            )
+            enqueued = await task_queue.enqueue(
+                processor.process,
+                "pull_request",
+                event.payload,
+                task,
+                delivery_id=event.delivery_id,
             )
 
             if enqueued:

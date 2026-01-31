@@ -140,6 +140,7 @@ class RuleEngineAgent(BaseAgent):
             for violation in violations:
                 rule_violation = RuleViolation(
                     rule_description=violation.get("rule_description", "Unknown rule"),
+                    rule_id=violation.get("rule_id"),
                     severity=violation.get("severity", "medium"),
                     message=violation.get("message", "Rule violation detected"),
                     details=violation.get("details", {}),
@@ -201,6 +202,7 @@ class RuleEngineAgent(BaseAgent):
                 conditions = getattr(rule, "conditions", [])
                 event_types = [et.value if hasattr(et, "value") else str(et) for et in rule.event_types]
                 severity = str(rule.severity.value) if hasattr(rule.severity, "value") else str(rule.severity)
+                rule_id = getattr(rule, "rule_id", None)
             else:
                 # It's a dict
                 description = (
@@ -213,9 +215,11 @@ class RuleEngineAgent(BaseAgent):
                 conditions = []  # Dicts don't have attached conditions
                 event_types = rule.get("event_types", [])
                 severity = rule.get("severity", "medium")
+                rule_id = rule.get("rule_id")
 
             rule_description = RuleDescription(
                 description=description,
+                rule_id=rule_id,
                 parameters=parameters,
                 event_types=event_types,
                 severity=severity,

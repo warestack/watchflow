@@ -14,7 +14,7 @@ from src.core.models import EventType
 from src.integrations.github import GitHubClient, github_client
 from src.rules.interface import RuleLoader
 from src.rules.models import Rule, RuleAction, RuleSeverity
-from src.rules.registry import ConditionRegistry
+from src.rules.registry import CONDITION_CLASS_TO_RULE_ID, ConditionRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +101,13 @@ class GitHubRuleLoader(RuleLoader):
         # Instantiate conditions using Registry (matches on parameter keys, e.g. max_lines, require_linked_issue)
         conditions = ConditionRegistry.get_conditions_for_parameters(parameters)
 
+        # Set rule_id from first condition for acknowledgment lookup
+        rule_id_val: str | None = None
+        if conditions:
+            rid = CONDITION_CLASS_TO_RULE_ID.get(type(conditions[0]))
+            if rid is not None:
+                rule_id_val = rid.value
+
         # Actions are optional and not mapped
         actions = []
         if "actions" in rule_data:
@@ -116,6 +123,7 @@ class GitHubRuleLoader(RuleLoader):
             conditions=conditions,
             actions=actions,
             parameters=parameters,
+            rule_id=rule_id_val,
         )
         return rule
 

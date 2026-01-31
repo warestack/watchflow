@@ -91,6 +91,7 @@ class PushProcessor(BaseEventProcessor):
 
                 violation = Violation(
                     rule_description=v.get("rule", "Unknown Rule"),
+                    rule_id=v.get("rule_id"),
                     severity=severity,
                     message=v.get("message", "No message provided"),
                     how_to_fix=v.get("suggestion"),

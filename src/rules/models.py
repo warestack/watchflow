@@ -51,6 +51,9 @@ class Rule(BaseModel):
     """Represents a rule that can be evaluated against repository events."""
 
     description: str = Field(description="Primary identifier and description of the rule")
+    rule_id: str | None = Field(
+        default=None, description="Stable rule ID for acknowledgment matching (e.g. require-linked-issue)"
+    )
     enabled: bool = True
     severity: RuleSeverity = RuleSeverity.MEDIUM
     event_types: list["EventType"] = Field(default_factory=list)  # noqa: UP037

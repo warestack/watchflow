@@ -24,6 +24,7 @@ class Violation(BaseModel):
     """
 
     rule_description: str = Field(description="Human-readable description of the rule")
+    rule_id: str | None = Field(default=None, description="Stable rule ID for acknowledgment lookup")
     severity: Severity = Field(default=Severity.MEDIUM, description="Severity level of the violation")
     message: str = Field(description="Explanation of why the rule failed")
     details: dict[str, Any] = Field(default_factory=dict, description="Additional context or metadata")
