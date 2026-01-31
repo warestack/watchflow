@@ -35,9 +35,9 @@ Rules are **description + event_types + parameters**. The engine matches paramet
 ## Supported logic (conditions)
 
 | Area | Condition / parameter | Event | What it does |
-|------|------------------------|-------|----------------|
+| ------ | ------------------------ | ------ | ---------------- |
 | **PR** | `require_linked_issue: true` | pull_request | PR must reference an issue (e.g. Fixes #123). |
-| **PR** | `title_pattern: "^feat\|^fix\|..."` | pull_request | PR title must match regex. |
+| **PR** | `title_pattern: "^feat\\|^fix\\|..."` | pull_request | PR title must match regex. |
 | **PR** | `min_description_length: 50` | pull_request | Body length ≥ N characters. |
 | **PR** | `required_labels: ["Type/Bug", "Status/Review"]` | pull_request | PR must have these labels. |
 | **PR** | `min_approvals: 2` | pull_request | At least N approvals. |
@@ -106,7 +106,7 @@ Detailed steps: [Quick Start](docs/getting-started/quick-start.md). Configuratio
 ## Comment commands
 
 | Command | Purpose |
-|--------|--------|
+| -------- | -------- |
 | `@watchflow acknowledge "reason"` / `@watchflow ack "reason"` | Record an acknowledgment for a violation (when the rule allows it). |
 | `@watchflow evaluate "rule in plain English"` | Ask whether a rule is feasible and get suggested YAML. |
 | `@watchflow help` | List commands. |

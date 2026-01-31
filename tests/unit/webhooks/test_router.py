@@ -67,7 +67,7 @@ class TestWebhookRouter:
 
                 assert response.status_code == 200
                 result = response.json()
-                assert result["status"] == "success"
+                assert result["status"] == "ok"
                 assert result["event_type"] == "pull_request"
 
                 # Verify dispatcher was called
@@ -120,7 +120,7 @@ class TestWebhookRouter:
         # Should return 202 for unsupported events per router logic
         assert response.status_code == 200
         result = response.json()
-        assert result["status"] == "received"
+        assert result["status"] == "ignored"
 
     @pytest.mark.asyncio
     async def test_push_event_without_action(self, app: FastAPI, valid_headers: dict[str, str]) -> None:
@@ -148,7 +148,7 @@ class TestWebhookRouter:
 
             assert response.status_code == 200
             result = response.json()
-            assert result["status"] == "success"
+            assert result["status"] == "ok"
             assert result["event_type"] == "push"
 
             # Verify dispatcher was called

@@ -101,12 +101,14 @@ class GitHubRuleLoader(RuleLoader):
         # Instantiate conditions using Registry (matches on parameter keys, e.g. max_lines, require_linked_issue)
         conditions = ConditionRegistry.get_conditions_for_parameters(parameters)
 
-        # Set rule_id from first condition for acknowledgment lookup
+        # Set rule_id from first condition that has a RuleID (for acknowledgment lookup).
+        # Multi-condition rules use the first mapped ID; conditions not in CONDITION_CLASS_TO_RULE_ID yield None.
         rule_id_val: str | None = None
-        if conditions:
-            rid = CONDITION_CLASS_TO_RULE_ID.get(type(conditions[0]))
+        for cond in conditions:
+            rid = CONDITION_CLASS_TO_RULE_ID.get(type(cond))
             if rid is not None:
                 rule_id_val = rid.value
+                break
 
         # Actions are optional and not mapped
         actions = []

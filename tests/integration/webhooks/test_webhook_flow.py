@@ -90,7 +90,7 @@ class TestWebhookFlowIntegration:
 
             assert response.status_code == 200
             result = response.json()
-            assert result["status"] == "success"
+            assert result["status"] == "ok"
 
             # Wait for task queue to process
             await asyncio.sleep(0.2)

@@ -120,7 +120,7 @@ class PullRequestProcessor(BaseEventProcessor):
             if result.data and "evaluation_result" in result.data:
                 eval_result = result.data["evaluation_result"]
                 if hasattr(eval_result, "violations"):
-                    violations = list(eval_result.violations)
+                    violations = [Violation.model_validate(v) for v in eval_result.violations]
 
             original_violations = violations.copy()
             acknowledgable_violations = []

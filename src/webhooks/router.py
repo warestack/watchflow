@@ -78,7 +78,7 @@ async def github_webhook_endpoint(
         event = _create_event_from_request(event_name, payload, delivery_id=delivery_id)
         await dispatcher_instance.dispatch(event)
         return WebhookResponse(
-            status="success",
+            status="ok",
             detail="Event dispatched successfully",
             event_type=event.event_type.value,
         )
@@ -87,7 +87,7 @@ async def github_webhook_endpoint(
         if e.status_code == 202:
             normalized = event_name.split(".")[0] if event_name else None
             return WebhookResponse(
-                status="received",
+                status="ignored",
                 detail=e.detail,
                 event_type=normalized,
             )
