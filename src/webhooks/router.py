@@ -55,9 +55,15 @@ async def github_webhook_endpoint(
       correct application service.
     """
     # Signature check handled by dependency—fail fast if invalid.
+    import json
     from typing import Any, cast
 
-    payload = cast("dict[str, Any]", await request.json())
+    try:
+        payload = cast("dict[str, Any]", await request.json())
+    except json.JSONDecodeError as e:
+        logger.error("webhook_json_parse_failed", error=str(e))
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from e
+
     event_name = request.headers.get("X-GitHub-Event")
     delivery_id = request.headers.get("X-GitHub-Delivery")
 

@@ -61,9 +61,6 @@ class PullRequestProcessor(BaseEventProcessor):
             github_token = github_token_optional
 
             # 1. Enrich event data
-            if not installation_id:
-                raise ValueError("Installation ID is required")
-
             event_data = await self.enricher.enrich_event_data(task, github_token)
             api_calls += 1
 
@@ -112,7 +109,8 @@ class PullRequestProcessor(BaseEventProcessor):
                 if previous_acknowledgments:
                     logger.info(f"📋 Found {len(previous_acknowledgments)} previous acknowledgments")
 
-            # 4. Run engine-based rule evaluation (pass Rule objects so .conditions are preserved)
+            # 4. Run engine-based rule evaluation (pass Rule objects so .conditions are preserved).
+            # No conversion to flat schema: a previous _convert_rules_to_new_format helper had issues and was removed.
             result = await self.engine_agent.execute(event_type="pull_request", event_data=event_data, rules=rules)
 
             # 5. Extract and filter violations
@@ -194,23 +192,6 @@ class PullRequestProcessor(BaseEventProcessor):
                 processing_time_ms=int((time.time() - start_time) * 1000),
                 error=str(e),
             )
-
-    def _convert_rules_to_new_format(self, rules: list[Any]) -> list[dict[str, Any]]:
-        """Convert Rule objects to the new flat schema format."""
-        formatted_rules = []
-        for rule in rules:
-            rule_dict = {
-                "description": rule.description,
-                "enabled": rule.enabled,
-                "severity": rule.severity.value if hasattr(rule.severity, "value") else rule.severity,
-                "event_types": [et.value if hasattr(et, "value") else et for et in rule.event_types],
-                "parameters": rule.parameters if hasattr(rule, "parameters") else {},
-            }
-            if not rule_dict["parameters"] and hasattr(rule, "conditions"):
-                for condition in rule.conditions:
-                    rule_dict["parameters"].update(condition.parameters)
-            formatted_rules.append(rule_dict)
-        return formatted_rules
 
     async def _post_violations_to_github(self, task: Task, violations: list[Violation]) -> None:
         """Post violations as comments on the pull request."""
