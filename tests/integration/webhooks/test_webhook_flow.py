@@ -36,7 +36,7 @@ def fresh_queue() -> TaskQueue:
 
 @pytest.fixture
 def valid_pr_payload() -> dict[str, object]:
-    """Valid pull request webhook payload."""
+    """Valid pull request webhook payload (open PR, passes event filter)."""
     return {
         "action": "opened",
         "sender": {"login": "octocat", "id": 1, "type": "User"},
@@ -47,7 +47,14 @@ def valid_pr_payload() -> dict[str, object]:
             "private": False,
             "html_url": "https://github.com/octocat/watchflow",
         },
-        "pull_request": {"number": 42, "title": "Test PR", "body": "Test body"},
+        "pull_request": {
+            "number": 42,
+            "title": "Test PR",
+            "body": "Test body",
+            "state": "open",
+            "merged": False,
+            "draft": False,
+        },
     }
 
 
@@ -157,7 +164,9 @@ class TestWebhookFlowIntegration:
                 "html_url": "https://github.com/octocat/watchflow",
             },
             "ref": "refs/heads/main",
-            "commits": [],
+            "deleted": False,
+            "after": "abc123def456",
+            "commits": [{"id": "abc123def456"}],
         }
 
         with patch("src.webhooks.router.dispatcher", fresh_dispatcher):
@@ -222,6 +231,49 @@ class TestWebhookFlowIntegration:
 
             # Handler was called and exception was caught
             assert failing_handler.called
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_filtered_event_not_dispatched(
+        self,
+        app: FastAPI,
+        fresh_dispatcher: WebhookDispatcher,
+        fresh_queue: TaskQueue,
+        valid_headers: dict[str, str],
+    ) -> None:
+        """Test that filtered events (e.g. branch deletion) are not dispatched."""
+        mock_handler = AsyncMock()
+        fresh_dispatcher.register_handler("push", mock_handler)
+        await fresh_queue.start_workers()
+
+        deleted_branch_payload = {
+            "sender": {"login": "octocat", "id": 1, "type": "User"},
+            "repository": {
+                "id": 123456,
+                "name": "watchflow",
+                "full_name": "octocat/watchflow",
+                "private": False,
+                "html_url": "https://github.com/octocat/watchflow",
+            },
+            "ref": "refs/heads/feature",
+            "deleted": True,
+            "after": "0000000000000000000000000000000000000000",
+            "commits": [],
+        }
+
+        with patch("src.webhooks.router.dispatcher", fresh_dispatcher):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                response = await client.post(
+                    "/webhooks/github",
+                    json=deleted_branch_payload,
+                    headers={**valid_headers, "X-GitHub-Event": "push"},
+                )
+
+            assert response.status_code == 200
+            await asyncio.sleep(0.1)
+            await fresh_queue.queue.join()
+
+            assert mock_handler.call_count == 0
 
     @pytest.mark.asyncio
     @respx.mock
