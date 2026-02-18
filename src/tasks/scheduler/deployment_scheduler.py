@@ -16,6 +16,7 @@ from src.integrations.github import github_client
 logger = structlog.get_logger(__name__)
 
 AGENT_TIMEOUT_SECONDS = 30.0
+MAX_CONSECUTIVE_FAILURES = 3
 
 
 class DeploymentScheduler:
@@ -145,7 +146,9 @@ class DeploymentScheduler:
                 if isinstance(created_at, (int, float)):
                     created_at_dt = datetime.fromtimestamp(created_at, tz=UTC)
                 elif hasattr(created_at, "year"):
-                    created_at_dt = created_at if getattr(created_at, "tzinfo", None) else created_at.replace(tzinfo=UTC)
+                    created_at_dt = (
+                        created_at if getattr(created_at, "tzinfo", None) else created_at.replace(tzinfo=UTC)
+                    )
                 else:
                     logger.warning(
                         "deployment_scheduler_remove_invalid",
@@ -225,10 +228,18 @@ class DeploymentScheduler:
                         "deployment_scheduler_token_failed",
                         installation_id=deployment["installation_id"],
                     )
+                    failure_count = deployment.get("failure_count", 0) + 1
+                    deployment["failure_count"] = failure_count
+                    if failure_count >= MAX_CONSECUTIVE_FAILURES:
+                        return False, True
                     return False, False
                 deployment["github_token"] = fresh_token
             except Exception as e:
                 logger.error("deployment_scheduler_token_error", error=str(e))
+                failure_count = deployment.get("failure_count", 0) + 1
+                deployment["failure_count"] = failure_count
+                if failure_count >= MAX_CONSECUTIVE_FAILURES:
+                    return False, True
                 return False, False
 
             # Convert rules to the format expected by the analysis agent
@@ -248,12 +259,15 @@ class DeploymentScheduler:
             eval_result = result.data.get("evaluation_result") if result.data else None
             if eval_result and hasattr(eval_result, "violations"):
                 for v in eval_result.violations:
-                    violations.append({
-                        "rule_description": getattr(v, "rule_description", ""),
-                        "message": getattr(v, "message", ""),
-                    })
+                    violations.append(
+                        {
+                            "rule_description": getattr(v, "rule_description", ""),
+                            "message": getattr(v, "message", ""),
+                        }
+                    )
 
             if not violations:
+                deployment["failure_count"] = 0
                 logger.info("deployment_scheduler_no_violations", repo=deployment.get("repo"))
                 return True, False
 
@@ -287,6 +301,7 @@ class DeploymentScheduler:
                     other_violations.append(violation)
 
             if other_violations:
+                deployment["failure_count"] = 0
                 logger.info(
                     "deployment_scheduler_non_time_violations",
                     repo=deployment.get("repo"),
@@ -294,6 +309,7 @@ class DeploymentScheduler:
                 )
                 return False, True
 
+            deployment["failure_count"] = 0
             if time_based_violations:
                 logger.info(
                     "deployment_scheduler_time_violations",
@@ -306,11 +322,21 @@ class DeploymentScheduler:
             return True, False
 
         except Exception as e:
+            failure_count = deployment.get("failure_count", 0) + 1
+            deployment["failure_count"] = failure_count
             logger.error(
                 "deployment_scheduler_reevaluate_error",
                 repo=deployment.get("repo"),
                 error=str(e),
+                failure_count=failure_count,
             )
+            if failure_count >= MAX_CONSECUTIVE_FAILURES:
+                logger.warning(
+                    "deployment_scheduler_remove_after_failures",
+                    repo=deployment.get("repo"),
+                    failure_count=failure_count,
+                )
+                return False, True
             return False, False
 
     async def _approve_deployment(self, deployment: dict[str, Any]) -> None:
@@ -377,7 +403,7 @@ class DeploymentScheduler:
                 created_at_iso = None
                 if created_at:
                     if isinstance(created_at, (int, float)):
-                        created_at_iso = datetime.fromtimestamp(created_at).isoformat()
+                        created_at_iso = datetime.fromtimestamp(created_at, tz=UTC).isoformat()
                     elif hasattr(created_at, "isoformat"):
                         created_at_iso = created_at.isoformat()
                     else:

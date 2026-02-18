@@ -4,8 +4,20 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from src.core.models import EventType
 from src.event_processors.deployment_protection_rule import DeploymentProtectionRuleProcessor
+from src.rules.models import Rule, RuleSeverity
 from src.tasks.task_queue import Task
+
+
+def _make_deployment_rule() -> Rule:
+    return Rule(
+        description="Test deployment rule",
+        enabled=True,
+        severity=RuleSeverity.MEDIUM,
+        event_types=[EventType.DEPLOYMENT],
+        parameters={},
+    )
 
 
 @pytest.fixture
@@ -43,6 +55,7 @@ def task():
 
 @pytest.mark.asyncio
 async def test_exception_calls_fallback_approval(processor, mock_agent, task):
+    processor.rule_provider.get_rules.return_value = [_make_deployment_rule()]
     mock_agent.execute.side_effect = RuntimeError("agent failed")
     processor.github_client.review_deployment_protection_rule.return_value = {"status": "success"}
 
@@ -67,6 +80,7 @@ async def test_exception_without_callback_skips_approval(processor, mock_agent):
         "deployment_callback_url": None,
         "repository": {},
     }
+    processor.rule_provider.get_rules.return_value = [_make_deployment_rule()]
     mock_agent.execute.side_effect = RuntimeError("agent failed")
 
     result = await processor.process(task)
@@ -86,7 +100,7 @@ async def test_validation_rejects_invalid_callback_url(processor, mock_agent):
         "deployment_callback_url": "not-a-valid-url",
         "repository": {},
     }
-    processor.rule_provider.get_rules.return_value = []
+    processor.rule_provider.get_rules.return_value = [_make_deployment_rule()]
     mock_agent.execute.return_value = MagicMock(data={"evaluation_result": MagicMock(violations=[])})
 
     result = await processor.process(task)

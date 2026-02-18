@@ -48,9 +48,8 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
             installation_id = task.installation_id
             repo_full_name = task.repo_full_name
 
-            can_call_callback = (
-                self._is_valid_callback_url(deployment_callback_url)
-                and self._is_valid_environment(environment)
+            can_call_callback = self._is_valid_callback_url(deployment_callback_url) and self._is_valid_environment(
+                environment
             )
             if not can_call_callback:
                 logger.warning(
@@ -146,17 +145,19 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                 if hasattr(eval_result, "violations"):
                     # Convert RuleViolation objects to dictionaries
                     for violation in eval_result.violations:
+                        vs = getattr(violation, "validation_strategy", None)
+                        vs_val = vs.value if hasattr(vs, "value") else vs
+                        sev = getattr(violation, "severity", "medium")
+                        sev_val = sev.value if hasattr(sev, "value") else sev
                         violation_dict = {
-                            "rule_description": violation.rule_description,
-                            "severity": violation.severity,
-                            "message": violation.message,
-                            "details": violation.details,
-                            "how_to_fix": violation.how_to_fix,
-                            "docs_url": violation.docs_url,
-                            "validation_strategy": violation.validation_strategy.value
-                            if hasattr(violation.validation_strategy, "value")
-                            else violation.validation_strategy,
-                            "execution_time_ms": violation.execution_time_ms,
+                            "rule_description": getattr(violation, "rule_description", ""),
+                            "severity": sev_val,
+                            "message": getattr(violation, "message", ""),
+                            "details": getattr(violation, "details", {}),
+                            "how_to_fix": getattr(violation, "how_to_fix", ""),
+                            "docs_url": getattr(violation, "docs_url", ""),
+                            "validation_strategy": vs_val,
+                            "execution_time_ms": getattr(violation, "execution_time_ms", 0.0),
                         }
                         violations.append(violation_dict)
 
@@ -227,7 +228,8 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                 },
             )
             if self._is_valid_callback_url(exc_callback_url) and self._is_valid_environment(exc_environment):
-                fallback_comment = f"Processing failed: {e}. Approved as fallback to avoid indefinite blocking."
+                err_msg = str(e)[:200] if str(e) else "Unknown error"
+                fallback_comment = f"Processing failed: {err_msg}. Approved as fallback to avoid indefinite blocking."
                 await self._approve_deployment(
                     exc_callback_url, exc_environment, fallback_comment, task.installation_id
                 )
