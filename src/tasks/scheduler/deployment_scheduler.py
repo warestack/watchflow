@@ -6,12 +6,17 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from src.agents import get_agent
+from src.core.utils.retry import retry_async
+from src.core.utils.timeout import execute_with_timeout
 
 if TYPE_CHECKING:
     from src.agents.base import BaseAgent
 from src.integrations.github import github_client
 
 logger = structlog.get_logger(__name__)
+
+AGENT_TIMEOUT_SECONDS = 30.0
+MAX_CONSECUTIVE_FAILURES = 3
 
 
 class DeploymentScheduler:
@@ -39,7 +44,7 @@ class DeploymentScheduler:
 
         self.running = True
         self.scheduler_task = asyncio.create_task(self._scheduler_loop())
-        logger.info("🕒 Deployment scheduler started - checking every 15 minutes")
+        logger.info("Deployment scheduler started, checking every 15 minutes")
 
     async def stop(self) -> None:
         """Stop the scheduler."""
@@ -49,7 +54,7 @@ class DeploymentScheduler:
             # SIM105: Use contextlib.suppress instead of try-except-pass
             with contextlib.suppress(asyncio.CancelledError):
                 await self.scheduler_task
-        logger.info("🛑 Deployment scheduler stopped")
+        logger.info("Deployment scheduler stopped")
 
     async def add_pending_deployment(self, deployment_data: dict[str, Any]) -> None:
         """
@@ -85,10 +90,12 @@ class DeploymentScheduler:
                 logger.error(f"Missing required fields for deployment scheduler: {missing_fields}")
                 return
 
-            logger.info(f"⏰ Adding deployment {deployment_data['deployment_id']} to scheduler")
-            logger.info(f"    Repo: {deployment_data['repo']}")
-            logger.info(f"    Installation: {deployment_data['installation_id']}")
-            logger.info(f"    Time-based violations: {len(deployment_data.get('time_based_violations', []))}")
+            logger.info(
+                "deployment_scheduler_add",
+                deployment_id=deployment_data["deployment_id"],
+                repo=deployment_data["repo"],
+                time_based_violations=len(deployment_data.get("time_based_violations", [])),
+            )
 
             self.pending_deployments.append(deployment_data)
         except Exception as e:
@@ -116,7 +123,9 @@ class DeploymentScheduler:
 
         current_time = datetime.now(UTC)
         logger.info(
-            f"🔍 Checking {len(self.pending_deployments)} pending deployments at {current_time.strftime('%Y-%m-%d %H:%M:%S')} UTC"
+            "deployment_scheduler_check",
+            pending_count=len(self.pending_deployments),
+            time_utc=current_time.strftime("%Y-%m-%d %H:%M:%S"),
         )
 
         deployments_to_remove = []
@@ -125,35 +134,56 @@ class DeploymentScheduler:
             try:
                 # Check if deployment is too old (remove after 7 days)
                 created_at = deployment.get("created_at")
-                if created_at:
-                    if isinstance(created_at, int | float):
-                        # Convert timestamp to datetime
-                        created_at = datetime.fromtimestamp(created_at)
-                    age = current_time - created_at
-                    if age > timedelta(days=7):
-                        logger.info(
-                            f"⏰ Removing expired deployment for {deployment.get('repo')} (age: {age.days} days)"
-                        )
-                        deployments_to_remove.append(i)
-                        continue
+                if not created_at:
+                    logger.warning(
+                        "deployment_scheduler_remove_invalid",
+                        repo=deployment.get("repo"),
+                        reason="no created_at timestamp",
+                    )
+                    deployments_to_remove.append(i)
+                    continue
+
+                if isinstance(created_at, int | float):
+                    created_at_dt = datetime.fromtimestamp(created_at, tz=UTC)
+                elif hasattr(created_at, "year"):
+                    created_at_dt = (
+                        created_at if getattr(created_at, "tzinfo", None) else created_at.replace(tzinfo=UTC)
+                    )
                 else:
-                    # If no created_at timestamp, remove the deployment as it's invalid
-                    logger.warning(f"⏰ Removing deployment for {deployment.get('repo')} with no created_at timestamp")
+                    logger.warning(
+                        "deployment_scheduler_remove_invalid",
+                        repo=deployment.get("repo"),
+                        reason="invalid created_at format",
+                    )
+                    deployments_to_remove.append(i)
+                    continue
+
+                age = current_time - created_at_dt
+                if age > timedelta(days=7):
+                    logger.info(
+                        "deployment_scheduler_remove_expired",
+                        repo=deployment.get("repo"),
+                        age_days=age.days,
+                    )
                     deployments_to_remove.append(i)
                     continue
 
                 # Update last checked time
                 deployment["last_checked"] = current_time
 
-                # Re-evaluate the deployment
-                should_approve = await self._re_evaluate_deployment(deployment)
+                should_approve, should_remove = await self._re_evaluate_deployment(deployment)
 
                 if should_approve:
-                    # Approve the deployment
                     await self._approve_deployment(deployment)
                     deployments_to_remove.append(i)
+                elif should_remove:
+                    deployments_to_remove.append(i)
                 else:
-                    logger.info(f"⏳ Deployment for {deployment.get('repo')} still blocked by time-based rules")
+                    logger.info(
+                        "deployment_scheduler_still_blocked",
+                        repo=deployment.get("repo"),
+                        reason="time-based rules",
+                    )
 
             except Exception as e:
                 logger.error(f"Error re-evaluating deployment {deployment.get('repo', 'unknown')}: {e}")
@@ -161,51 +191,85 @@ class DeploymentScheduler:
         # Remove processed deployments (in reverse order to maintain indices)
         for i in reversed(deployments_to_remove):
             removed = self.pending_deployments.pop(i)
-            logger.info(f"✅ Removed deployment for {removed.get('repo')} from scheduler")
+            logger.info("deployment_scheduler_removed", repo=removed.get("repo"))
 
         if self.pending_deployments:
-            logger.info(f"📋 {len(self.pending_deployments)} deployments still pending")
+            logger.info("deployment_scheduler_pending", count=len(self.pending_deployments))
 
-    async def _re_evaluate_deployment(self, deployment: dict[str, Any]) -> bool:
-        """Re-evaluate a deployment against current time-based rules."""
+    async def _re_evaluate_deployment(self, deployment: dict[str, Any]) -> tuple[bool, bool]:
+        """
+        Re-evaluate a deployment against current time-based rules.
+        Returns (should_approve, should_remove). When should_remove is True,
+        deployment is removed from scheduler without approval (e.g. non-time violations).
+        """
         try:
             # Validate required fields
             required_fields = ["repo", "environment", "installation_id", "event_data", "rules"]
             missing_fields = [field for field in required_fields if not deployment.get(field)]
             if missing_fields:
-                logger.error(f"Missing required fields for deployment re-evaluation: {missing_fields}")
-                return False
+                logger.error(
+                    "deployment_scheduler_missing_fields",
+                    repo=deployment.get("repo"),
+                    missing=missing_fields,
+                )
+                return False, True
 
             logger.info(
-                f"🔄 Re-evaluating deployment for {deployment.get('repo')} environment {deployment.get('environment')}"
+                "deployment_scheduler_reevaluate",
+                repo=deployment.get("repo"),
+                environment=deployment.get("environment"),
             )
 
             # Refresh the GitHub token (it might have expired)
             try:
                 fresh_token = await github_client.get_installation_access_token(deployment["installation_id"])
                 if not fresh_token:
-                    logger.error(f"Failed to get fresh GitHub token for installation {deployment['installation_id']}")
-                    return False
+                    logger.error(
+                        "deployment_scheduler_token_failed",
+                        installation_id=deployment["installation_id"],
+                    )
+                    failure_count = deployment.get("failure_count", 0) + 1
+                    deployment["failure_count"] = failure_count
+                    if failure_count >= MAX_CONSECUTIVE_FAILURES:
+                        return False, True
+                    return False, False
                 deployment["github_token"] = fresh_token
             except Exception as e:
-                logger.error(f"Failed to refresh GitHub token: {e}")
-                return False
+                logger.error("deployment_scheduler_token_error", error=str(e))
+                failure_count = deployment.get("failure_count", 0) + 1
+                deployment["failure_count"] = failure_count
+                if failure_count >= MAX_CONSECUTIVE_FAILURES:
+                    return False, True
+                return False, False
 
             # Convert rules to the format expected by the analysis agent
             formatted_rules = DeploymentScheduler._convert_rules_to_new_format(deployment["rules"])
 
-            # Re-run rule analysis
-            result = await self.engine_agent.execute(
-                event_type="deployment",
-                event_data=deployment["event_data"],
-                rules=formatted_rules,
+            result = await execute_with_timeout(
+                self.engine_agent.execute(
+                    event_type="deployment",
+                    event_data=deployment["event_data"],
+                    rules=formatted_rules,
+                ),
+                timeout=AGENT_TIMEOUT_SECONDS,
+                timeout_message=f"Agent execution timed out after {AGENT_TIMEOUT_SECONDS}s",
             )
 
-            violations = result.data.get("violations", [])
+            violations = []
+            eval_result = result.data.get("evaluation_result") if result.data else None
+            if eval_result and hasattr(eval_result, "violations"):
+                for v in eval_result.violations:
+                    violations.append(
+                        {
+                            "rule_description": getattr(v, "rule_description", ""),
+                            "message": getattr(v, "message", ""),
+                        }
+                    )
 
             if not violations:
-                logger.info("✅ No violations found - deployment can be approved")
-                return True
+                deployment["failure_count"] = 0
+                logger.info("deployment_scheduler_no_violations", repo=deployment.get("repo"))
+                return True, False
 
             # Check if any violations are still time-based
             time_based_violations = []
@@ -237,48 +301,70 @@ class DeploymentScheduler:
                     other_violations.append(violation)
 
             if other_violations:
-                logger.info(f"❌ Deployment still has non-time-based violations: {len(other_violations)}")
-                # Remove from scheduler since these won't resolve automatically
-                return False
+                deployment["failure_count"] = 0
+                logger.info(
+                    "deployment_scheduler_non_time_violations",
+                    repo=deployment.get("repo"),
+                    count=len(other_violations),
+                )
+                return False, True
 
+            deployment["failure_count"] = 0
             if time_based_violations:
-                logger.info(f"⏰ Deployment still blocked by {len(time_based_violations)} time-based violations")
-                return False
+                logger.info(
+                    "deployment_scheduler_time_violations",
+                    repo=deployment.get("repo"),
+                    count=len(time_based_violations),
+                )
+                return False, False
 
-            # No violations left
-            logger.info("✅ All violations resolved - deployment can be approved")
-            return True
+            logger.info("deployment_scheduler_all_resolved", repo=deployment.get("repo"))
+            return True, False
 
         except Exception as e:
-            logger.error(f"Error re-evaluating deployment: {e}")
-            return False
+            failure_count = deployment.get("failure_count", 0) + 1
+            deployment["failure_count"] = failure_count
+            logger.error(
+                "deployment_scheduler_reevaluate_error",
+                repo=deployment.get("repo"),
+                error=str(e),
+                failure_count=failure_count,
+            )
+            if failure_count >= MAX_CONSECUTIVE_FAILURES:
+                logger.warning(
+                    "deployment_scheduler_remove_after_failures",
+                    repo=deployment.get("repo"),
+                    failure_count=failure_count,
+                )
+                return False, True
+            return False, False
 
     async def _approve_deployment(self, deployment: dict[str, Any]) -> None:
         """Approve a previously rejected deployment."""
-        try:
-            callback_url = deployment.get("callback_url")
-            installation_id = deployment.get("installation_id")
-            repo = deployment.get("repo", "unknown")
-            environment = deployment.get("environment", "unknown")
+        callback_url = deployment.get("callback_url")
+        installation_id = deployment.get("installation_id")
+        repo = deployment.get("repo", "unknown")
+        environment = deployment.get("environment", "unknown")
+        deployment_id = deployment.get("deployment_id")
 
-            if not callback_url:
-                logger.error(f"No callback URL found for deployment {repo}")
-                return
+        if not callback_url:
+            logger.error("deployment_approve_skipped", repo=repo, reason="no callback URL")
+            return
 
-            if not installation_id:
-                logger.error(f"No installation ID found for deployment {repo}")
-                return
+        if not installation_id:
+            logger.error("deployment_approve_skipped", repo=repo, reason="no installation ID")
+            return
 
-            comment = (
-                "✅ **Deployment Automatically Approved**\n\n"
-                "Time-based restrictions have been lifted. The deployment can now proceed.\n\n"
-                f"**Environment:** {environment}\n"
-                f"**Approved at:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n"
-                "The deployment will be automatically approved on GitHub."
-            )
+        comment = (
+            "**Deployment Automatically Approved**\n\n"
+            "Time-based restrictions have been lifted. The deployment can now proceed.\n\n"
+            f"**Environment:** {environment}\n"
+            f"**Approved at:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n"
+            "The deployment will be automatically approved on GitHub."
+        )
 
-            # Approve the deployment protection rule
-            await github_client.review_deployment_protection_rule(
+        async def _do_approve() -> Any:
+            return await github_client.review_deployment_protection_rule(
                 callback_url=callback_url,
                 environment=environment,
                 state="approved",
@@ -286,10 +372,27 @@ class DeploymentScheduler:
                 installation_id=installation_id,
             )
 
-            logger.info(f"✅ Deployment {deployment.get('deployment_id')} automatically approved for {repo}")
-
+        try:
+            await retry_async(
+                _do_approve,
+                max_retries=3,
+                initial_delay=1.0,
+                max_delay=30.0,
+                exceptions=(Exception,),
+            )
+            logger.info(
+                "deployment_scheduler_approved",
+                deployment_id=deployment_id,
+                repo=repo,
+                environment=environment,
+            )
         except Exception as e:
-            logger.error(f"Error approving deployment {deployment.get('deployment_id')}: {e}")
+            logger.error(
+                "deployment_approve_error",
+                deployment_id=deployment_id,
+                repo=repo,
+                error=str(e),
+            )
 
     def get_status(self) -> dict[str, Any]:
         """Get current scheduler status."""
@@ -300,7 +403,7 @@ class DeploymentScheduler:
                 created_at_iso = None
                 if created_at:
                     if isinstance(created_at, int | float):
-                        created_at_iso = datetime.fromtimestamp(created_at).isoformat()
+                        created_at_iso = datetime.fromtimestamp(created_at, tz=UTC).isoformat()
                     elif hasattr(created_at, "isoformat"):
                         created_at_iso = created_at.isoformat()
                     else:

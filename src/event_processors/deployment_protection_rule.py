@@ -3,18 +3,21 @@ import time
 from typing import Any
 
 from src.agents import get_agent
-from src.core.models import Violation
+from src.core.utils.retry import retry_async
+from src.core.utils.timeout import execute_with_timeout
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.tasks.scheduler.deployment_scheduler import get_deployment_scheduler
 from src.tasks.task_queue import Task
 
 logger = logging.getLogger(__name__)
 
+AGENT_TIMEOUT_SECONDS = 30.0
+
 
 class DeploymentProtectionRuleProcessor(BaseEventProcessor):
     """Processor for deployment protection rule events using hybrid agentic rule evaluation."""
 
-    def __init__(self) -> None:
+    def __init__(self):
         # Call super class __init__ first
         super().__init__()
 
@@ -23,6 +26,14 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
 
     def get_event_type(self) -> str:
         return "deployment_protection_rule"
+
+    @staticmethod
+    def _is_valid_callback_url(url: str | None) -> bool:
+        return bool(url and isinstance(url, str) and url.strip().startswith("http"))
+
+    @staticmethod
+    def _is_valid_environment(env: str | None) -> bool:
+        return bool(env and isinstance(env, str) and env.strip())
 
     async def process(self, task: Task) -> ProcessingResult:
         start_time = time.time()
@@ -37,27 +48,35 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
             installation_id = task.installation_id
             repo_full_name = task.repo_full_name
 
-            if not installation_id:
-                logger.error("No installation ID found in task")
-                return ProcessingResult(
-                    success=False,
-                    violations=[],
-                    api_calls_made=0,
-                    processing_time_ms=int((time.time() - start_time) * 1000),
-                    error="No installation ID found",
+            can_call_callback = self._is_valid_callback_url(deployment_callback_url) and self._is_valid_environment(
+                environment
+            )
+            if not can_call_callback:
+                logger.warning(
+                    "deployment_status_skipped",
+                    extra={
+                        "operation": "deployment_protection_rule",
+                        "deployment_id": deployment_id,
+                        "environment": environment,
+                        "reason": "invalid or missing callback_url or environment",
+                    },
                 )
 
-            logger.info("=" * 80)
-            logger.info(f"🚀 Processing DEPLOYMENT_PROTECTION_RULE event for {repo_full_name}")
-            logger.info(f"    Environment: {environment} | Deployment ID: {deployment_id}")
-            logger.info("=" * 80)
+            logger.info(
+                "deployment_processing_start",
+                extra={
+                    "operation": "deployment_protection_rule",
+                    "deployment_id": deployment_id,
+                    "environment": environment,
+                    "repo": repo_full_name,
+                },
+            )
 
-            rules_optional = await self.rule_provider.get_rules(repo_full_name, installation_id)
-            rules = rules_optional if rules_optional is not None else []
+            rules = await self.rule_provider.get_rules(repo_full_name, installation_id)
 
             if not rules:
-                logger.info("📋 No rules found for repository")
-                if deployment_callback_url and environment:
+                logger.info("No rules found for repository")
+                if can_call_callback:
                     await self._approve_deployment(
                         deployment_callback_url, environment, "No rules configured", installation_id
                     )
@@ -82,8 +101,8 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                     deployment_rules.append(r)
 
             if not deployment_rules:
-                logger.info("📋 No deployment rules found")
-                if deployment_callback_url and environment:
+                logger.info("No deployment rules found")
+                if can_call_callback:
                     await self._approve_deployment(
                         deployment_callback_url, environment, "No deployment rules configured", installation_id
                     )
@@ -94,7 +113,7 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                     processing_time_ms=int((time.time() - start_time) * 1000),
                 )
 
-            logger.info(f"📋 Found {len(deployment_rules)} applicable rules for deployment")
+            logger.info("Found %d applicable rules for deployment", len(deployment_rules))
 
             formatted_rules = self._convert_rules_to_new_format(deployment_rules)
 
@@ -109,33 +128,51 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                 "github_client": self.github_client,  # Pass GitHub client for validators
             }
 
-            analysis_result = await self.engine_agent.execute(
-                event_type="deployment",
-                event_data=event_data,
-                rules=formatted_rules,
+            analysis_result = await execute_with_timeout(
+                self.engine_agent.execute(
+                    event_type="deployment",
+                    event_data=event_data,
+                    rules=formatted_rules,
+                ),
+                timeout=AGENT_TIMEOUT_SECONDS,
+                timeout_message=f"Agent execution timed out after {AGENT_TIMEOUT_SECONDS}s",
             )
 
             # Extract violations from AgentResult - same pattern as acknowledgment processor
-            violations: list[Violation] = []
+            violations = []
             if analysis_result.data and "evaluation_result" in analysis_result.data:
                 eval_result = analysis_result.data["evaluation_result"]
                 if hasattr(eval_result, "violations"):
-                    violations = [Violation.model_validate(v) for v in eval_result.violations]
+                    # Convert RuleViolation objects to dictionaries
+                    for violation in eval_result.violations:
+                        vs = getattr(violation, "validation_strategy", None)
+                        vs_val = vs.value if hasattr(vs, "value") else vs
+                        sev = getattr(violation, "severity", "medium")
+                        sev_val = sev.value if hasattr(sev, "value") else sev
+                        violation_dict = {
+                            "rule_description": getattr(violation, "rule_description", ""),
+                            "severity": sev_val,
+                            "message": getattr(violation, "message", ""),
+                            "details": getattr(violation, "details", {}),
+                            "how_to_fix": getattr(violation, "how_to_fix", ""),
+                            "docs_url": getattr(violation, "docs_url", ""),
+                            "validation_strategy": vs_val,
+                            "execution_time_ms": getattr(violation, "execution_time_ms", 0.0),
+                        }
+                        violations.append(violation_dict)
 
-            logger.info("🔍 Analysis completed:")
-            logger.info(f"    Violations found: {len(violations)}")
+            logger.info("Analysis completed: %d violations", len(violations))
             for violation in violations:
-                logger.info(f"    • {violation.message}")
+                logger.info("Violation: %s", violation.get("message", "Unknown violation"))
 
             if not violations:
-                if deployment_callback_url and environment:
+                if can_call_callback:
                     await self._approve_deployment(
                         deployment_callback_url, environment, "All deployment rules passed", installation_id
                     )
-                logger.info("✅ All rules passed - deployment approved!")
+                logger.info("All rules passed, deployment approved")
             else:
-                violations_dicts = [v.model_dump() for v in violations]
-                time_based_violations = self._check_time_based_violations(violations_dicts)
+                time_based_violations = self._check_time_based_violations(violations)
                 if time_based_violations:
                     await get_deployment_scheduler().add_pending_deployment(
                         {
@@ -145,38 +182,70 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                             "environment": deployment.get("environment"),
                             "event_data": payload,
                             "rules": deployment_rules,
-                            "violations": violations_dicts,
+                            "violations": violations,
                             "time_based_violations": time_based_violations,
                             "created_at": time.time(),
                             "callback_url": deployment_callback_url,
                         }
                     )
-                    logger.info("⏰ Time-based violations detected - added to scheduler for re-evaluation")
+                    logger.info("Time-based violations detected, added to scheduler for re-evaluation")
 
-                if deployment_callback_url and environment:
-                    await self._reject_deployment(
-                        deployment_callback_url, environment, violations_dicts, installation_id
-                    )
-                logger.info(f"❌ Deployment rejected due to {len(violations)} violations")
+                if can_call_callback:
+                    await self._reject_deployment(deployment_callback_url, environment, violations, installation_id)
+                logger.info("Deployment rejected due to %d violations", len(violations))
 
             processing_time = int((time.time() - start_time) * 1000)
-            logger.info("=" * 80)
-            logger.info(f"🏁 DEPLOYMENT_PROTECTION_RULE processing completed in {processing_time}ms")
-            logger.info(f"    State: {'approved' if not violations else 'rejected'}")
-            logger.info(f"    Violations: {len(violations)}")
-            logger.info("=" * 80)
+            logger.info(
+                "deployment_processing_complete",
+                extra={
+                    "operation": "deployment_protection_rule",
+                    "deployment_id": deployment_id,
+                    "environment": environment,
+                    "processing_time_ms": processing_time,
+                    "state": "approved" if not violations else "rejected",
+                    "violations_count": len(violations),
+                },
+            )
 
             return ProcessingResult(
                 success=(not violations), violations=violations, api_calls_made=1, processing_time_ms=processing_time
             )
 
         except Exception as e:
-            logger.error(f"❌ Error processing deployment protection rule: {str(e)}")
+            processing_time = int((time.time() - start_time) * 1000)
+            exc_payload = task.payload
+            exc_deployment = exc_payload.get("deployment", {})
+            exc_deployment_id = exc_deployment.get("id")
+            exc_callback_url = exc_payload.get("deployment_callback_url")
+            exc_environment = exc_payload.get("environment")
+            logger.error(
+                "deployment_processing_error",
+                extra={
+                    "operation": "deployment_protection_rule",
+                    "deployment_id": exc_deployment_id,
+                    "error": str(e),
+                    "processing_time_ms": processing_time,
+                },
+            )
+            if self._is_valid_callback_url(exc_callback_url) and self._is_valid_environment(exc_environment):
+                err_msg = str(e)[:200] if str(e) else "Unknown error"
+                fallback_comment = f"Processing failed: {err_msg}. Approved as fallback to avoid indefinite blocking."
+                await self._approve_deployment(
+                    exc_callback_url, exc_environment, fallback_comment, task.installation_id
+                )
+                logger.info(
+                    "deployment_fallback_approval",
+                    extra={
+                        "operation": "deployment_protection_rule",
+                        "deployment_id": exc_deployment_id,
+                        "reason": "exception during processing",
+                    },
+                )
             return ProcessingResult(
                 success=False,
                 violations=[],
                 api_calls_made=0,
-                processing_time_ms=int((time.time() - start_time) * 1000),
+                processing_time_ms=processing_time,
                 error=str(e),
             )
 
@@ -188,44 +257,79 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
             if any(k in v.get("rule_description", "").lower() for k in ["hours", "weekend", "time", "day"])
         ]
 
-    async def _approve_deployment(
-        self, callback_url: str, environment: str, comment: str, installation_id: int
-    ) -> None:
-        try:
-            result = await self.github_client.review_deployment_protection_rule(
+    async def _approve_deployment(self, callback_url: str, environment: str, comment: str, installation_id: int):
+        async def _do_approve() -> dict[str, Any] | None:
+            return await self.github_client.review_deployment_protection_rule(
                 callback_url=callback_url,
                 environment=environment,
                 state="approved",
-                comment=f"✅ {comment}",
+                comment=comment,
                 installation_id=installation_id,
             )
+
+        try:
+            result = await retry_async(
+                _do_approve,
+                max_retries=3,
+                initial_delay=1.0,
+                max_delay=30.0,
+                exceptions=(Exception,),
+            )
             if result is None:
-                logger.error("Failed to approve deployment - API call returned None")
+                logger.error(
+                    "deployment_approve_failed",
+                    extra={"operation": "approve", "environment": environment, "reason": "API returned None"},
+                )
             else:
-                logger.info("Successfully approved deployment")
+                logger.info("deployment_approved", extra={"operation": "approve", "environment": environment})
         except Exception as e:
-            logger.error(f"Error approving deployment: {e}")
+            logger.error(
+                "deployment_approve_error",
+                extra={"operation": "approve", "environment": environment, "error": str(e)},
+            )
 
     async def _reject_deployment(
         self, callback_url: str, environment: str, violations: list[dict[str, Any]], installation_id: int
-    ) -> None:
-        try:
-            comment_text = self._format_violations_comment(violations)
-            result = await self.github_client.review_deployment_protection_rule(
+    ):
+        comment_text = self._format_violations_comment(violations)
+
+        async def _do_reject() -> dict[str, Any] | None:
+            return await self.github_client.review_deployment_protection_rule(
                 callback_url=callback_url,
                 environment=environment,
                 state="rejected",
                 comment=comment_text,
                 installation_id=installation_id,
             )
+
+        try:
+            result = await retry_async(
+                _do_reject,
+                max_retries=3,
+                initial_delay=1.0,
+                max_delay=30.0,
+                exceptions=(Exception,),
+            )
             if result is None:
-                logger.error("Failed to reject deployment - API call returned None")
+                logger.error(
+                    "deployment_reject_failed",
+                    extra={
+                        "operation": "reject",
+                        "environment": environment,
+                        "violations_count": len(violations),
+                        "reason": "API returned None",
+                    },
+                )
             else:
-                logger.info(f"Successfully rejected deployment with {len(violations)} violations")
+                logger.info(
+                    "deployment_rejected",
+                    extra={"operation": "reject", "environment": environment, "violations_count": len(violations)},
+                )
         except Exception as e:
-            logger.error(f"Error rejecting deployment: {e}")
-            # Note: We can't create a fallback deployment status here because we don't have the repo name
-            # The deployment will remain in "waiting" state, which is better than failing completely
+            logger.error(
+                "deployment_reject_error",
+                extra={"operation": "reject", "environment": environment, "error": str(e)},
+            )
 
     def _convert_rules_to_new_format(self, rules: list[Any]) -> list[dict[str, Any]]:
         formatted_rules = []
@@ -246,12 +350,11 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
         return formatted_rules
 
     @staticmethod
-    def _format_violations_comment(violations: list[dict[str, Any]]) -> str:
-        text = "🚫 **Deployment Blocked - Rule Violations Detected**\n"
+    def _format_violations_comment(violations):
+        text = "**Deployment Blocked - Rule Violations Detected**\n"
         for v in violations:
-            emoji = "❌" if v.get("severity", "high") in ("critical", "high") else "⚠️"
             rule_description = v.get("rule_description", v.get("rule", v.get("description", "Unknown")))
-            text += f"{emoji} **{rule_description}**\n"
+            text += f"**{rule_description}**\n"
             text += f"**Severity:** {v.get('severity', 'high').capitalize()}\n"
             text += f"**Issue:** {v.get('message', '')}\n"
             text += f"**Solution:** {v.get('how_to_fix', 'See documentation.')}\n"
@@ -264,7 +367,7 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
     async def prepare_api_data(self, task: Task) -> dict[str, Any]:
         return {}
 
-    def _get_rule_provider(self) -> Any:
+    def _get_rule_provider(self):
         from src.rules.loaders.github_loader import github_rule_loader
 
         return github_rule_loader
