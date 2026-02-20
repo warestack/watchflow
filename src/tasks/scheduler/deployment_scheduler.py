@@ -143,7 +143,7 @@ class DeploymentScheduler:
                     deployments_to_remove.append(i)
                     continue
 
-                if isinstance(created_at, (int, float)):
+                if isinstance(created_at, int | float):
                     created_at_dt = datetime.fromtimestamp(created_at, tz=UTC)
                 elif hasattr(created_at, "year"):
                     created_at_dt = (
@@ -402,7 +402,7 @@ class DeploymentScheduler:
                 created_at = d.get("created_at")
                 created_at_iso = None
                 if created_at:
-                    if isinstance(created_at, (int, float)):
+                    if isinstance(created_at, int | float):
                         created_at_iso = datetime.fromtimestamp(created_at, tz=UTC).isoformat()
                     elif hasattr(created_at, "isoformat"):
                         created_at_iso = created_at.isoformat()
