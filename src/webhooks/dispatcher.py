@@ -4,6 +4,7 @@ from typing import Any
 import structlog
 
 from src.core.models import EventType, WebhookEvent
+from src.core.utils.event_filter import should_process_event
 from src.tasks.task_queue import TaskQueue, task_queue
 
 logger = structlog.get_logger()
@@ -40,6 +41,10 @@ class WebhookDispatcher:
         if not handler:
             log.warning("handler_not_found")
             return {"status": "skipped", "reason": f"No handler for event type {event_type}"}
+
+        filter_result = should_process_event(event)
+        if not filter_result.should_process:
+            return {"status": "filtered", "reason": filter_result.reason, "event_type": event_type}
 
         # Offload to TaskQueue for background execution (delivery_id so each webhook delivery is processed)
         success = await self.queue.enqueue(handler, event_type, event.payload, event, delivery_id=event.delivery_id)

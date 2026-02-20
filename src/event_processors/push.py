@@ -37,6 +37,19 @@ class PushProcessor(BaseEventProcessor):
         logger.info(f"   Commits: {len(commits)}")
         logger.info("=" * 80)
 
+        if (
+            payload.get("deleted")
+            or not payload.get("after")
+            or payload.get("after") == "0000000000000000000000000000000000000000"
+        ):
+            logger.info("push_skipped_deleted_or_empty")
+            return ProcessingResult(
+                success=True,
+                violations=[],
+                api_calls_made=0,
+                processing_time_ms=int((time.time() - start_time) * 1000),
+            )
+
         event_data = {
             "push": {
                 "ref": ref,

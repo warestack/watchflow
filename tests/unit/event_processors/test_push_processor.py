@@ -87,6 +87,26 @@ async def test_process_success_no_violations(processor, task, mock_rule_provider
 
 
 @pytest.mark.asyncio
+async def test_process_deleted_branch_skipped(processor, mock_rule_provider):
+    task = MagicMock(spec=Task)
+    task.repo_full_name = "owner/repo"
+    task.installation_id = 123
+    task.payload = {
+        "ref": "refs/heads/feature",
+        "deleted": True,
+        "after": "0000000000000000000000000000000000000000",
+        "commits": [],
+    }
+
+    result = await processor.process(task)
+
+    assert result.success is True
+    assert result.violations == []
+    processor.engine_agent.execute.assert_not_called()
+    processor.check_run_manager.create_check_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_process_with_violations(processor, task, mock_rule_provider):
     # Setup rules
     rule = MagicMock()
