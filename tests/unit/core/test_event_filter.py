@@ -1,7 +1,5 @@
-import pytest
-
 from src.core.models import EventType, WebhookEvent
-from src.core.utils.event_filter import FilterResult, should_process_event
+from src.core.utils.event_filter import should_process_event
 
 
 def _make_event(event_type: EventType, payload: dict) -> WebhookEvent:
