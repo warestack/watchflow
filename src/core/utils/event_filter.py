@@ -6,6 +6,7 @@ branch deletions, closed/merged PRs, archived repos, etc.
 """
 
 from dataclasses import dataclass
+from typing import Any
 
 import structlog
 
@@ -18,7 +19,7 @@ NULL_SHA = "0000000000000000000000000000000000000000"
 PR_ACTIONS_PROCESS = frozenset({"opened", "synchronize", "reopened"})
 
 
-@dataclass
+@dataclass(frozen=True)
 class FilterResult:
     """Result of event filter check."""
 
@@ -47,7 +48,7 @@ def should_process_event(event: WebhookEvent) -> FilterResult:
     return result
 
 
-def _apply_filters(event_type: EventType, payload: dict) -> FilterResult:
+def _apply_filters(event_type: EventType, payload: dict[str, Any]) -> FilterResult:
     if _is_repo_archived(payload):
         return FilterResult(should_process=False, reason="Repository is archived")
 
@@ -58,7 +59,7 @@ def _apply_filters(event_type: EventType, payload: dict) -> FilterResult:
     return FilterResult(should_process=True)
 
 
-def _filter_pull_request(payload: dict) -> FilterResult:
+def _filter_pull_request(payload: dict[str, Any]) -> FilterResult:
     action = payload.get("action")
     if action not in PR_ACTIONS_PROCESS:
         return FilterResult(should_process=False, reason=f"PR action '{action}' not processed")
@@ -77,7 +78,7 @@ def _filter_pull_request(payload: dict) -> FilterResult:
     return FilterResult(should_process=True)
 
 
-def _filter_push(payload: dict) -> FilterResult:
+def _filter_push(payload: dict[str, Any]) -> FilterResult:
     if payload.get("deleted"):
         return FilterResult(should_process=False, reason="Branch deletion event")
 
@@ -88,6 +89,6 @@ def _filter_push(payload: dict) -> FilterResult:
     return FilterResult(should_process=True)
 
 
-def _is_repo_archived(payload: dict) -> bool:
+def _is_repo_archived(payload: dict[str, Any]) -> bool:
     repo = payload.get("repository", {})
     return isinstance(repo, dict) and bool(repo.get("archived"))
