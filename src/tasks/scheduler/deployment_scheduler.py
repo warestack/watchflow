@@ -84,10 +84,11 @@ class DeploymentScheduler:
                 "violations",
                 "time_based_violations",
                 "created_at",
+                "callback_url",
             ]
             missing_fields = [field for field in required_fields if not deployment_data.get(field)]
             if missing_fields:
-                logger.error(f"Missing required fields for deployment scheduler: {missing_fields}")
+                logger.error("deployment_scheduler_missing_fields", missing=missing_fields)
                 return
 
             logger.info(
@@ -99,7 +100,7 @@ class DeploymentScheduler:
 
             self.pending_deployments.append(deployment_data)
         except Exception as e:
-            logger.error(f"Error adding deployment to scheduler: {e}")
+            logger.error("deployment_scheduler_add_error", error=str(e))
 
     async def _scheduler_loop(self) -> None:
         """Main scheduler loop - runs every 15 minutes."""
@@ -112,7 +113,7 @@ class DeploymentScheduler:
                 logger.info("Scheduler loop cancelled")
                 break
             except Exception as e:
-                logger.error(f"Scheduler error: {e}")
+                logger.error("deployment_scheduler_loop_error", error=str(e))
                 # Wait 1 minute on error before retrying
                 await asyncio.sleep(60)
 
@@ -186,7 +187,7 @@ class DeploymentScheduler:
                     )
 
             except Exception as e:
-                logger.error(f"Error re-evaluating deployment {deployment.get('repo', 'unknown')}: {e}")
+                logger.error("deployment_scheduler_check_error", repo=deployment.get("repo", "unknown"), error=str(e))
 
         # Remove processed deployments (in reverse order to maintain indices)
         for i in reversed(deployments_to_remove):
@@ -430,7 +431,7 @@ class DeploymentScheduler:
                 "pending_deployments": pending_deployments_status,
             }
         except Exception as e:
-            logger.error(f"Error getting scheduler status: {e}")
+            logger.error("deployment_scheduler_status_error", error=str(e))
             return {"running": self.running, "pending_count": len(self.pending_deployments), "error": str(e)}
 
     async def start_background_scheduler(self) -> None:

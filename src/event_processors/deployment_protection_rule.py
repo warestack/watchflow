@@ -94,7 +94,7 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                 elif isinstance(r, dict):
                     event_types = r.get("event_types", [])
                 else:
-                    logger.error(f"Rule is not a dict or object: {r} (type: {type(r)})")
+                    logger.error("rule_invalid", extra={"rule": str(r), "rule_type": type(r).__name__})
                     continue
 
                 if "deployment" in event_types:
@@ -138,28 +138,13 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                 timeout_message=f"Agent execution timed out after {AGENT_TIMEOUT_SECONDS}s",
             )
 
-            # Extract violations from AgentResult - same pattern as acknowledgment processor
             violations = []
             if analysis_result.data and "evaluation_result" in analysis_result.data:
                 eval_result = analysis_result.data["evaluation_result"]
                 if hasattr(eval_result, "violations"):
-                    # Convert RuleViolation objects to dictionaries
-                    for violation in eval_result.violations:
-                        vs = getattr(violation, "validation_strategy", None)
-                        vs_val = vs.value if hasattr(vs, "value") else vs
-                        sev = getattr(violation, "severity", "medium")
-                        sev_val = sev.value if hasattr(sev, "value") else sev
-                        violation_dict = {
-                            "rule_description": getattr(violation, "rule_description", ""),
-                            "severity": sev_val,
-                            "message": getattr(violation, "message", ""),
-                            "details": getattr(violation, "details", {}),
-                            "how_to_fix": getattr(violation, "how_to_fix", ""),
-                            "docs_url": getattr(violation, "docs_url", ""),
-                            "validation_strategy": vs_val,
-                            "execution_time_ms": getattr(violation, "execution_time_ms", 0.0),
-                        }
-                        violations.append(violation_dict)
+                    violations = [
+                        v.model_dump(mode="json") if hasattr(v, "model_dump") else v for v in eval_result.violations
+                    ]
 
             logger.info("Analysis completed: %d violations", len(violations))
             for violation in violations:
@@ -173,13 +158,13 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                 logger.info("All rules passed, deployment approved")
             else:
                 time_based_violations = self._check_time_based_violations(violations)
-                if time_based_violations:
+                if time_based_violations and can_call_callback:
                     await get_deployment_scheduler().add_pending_deployment(
                         {
                             "deployment_id": deployment_id,
                             "repo": task.repo_full_name,
                             "installation_id": task.installation_id,
-                            "environment": deployment.get("environment"),
+                            "environment": environment or deployment.get("environment"),
                             "event_data": payload,
                             "rules": deployment_rules,
                             "violations": violations,
@@ -228,8 +213,7 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                 },
             )
             if self._is_valid_callback_url(exc_callback_url) and self._is_valid_environment(exc_environment):
-                err_msg = str(e)[:200] if str(e) else "Unknown error"
-                fallback_comment = f"Processing failed: {err_msg}. Approved as fallback to avoid indefinite blocking."
+                fallback_comment = "Processing failed. Approved as fallback to avoid indefinite blocking."
                 await self._approve_deployment(
                     exc_callback_url, exc_environment, fallback_comment, task.installation_id
                 )
@@ -257,19 +241,26 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
             if any(k in v.get("rule_description", "").lower() for k in ["hours", "weekend", "time", "day"])
         ]
 
-    async def _approve_deployment(self, callback_url: str, environment: str, comment: str, installation_id: int):
-        async def _do_approve() -> dict[str, Any] | None:
+    async def _send_deployment_review(
+        self,
+        callback_url: str,
+        environment: str,
+        state: str,
+        comment: str,
+        installation_id: int,
+    ) -> None:
+        async def _do_send() -> dict[str, Any] | None:
             return await self.github_client.review_deployment_protection_rule(
                 callback_url=callback_url,
                 environment=environment,
-                state="approved",
+                state=state,
                 comment=comment,
                 installation_id=installation_id,
             )
 
         try:
             result = await retry_async(
-                _do_approve,
+                _do_send,
                 max_retries=3,
                 initial_delay=1.0,
                 max_delay=30.0,
@@ -277,75 +268,52 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
             )
             if result is None:
                 logger.error(
-                    "deployment_approve_failed",
-                    extra={"operation": "approve", "environment": environment, "reason": "API returned None"},
+                    "deployment_review_failed",
+                    extra={"operation": state, "environment": environment, "reason": "API returned None"},
                 )
             else:
-                logger.info("deployment_approved", extra={"operation": "approve", "environment": environment})
+                logger.info("deployment_review_sent", extra={"operation": state, "environment": environment})
         except Exception as e:
             logger.error(
-                "deployment_approve_error",
-                extra={"operation": "approve", "environment": environment, "error": str(e)},
+                "deployment_review_error",
+                extra={"operation": state, "environment": environment, "error": str(e)},
             )
+
+    async def _approve_deployment(self, callback_url: str, environment: str, comment: str, installation_id: int):
+        await self._send_deployment_review(callback_url, environment, "approved", comment, installation_id)
 
     async def _reject_deployment(
         self, callback_url: str, environment: str, violations: list[dict[str, Any]], installation_id: int
     ):
         comment_text = self._format_violations_comment(violations)
-
-        async def _do_reject() -> dict[str, Any] | None:
-            return await self.github_client.review_deployment_protection_rule(
-                callback_url=callback_url,
-                environment=environment,
-                state="rejected",
-                comment=comment_text,
-                installation_id=installation_id,
-            )
-
-        try:
-            result = await retry_async(
-                _do_reject,
-                max_retries=3,
-                initial_delay=1.0,
-                max_delay=30.0,
-                exceptions=(Exception,),
-            )
-            if result is None:
-                logger.error(
-                    "deployment_reject_failed",
-                    extra={
-                        "operation": "reject",
-                        "environment": environment,
-                        "violations_count": len(violations),
-                        "reason": "API returned None",
-                    },
-                )
-            else:
-                logger.info(
-                    "deployment_rejected",
-                    extra={"operation": "reject", "environment": environment, "violations_count": len(violations)},
-                )
-        except Exception as e:
-            logger.error(
-                "deployment_reject_error",
-                extra={"operation": "reject", "environment": environment, "error": str(e)},
-            )
+        await self._send_deployment_review(callback_url, environment, "rejected", comment_text, installation_id)
 
     def _convert_rules_to_new_format(self, rules: list[Any]) -> list[dict[str, Any]]:
         formatted_rules = []
         for rule in rules:
-            # Convert Rule object to dict format
-            rule_dict = {
-                "description": rule.description,
-                "enabled": rule.enabled,
-                "severity": rule.severity.value if hasattr(rule.severity, "value") else rule.severity,
-                "event_types": [et.value if hasattr(et, "value") else et for et in rule.event_types],
-                "parameters": rule.parameters if hasattr(rule, "parameters") else {},
-            }
-            # If no parameters field, try to extract from conditions (backward compatibility)
-            if not rule_dict["parameters"] and hasattr(rule, "conditions"):
-                for condition in rule.conditions:
-                    rule_dict["parameters"].update(condition.parameters)
+            if isinstance(rule, dict):
+                rule_dict = {
+                    "description": rule.get("description", rule.get("rule_description", "")),
+                    "enabled": rule.get("enabled", True),
+                    "severity": rule.get("severity", "medium"),
+                    "event_types": rule.get("event_types", []),
+                    "parameters": rule.get("parameters", {}),
+                }
+            else:
+                rule_dict = {
+                    "description": getattr(rule, "description", ""),
+                    "enabled": getattr(rule, "enabled", True),
+                    "severity": (
+                        rule.severity.value if hasattr(rule.severity, "value") else getattr(rule, "severity", "medium")
+                    ),
+                    "event_types": [
+                        et.value if hasattr(et, "value") else et for et in getattr(rule, "event_types", [])
+                    ],
+                    "parameters": getattr(rule, "parameters", {}) or {},
+                }
+                if not rule_dict["parameters"] and hasattr(rule, "conditions"):
+                    for condition in rule.conditions:
+                        rule_dict["parameters"].update(getattr(condition, "parameters", {}))
             formatted_rules.append(rule_dict)
         return formatted_rules
 

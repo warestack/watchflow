@@ -66,7 +66,7 @@ async def test_exception_calls_fallback_approval(processor, mock_agent, task):
     processor.github_client.review_deployment_protection_rule.assert_called_once()
     call_kwargs = processor.github_client.review_deployment_protection_rule.call_args.kwargs
     assert call_kwargs["state"] == "approved"
-    assert "agent failed" in call_kwargs["comment"]
+    assert "fallback" in call_kwargs["comment"].lower()
 
 
 @pytest.mark.asyncio
