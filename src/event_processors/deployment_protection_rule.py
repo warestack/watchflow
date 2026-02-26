@@ -120,7 +120,7 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                     ),
                     timeout=AGENT_TIMEOUT_SECONDS,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning(
                     "agent_execution_timeout",
                     operation="process",
@@ -129,10 +129,10 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                 )
                 if deployment_callback_url and environment:
                     await self._approve_deployment(
-                        deployment_callback_url, 
-                        environment, 
-                        "Deployment approved due to evaluation timeout. Review rules for performance issues.", 
-                        installation_id
+                        deployment_callback_url,
+                        environment,
+                        "Deployment approved due to evaluation timeout. Review rules for performance issues.",
+                        installation_id,
                     )
                 return ProcessingResult(
                     success=True,
