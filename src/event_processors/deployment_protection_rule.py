@@ -248,36 +248,35 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
         state: str,
         comment: str,
         installation_id: int,
-    ) -> None:
-        async def _do_send() -> dict[str, Any] | None:
-            return await self.github_client.review_deployment_protection_rule(
+    ) -> bool:
+        async def _do_send() -> dict[str, Any]:
+            result = await self.github_client.review_deployment_protection_rule(
                 callback_url=callback_url,
                 environment=environment,
                 state=state,
                 comment=comment,
                 installation_id=installation_id,
             )
+            if result is None:
+                raise RuntimeError("review_deployment_protection_rule returned None")
+            return result
 
         try:
-            result = await retry_async(
+            await retry_async(
                 _do_send,
                 max_retries=3,
                 initial_delay=1.0,
                 max_delay=30.0,
                 exceptions=(Exception,),
             )
-            if result is None:
-                logger.error(
-                    "deployment_review_failed",
-                    extra={"operation": state, "environment": environment, "reason": "API returned None"},
-                )
-            else:
-                logger.info("deployment_review_sent", extra={"operation": state, "environment": environment})
+            logger.info("deployment_review_sent", extra={"operation": state, "environment": environment})
+            return True
         except Exception as e:
             logger.error(
                 "deployment_review_error",
                 extra={"operation": state, "environment": environment, "error": str(e)},
             )
+            return False
 
     async def _approve_deployment(self, callback_url: str, environment: str, comment: str, installation_id: int):
         await self._send_deployment_review(callback_url, environment, "approved", comment, installation_id)

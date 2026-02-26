@@ -86,7 +86,7 @@ class DeploymentScheduler:
                 "created_at",
                 "callback_url",
             ]
-            missing_fields = [field for field in required_fields if not deployment_data.get(field)]
+            missing_fields = [f for f in required_fields if f not in deployment_data]
             if missing_fields:
                 logger.error("deployment_scheduler_missing_fields", missing=missing_fields)
                 return
@@ -175,8 +175,15 @@ class DeploymentScheduler:
                 should_approve, should_remove = await self._re_evaluate_deployment(deployment)
 
                 if should_approve:
-                    await self._approve_deployment(deployment)
-                    deployments_to_remove.append(i)
+                    approved = await self._approve_deployment(deployment)
+                    if approved:
+                        deployments_to_remove.append(i)
+                    else:
+                        logger.warning(
+                            "deployment_scheduler_approval_failed",
+                            repo=deployment.get("repo"),
+                            reason="GitHub API approval failed",
+                        )
                 elif should_remove:
                     deployments_to_remove.append(i)
                 else:
@@ -206,7 +213,7 @@ class DeploymentScheduler:
         try:
             # Validate required fields
             required_fields = ["repo", "environment", "installation_id", "event_data", "rules"]
-            missing_fields = [field for field in required_fields if not deployment.get(field)]
+            missing_fields = [f for f in required_fields if f not in deployment]
             if missing_fields:
                 logger.error(
                     "deployment_scheduler_missing_fields",
@@ -311,16 +318,12 @@ class DeploymentScheduler:
                 return False, True
 
             deployment["failure_count"] = 0
-            if time_based_violations:
-                logger.info(
-                    "deployment_scheduler_time_violations",
-                    repo=deployment.get("repo"),
-                    count=len(time_based_violations),
-                )
-                return False, False
-
-            logger.info("deployment_scheduler_all_resolved", repo=deployment.get("repo"))
-            return True, False
+            logger.info(
+                "deployment_scheduler_time_violations",
+                repo=deployment.get("repo"),
+                count=len(time_based_violations),
+            )
+            return False, False
 
         except Exception as e:
             failure_count = deployment.get("failure_count", 0) + 1
@@ -340,8 +343,8 @@ class DeploymentScheduler:
                 return False, True
             return False, False
 
-    async def _approve_deployment(self, deployment: dict[str, Any]) -> None:
-        """Approve a previously rejected deployment."""
+    async def _approve_deployment(self, deployment: dict[str, Any]) -> bool:
+        """Approve a previously rejected deployment. Returns True if approval succeeded."""
         callback_url = deployment.get("callback_url")
         installation_id = deployment.get("installation_id")
         repo = deployment.get("repo", "unknown")
@@ -350,11 +353,11 @@ class DeploymentScheduler:
 
         if not callback_url:
             logger.error("deployment_approve_skipped", repo=repo, reason="no callback URL")
-            return
+            return False
 
         if not installation_id:
             logger.error("deployment_approve_skipped", repo=repo, reason="no installation ID")
-            return
+            return False
 
         comment = (
             "**Deployment Automatically Approved**\n\n"
@@ -364,14 +367,17 @@ class DeploymentScheduler:
             "The deployment will be automatically approved on GitHub."
         )
 
-        async def _do_approve() -> Any:
-            return await github_client.review_deployment_protection_rule(
+        async def _do_approve() -> dict[str, Any]:
+            result = await github_client.review_deployment_protection_rule(
                 callback_url=callback_url,
                 environment=environment,
                 state="approved",
                 comment=comment,
                 installation_id=installation_id,
             )
+            if result is None:
+                raise RuntimeError("review_deployment_protection_rule returned None")
+            return result
 
         try:
             await retry_async(
@@ -387,6 +393,7 @@ class DeploymentScheduler:
                 repo=repo,
                 environment=environment,
             )
+            return True
         except Exception as e:
             logger.error(
                 "deployment_approve_error",
@@ -394,6 +401,7 @@ class DeploymentScheduler:
                 repo=repo,
                 error=str(e),
             )
+            return False
 
     def get_status(self) -> dict[str, Any]:
         """Get current scheduler status."""
