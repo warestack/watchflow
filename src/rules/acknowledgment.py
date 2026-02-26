@@ -38,17 +38,17 @@ class RuleID(StrEnum):
 
 # Mapping from violation text patterns to RuleID
 VIOLATION_TEXT_TO_RULE_MAPPING: dict[str, RuleID] = {
-    "Pull request does not have the minimum required": RuleID.MIN_PR_APPROVALS,
-    "Pull request is missing required label": RuleID.REQUIRED_LABELS,
-    "Pull request title does not match the required pattern": RuleID.PR_TITLE_PATTERN,
-    "Pull request description is too short": RuleID.PR_DESCRIPTION_REQUIRED,
-    "Individual files cannot exceed": RuleID.FILE_SIZE_LIMIT,
-    "Pull request exceeds maximum lines changed": RuleID.MAX_PR_LOC,
+    "approvals, requires": RuleID.MIN_PR_APPROVALS,
+    "Missing required labels": RuleID.REQUIRED_LABELS,
+    "does not match required pattern": RuleID.PR_TITLE_PATTERN,
+    "PR description is too short": RuleID.PR_DESCRIPTION_REQUIRED,
+    "exceed size limit of": RuleID.FILE_SIZE_LIMIT,
+    "exceeds maximum lines changed": RuleID.MAX_PR_LOC,
     "does not reference a linked issue": RuleID.REQUIRE_LINKED_ISSUE,
-    "Force pushes are not allowed": RuleID.NO_FORCE_PUSH,
-    "Direct pushes to main/master branches": RuleID.PROTECTED_BRANCH_PUSH,
-    "Paths without a code owner in CODEOWNERS": RuleID.PATH_HAS_CODE_OWNER,
-    "Code owners for modified paths must be added as reviewers": RuleID.REQUIRE_CODE_OWNER_REVIEWERS,
+    "Force push detected": RuleID.NO_FORCE_PUSH,
+    "targets protected branch": RuleID.PROTECTED_BRANCH_PUSH,
+    "Paths without a code owner": RuleID.PATH_HAS_CODE_OWNER,
+    "Code owners for modified paths": RuleID.REQUIRE_CODE_OWNER_REVIEWERS,
 }
 
 # Mapping from RuleID to human-readable descriptions
