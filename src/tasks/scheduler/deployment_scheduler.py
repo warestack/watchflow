@@ -1,12 +1,13 @@
 import asyncio
-import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
+
+import structlog
 
 from src.agents.engine_agent.agent import RuleEngineAgent
 from src.integrations.github_api import github_client
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class DeploymentScheduler:
@@ -29,12 +30,12 @@ class DeploymentScheduler:
     async def start(self):
         """Start the scheduler."""
         if self.running:
-            logger.warning("Deployment scheduler is already running")
+            logger.warning("scheduler_already_running")
             return
 
         self.running = True
         self.scheduler_task = asyncio.create_task(self._scheduler_loop())
-        logger.info("🕒 Deployment scheduler started - checking every 15 minutes")
+        logger.info("scheduler_started", check_interval_minutes=15)
 
     async def stop(self):
         """Stop the scheduler."""
@@ -45,7 +46,7 @@ class DeploymentScheduler:
                 await self.scheduler_task
             except asyncio.CancelledError:
                 pass
-        logger.info("🛑 Deployment scheduler stopped")
+        logger.info("scheduler_stopped")
 
     async def add_pending_deployment(self, deployment_data: dict[str, Any]):
         """
@@ -62,9 +63,10 @@ class DeploymentScheduler:
                 - violations: Current violations
                 - time_based_violations: Time-based violations
                 - created_at: Timestamp when added
+                - callback_url: Deployment callback URL
         """
         try:
-            # Validate required fields
+            # Validate required fields - add callback_url
             required_fields = [
                 "deployment_id",
                 "repo",
@@ -75,20 +77,32 @@ class DeploymentScheduler:
                 "violations",
                 "time_based_violations",
                 "created_at",
+                "callback_url",
             ]
-            missing_fields = [field for field in required_fields if not deployment_data.get(field)]
+            missing_fields = [field for field in required_fields if deployment_data.get(field) is None]
             if missing_fields:
-                logger.error(f"Missing required fields for deployment scheduler: {missing_fields}")
+                logger.error(
+                    "missing_required_fields",
+                    operation="add_pending_deployment",
+                    missing_fields=missing_fields,
+                )
                 return
 
-            logger.info(f"⏰ Adding deployment {deployment_data['deployment_id']} to scheduler")
-            logger.info(f"    Repo: {deployment_data['repo']}")
-            logger.info(f"    Installation: {deployment_data['installation_id']}")
-            logger.info(f"    Time-based violations: {len(deployment_data.get('time_based_violations', []))}")
+            logger.info(
+                "adding_deployment_to_scheduler",
+                operation="add_pending_deployment",
+                subject_ids={"repo": deployment_data["repo"], "deployment_id": deployment_data["deployment_id"]},
+                installation_id=deployment_data["installation_id"],
+                num_time_based_violations=len(deployment_data.get("time_based_violations", [])),
+            )
 
             self.pending_deployments.append(deployment_data)
         except Exception as e:
-            logger.error(f"Error adding deployment to scheduler: {e}")
+            logger.error(
+                "add_deployment_error",
+                operation="add_pending_deployment",
+                error=str(e),
+            )
 
     async def _scheduler_loop(self):
         """Main scheduler loop - runs every 15 minutes."""
@@ -98,10 +112,10 @@ class DeploymentScheduler:
                 # Wait 15 minutes (900 seconds)
                 await asyncio.sleep(900)
             except asyncio.CancelledError:
-                logger.info("Scheduler loop cancelled")
+                logger.info("scheduler_loop_cancelled")
                 break
             except Exception as e:
-                logger.error(f"Scheduler error: {e}")
+                logger.error("scheduler_loop_error", error=str(e))
                 # Wait 1 minute on error before retrying
                 await asyncio.sleep(60)
 
@@ -110,9 +124,12 @@ class DeploymentScheduler:
         if not self.pending_deployments:
             return
 
-        current_time = datetime.utcnow()
+        current_time = datetime.now(UTC)
         logger.info(
-            f"🔍 Checking {len(self.pending_deployments)} pending deployments at {current_time.strftime('%Y-%m-%d %H:%M:%S')} UTC"
+            "checking_pending_deployments",
+            operation="_check_pending_deployments",
+            num_pending=len(self.pending_deployments),
+            current_time=current_time.isoformat(),
         )
 
         deployments_to_remove = []
@@ -121,20 +138,27 @@ class DeploymentScheduler:
             try:
                 # Check if deployment is too old (remove after 7 days)
                 created_at = deployment.get("created_at")
-                if created_at:
+                if created_at is not None:
                     if isinstance(created_at, int | float):
-                        # Convert timestamp to datetime
-                        created_at = datetime.fromtimestamp(created_at)
+                        # Convert timestamp to datetime with timezone awareness
+                        created_at = datetime.fromtimestamp(created_at, tz=UTC)
                     age = current_time - created_at
                     if age > timedelta(days=7):
                         logger.info(
-                            f"⏰ Removing expired deployment for {deployment.get('repo')} (age: {age.days} days)"
+                            "removing_expired_deployment",
+                            operation="_check_pending_deployments",
+                            subject_ids={"repo": deployment.get("repo")},
+                            age_days=age.days,
                         )
                         deployments_to_remove.append(i)
                         continue
                 else:
                     # If no created_at timestamp, remove the deployment as it's invalid
-                    logger.warning(f"⏰ Removing deployment for {deployment.get('repo')} with no created_at timestamp")
+                    logger.warning(
+                        "removing_deployment_no_timestamp",
+                        operation="_check_pending_deployments",
+                        subject_ids={"repo": deployment.get("repo")},
+                    )
                     deployments_to_remove.append(i)
                     continue
 
@@ -149,42 +173,70 @@ class DeploymentScheduler:
                     await self._approve_deployment(deployment)
                     deployments_to_remove.append(i)
                 else:
-                    logger.info(f"⏳ Deployment for {deployment.get('repo')} still blocked by time-based rules")
+                    logger.info(
+                        "deployment_still_blocked",
+                        operation="_check_pending_deployments",
+                        subject_ids={"repo": deployment.get("repo")},
+                    )
 
             except Exception as e:
-                logger.error(f"Error re-evaluating deployment {deployment.get('repo', 'unknown')}: {e}")
+                logger.error(
+                    "re_evaluate_error",
+                    operation="_check_pending_deployments",
+                    subject_ids={"repo": deployment.get("repo", "unknown")},
+                    error=str(e),
+                )
 
         # Remove processed deployments (in reverse order to maintain indices)
         for i in reversed(deployments_to_remove):
             removed = self.pending_deployments.pop(i)
-            logger.info(f"✅ Removed deployment for {removed.get('repo')} from scheduler")
+            logger.info(
+                "deployment_removed_from_scheduler",
+                operation="_check_pending_deployments",
+                subject_ids={"repo": removed.get("repo")},
+            )
 
         if self.pending_deployments:
-            logger.info(f"📋 {len(self.pending_deployments)} deployments still pending")
+            logger.info("deployments_still_pending", num_pending=len(self.pending_deployments))
 
     async def _re_evaluate_deployment(self, deployment: dict[str, Any]) -> bool:
         """Re-evaluate a deployment against current time-based rules."""
         try:
             # Validate required fields
             required_fields = ["repo", "environment", "installation_id", "event_data", "rules"]
-            missing_fields = [field for field in required_fields if not deployment.get(field)]
+            missing_fields = [field for field in required_fields if deployment.get(field) is None]
             if missing_fields:
-                logger.error(f"Missing required fields for deployment re-evaluation: {missing_fields}")
+                logger.error(
+                    "missing_required_fields",
+                    operation="_re_evaluate_deployment",
+                    missing_fields=missing_fields,
+                )
                 return False
 
             logger.info(
-                f"🔄 Re-evaluating deployment for {deployment.get('repo')} environment {deployment.get('environment')}"
+                "re_evaluating_deployment",
+                operation="_re_evaluate_deployment",
+                subject_ids={"repo": deployment.get("repo")},
+                environment=deployment.get("environment"),
             )
 
             # Refresh the GitHub token (it might have expired)
             try:
                 fresh_token = await github_client.get_installation_access_token(deployment["installation_id"])
-                if not fresh_token:
-                    logger.error(f"Failed to get fresh GitHub token for installation {deployment['installation_id']}")
+                if fresh_token is None:
+                    logger.error(
+                        "failed_to_get_token",
+                        operation="_re_evaluate_deployment",
+                        installation_id=deployment["installation_id"],
+                    )
                     return False
                 deployment["github_token"] = fresh_token
             except Exception as e:
-                logger.error(f"Failed to refresh GitHub token: {e}")
+                logger.error(
+                    "token_refresh_error",
+                    operation="_re_evaluate_deployment",
+                    error=str(e),
+                )
                 return False
 
             # Convert rules to the format expected by the analysis agent
@@ -200,7 +252,11 @@ class DeploymentScheduler:
             violations = result.data.get("violations", [])
 
             if not violations:
-                logger.info("✅ No violations found - deployment can be approved")
+                logger.info(
+                    "no_violations_deployment_can_approve",
+                    operation="_re_evaluate_deployment",
+                    subject_ids={"repo": deployment.get("repo")},
+                )
                 return True
 
             # Check if any violations are still time-based
@@ -233,43 +289,70 @@ class DeploymentScheduler:
                     other_violations.append(violation)
 
             if other_violations:
-                logger.info(f"❌ Deployment still has non-time-based violations: {len(other_violations)}")
+                logger.info(
+                    "deployment_has_non_time_violations",
+                    operation="_re_evaluate_deployment",
+                    subject_ids={"repo": deployment.get("repo")},
+                    num_violations=len(other_violations),
+                )
                 # Remove from scheduler since these won't resolve automatically
                 return False
 
             if time_based_violations:
-                logger.info(f"⏰ Deployment still blocked by {len(time_based_violations)} time-based violations")
+                logger.info(
+                    "deployment_still_blocked_by_time",
+                    operation="_re_evaluate_deployment",
+                    subject_ids={"repo": deployment.get("repo")},
+                    num_violations=len(time_based_violations),
+                )
                 return False
 
             # No violations left
-            logger.info("✅ All violations resolved - deployment can be approved")
+            logger.info(
+                "all_violations_resolved",
+                operation="_re_evaluate_deployment",
+                subject_ids={"repo": deployment.get("repo")},
+            )
             return True
 
         except Exception as e:
-            logger.error(f"Error re-evaluating deployment: {e}")
+            logger.error(
+                "re_evaluate_error",
+                operation="_re_evaluate_deployment",
+                error=str(e),
+            )
             return False
 
     async def _approve_deployment(self, deployment: dict[str, Any]):
         """Approve a previously rejected deployment."""
+        repo = deployment.get("repo", "unknown")
         try:
             callback_url = deployment.get("callback_url")
             installation_id = deployment.get("installation_id")
-            repo = deployment.get("repo", "unknown")
             environment = deployment.get("environment", "unknown")
 
-            if not callback_url:
-                logger.error(f"No callback URL found for deployment {repo}")
+            if callback_url is None:
+                logger.error(
+                    "no_callback_url",
+                    operation="_approve_deployment",
+                    subject_ids={"repo": repo},
+                )
                 return
 
-            if not installation_id:
-                logger.error(f"No installation ID found for deployment {repo}")
+            if installation_id is None:
+                logger.error(
+                    "no_installation_id",
+                    operation="_approve_deployment",
+                    subject_ids={"repo": repo},
+                )
                 return
 
+            current_time = datetime.now(UTC)
             comment = (
                 "✅ **Deployment Automatically Approved**\n\n"
                 "Time-based restrictions have been lifted. The deployment can now proceed.\n\n"
                 f"**Environment:** {environment}\n"
-                f"**Approved at:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n"
+                f"**Approved at:** {current_time.strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n"
                 "The deployment will be automatically approved on GitHub."
             )
 
@@ -282,38 +365,60 @@ class DeploymentScheduler:
                 installation_id=installation_id,
             )
 
-            logger.info(f"✅ Deployment {deployment.get('deployment_id')} automatically approved for {repo}")
+            logger.info(
+                "deployment_auto_approved",
+                operation="_approve_deployment",
+                subject_ids={"repo": repo, "deployment_id": deployment.get("deployment_id")},
+                environment=environment,
+            )
 
         except Exception as e:
-            logger.error(f"Error approving deployment {deployment.get('deployment_id')}: {e}")
+            logger.error(
+                "approve_deployment_error",
+                operation="_approve_deployment",
+                subject_ids={"repo": repo},
+                error=str(e),
+            )
 
     def get_status(self) -> dict[str, Any]:
         """Get current scheduler status."""
         try:
-            return {
-                "running": self.running,
-                "pending_count": len(self.pending_deployments),
-                "pending_deployments": [
+            pending_deployments = []
+            for d in self.pending_deployments:
+                created_at = d.get("created_at")
+                created_at_iso = None
+                if created_at is not None:
+                    if isinstance(created_at, int | float):
+                        created_at_iso = datetime.fromtimestamp(created_at, tz=UTC).isoformat()
+                    elif hasattr(created_at, "isoformat"):
+                        created_at_iso = created_at.isoformat()
+                    else:
+                        created_at_iso = str(created_at)
+
+                last_checked = d.get("last_checked")
+                last_checked_iso = (
+                    last_checked.isoformat() if last_checked and hasattr(last_checked, "isoformat") else None
+                )
+
+                pending_deployments.append(
                     {
                         "repo": d.get("repo"),
                         "environment": d.get("environment"),
                         "deployment_id": d.get("deployment_id"),
-                        "created_at": datetime.fromtimestamp(d.get("created_at")).isoformat()
-                        if d.get("created_at") and isinstance(d.get("created_at"), int | float)
-                        else (
-                            d.get("created_at").isoformat()
-                            if hasattr(d.get("created_at"), "isoformat")
-                            else str(d.get("created_at"))
-                        ),
-                        "last_checked": d.get("last_checked").isoformat() if d.get("last_checked") else None,
+                        "created_at": created_at_iso,
+                        "last_checked": last_checked_iso,
                         "violations_count": len(d.get("violations", [])),
                         "time_based_violations_count": len(d.get("time_based_violations", [])),
                     }
-                    for d in self.pending_deployments
-                ],
+                )
+
+            return {
+                "running": self.running,
+                "pending_count": len(self.pending_deployments),
+                "pending_deployments": pending_deployments,
             }
         except Exception as e:
-            logger.error(f"Error getting scheduler status: {e}")
+            logger.error("get_status_error", error=str(e))
             return {"running": self.running, "pending_count": len(self.pending_deployments), "error": str(e)}
 
     async def start_background_scheduler(self):
@@ -344,8 +449,11 @@ class DeploymentScheduler:
 
                 formatted_rules.append(rule_dict)
             except Exception as e:
-                logger.error(f"Error converting rule to new format: {e}")
-                # Skip this rule if conversion fails
+                logger.error(
+                    "rule_conversion_error",
+                    operation="_convert_rules_to_new_format",
+                    error=str(e),
+                )
                 continue
 
         return formatted_rules

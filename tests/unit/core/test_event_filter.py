@@ -186,7 +186,7 @@ def test_filter_result_frozen():
     # Attempting to modify should raise an error
     try:
         result.should_process = False
-        assert False, "Should have raised FrozenInstanceError"
+        raise AssertionError("Should have raised FrozenInstanceError")
     except Exception:
         pass  # Expected
 
