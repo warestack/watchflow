@@ -19,9 +19,9 @@ def test_format_violations_comment_groups_by_severity():
     assert "## 🚨 Watchflow Rule Violations Detected" in comment
     assert "### 🔴 Critical Severity" in comment
     assert "### 🟠 High Severity" in comment
-    assert "**Rule 2**" in comment
-    assert "**Rule 1**" in comment
-    assert "**Rule 3**" in comment
+    assert "### Rule 2" in comment
+    assert "### Rule 1" in comment
+    assert "### Rule 3" in comment
     assert "Fix 1" in comment
     assert "Fix 2" in comment
 
