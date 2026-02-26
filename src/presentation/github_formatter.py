@@ -106,7 +106,8 @@ def format_check_run_output(
             text += f"## {emoji} {severity.title()} Severity\n\n"
 
             for violation in severity_groups[severity]:
-                text += f"### {violation.rule_description or 'Unknown Rule'}\n"
+                text += f"### {violation.rule_description or 'Unknown Rule'}\n\n"
+                text += f"{violation.message}\n\n"
                 text += f"Rule validation failed with severity: **{violation.severity}**\n"
                 if violation.how_to_fix:
                     text += f"**How to fix:** {violation.how_to_fix}\n"
@@ -169,7 +170,8 @@ def format_violations_comment(violations: list[Violation]) -> str:
             comment += f"### {emoji} {severity.title()} Severity\n\n"
 
             for violation in severity_groups[severity]:
-                comment += f"**{violation.rule_description or 'Unknown Rule'}**\n"
+                comment += f"### {violation.rule_description or 'Unknown Rule'}\n\n"
+                comment += f"{violation.message}\n\n"
                 comment += f"Rule validation failed with severity: **{violation.severity}**\n"
                 if violation.how_to_fix:
                     comment += f"**How to fix:** {violation.how_to_fix}\n"

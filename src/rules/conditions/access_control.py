@@ -298,6 +298,11 @@ def _required_code_owner_reviewers(event: dict[str, Any]) -> tuple[list[str], li
     requested_logins = {u.get("login") for u in requested_users if u.get("login")}
     requested_slugs = {t.get("slug") for t in requested_teams if t.get("slug")}
 
+    # The PR author is inherently a reviewer of their own code
+    author_login = pr.get("user", {}).get("login")
+    if author_login:
+        requested_logins.add(author_login)
+
     # Owner can be a user (login) or a team (slug or org/slug). Match user by login, team by slug.
     requested_identifiers = requested_logins | requested_slugs
 
