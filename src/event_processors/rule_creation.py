@@ -1,13 +1,14 @@
-import logging
 import re
 import time
 from typing import Any
+
+import structlog
 
 from src.agents.feasibility_agent.agent import RuleFeasibilityAgent
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.tasks.task_queue import Task
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class RuleCreationProcessor(BaseEventProcessor):
@@ -29,7 +30,7 @@ class RuleCreationProcessor(BaseEventProcessor):
 
         try:
             logger.info("=" * 80)
-            logger.info(f"🚀 Processing RULE CREATION command for {task.repo_full_name}")
+            logger.info("processing_rule_creation_command_for", repo_full_name=task.repo_full_name)
             logger.info("=" * 80)
 
             # Extract the rule description from the comment
@@ -44,7 +45,7 @@ class RuleCreationProcessor(BaseEventProcessor):
                     error="No rule description found in comment",
                 )
 
-            logger.info(f"📝 Rule description: {rule_description}")
+            logger.info("rule_description", rule_description=rule_description)
 
             # Use the feasibility agent to check if the rule is supported
             feasibility_result = await self.feasibility_agent.check_feasibility(rule_description)
@@ -56,21 +57,21 @@ class RuleCreationProcessor(BaseEventProcessor):
 
             # Summary
             logger.info("=" * 80)
-            logger.info(f"🏁 Rule creation processing completed in {processing_time}ms")
-            logger.info(f"   Feasible: {feasibility_result.is_feasible}")
-            logger.info("   API calls made: 1")
+            logger.info("rule_creation_processing_completed_in_ms", processing_time=processing_time)
+            logger.info("feasible", is_feasible=feasibility_result.is_feasible)
+            logger.info("api_calls_made_1")
 
             if feasibility_result.is_feasible:
-                logger.info("✅ Rule is feasible - YAML provided")
+                logger.info("rule_is_feasible_yaml_provided")
             else:
-                logger.info("❌ Rule is not feasible - feedback provided")
+                logger.info("rule_is_not_feasible_feedback_provided")
 
             logger.info("=" * 80)
 
             return ProcessingResult(success=True, violations=[], api_calls_made=1, processing_time_ms=processing_time)
 
         except Exception as e:
-            logger.error(f"❌ Error processing rule creation: {e}")
+            logger.error("error_processing_rule_creation", e=e)
             return ProcessingResult(
                 success=False,
                 violations=[],
@@ -105,7 +106,7 @@ class RuleCreationProcessor(BaseEventProcessor):
             issue_number = issue.get("number")
 
             if not issue_number:
-                logger.warning("No issue number found in webhook payload, skipping reply")
+                logger.warning("no_issue_number_found_in_webhook")
                 return
 
             reply_body = self._format_feasibility_reply(feasibility_result)
@@ -116,12 +117,12 @@ class RuleCreationProcessor(BaseEventProcessor):
             )
 
             if result:
-                logger.info(f"✅ Successfully posted feasibility reply to issue/PR #{issue_number}")
+                logger.info("successfully_posted_feasibility_reply_to_issuepr", issue_number=issue_number)
             else:
-                logger.error(f"❌ Failed to post feasibility reply to issue/PR #{issue_number}")
+                logger.error("failed_to_post_feasibility_reply_to", issue_number=issue_number)
 
         except Exception as e:
-            logger.error(f"Error posting feasibility reply: {e}")
+            logger.error("error_posting_feasibility_reply", e=e)
 
     def _format_feasibility_reply(self, feasibility_result) -> str:
         """Format the feasibility result as a comment reply."""

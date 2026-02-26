@@ -3,16 +3,16 @@ Rule Feasibility Agent implementation with error handling and retry logic.
 """
 
 import asyncio
-import logging
 import time
 
+import structlog
 from langgraph.graph import END, START, StateGraph
 
 from src.agents.base import AgentResult, BaseAgent
 from src.agents.feasibility_agent.models import FeasibilityState
 from src.agents.feasibility_agent.nodes import analyze_rule_feasibility, generate_yaml_config
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class RuleFeasibilityAgent(BaseAgent):
@@ -29,7 +29,7 @@ class RuleFeasibilityAgent(BaseAgent):
     def __init__(self, max_retries: int = 3, timeout: float = 30.0):
         super().__init__(max_retries=max_retries)
         self.timeout = timeout
-        logger.info(f"🔧 FeasibilityAgent initialized with max_retries={max_retries}, timeout={timeout}s")
+        logger.info("feasibilityagent_initialized_with_maxretries_timeout_s", max_retries=max_retries, timeout=timeout)
 
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph workflow for rule feasibility checking."""
@@ -51,7 +51,7 @@ class RuleFeasibilityAgent(BaseAgent):
 
         workflow.add_edge("generate_yaml", END)
 
-        logger.info("🔧 FeasibilityAgent graph built with conditional structured output workflow")
+        logger.info("feasibilityagent_graph_built_with_conditional_structured")
         return workflow.compile()
 
     async def execute(self, rule_description: str) -> AgentResult:
@@ -74,9 +74,12 @@ class RuleFeasibilityAgent(BaseAgent):
                 result = FeasibilityState(**result)
 
             execution_time = time.time() - start_time
-            logger.info(f"✅ Feasibility analysis completed in {execution_time:.2f}s")
+            logger.info("feasibility_analysis_completed_in_s")
             logger.info(
-                f"✅ Results: feasible={result.is_feasible}, type={result.rule_type}, confidence={result.confidence_score}"
+                "results_feasible_type_confidence",
+                is_feasible=result.is_feasible,
+                rule_type=result.rule_type,
+                confidence_score=result.confidence_score,
             )
 
             # Convert to AgentResult with metadata
@@ -99,7 +102,7 @@ class RuleFeasibilityAgent(BaseAgent):
 
         except TimeoutError:
             execution_time = time.time() - start_time
-            logger.error(f"❌ Feasibility analysis timed out after {execution_time:.2f}s")
+            logger.error("feasibility_analysis_timed_out_after_s")
             return AgentResult(
                 success=False,
                 message=f"Feasibility analysis timed out after {self.timeout}s",
@@ -113,7 +116,7 @@ class RuleFeasibilityAgent(BaseAgent):
 
         except Exception as e:
             execution_time = time.time() - start_time
-            logger.error(f"❌ Feasibility analysis failed: {e}")
+            logger.error("feasibility_analysis_failed", e=e)
             return AgentResult(
                 success=False,
                 message=f"Feasibility analysis failed: {str(e)}",
@@ -133,7 +136,7 @@ class RuleFeasibilityAgent(BaseAgent):
                     result.metadata["retry_count"] = attempt
                     return result
                 else:
-                    logger.warning(f"⚠️ Feasibility analysis failed on attempt {attempt + 1}")
+                    logger.warning("feasibility_analysis_failed_on_attempt")
                     if attempt == self.max_retries - 1:
                         return result
 
@@ -141,7 +144,7 @@ class RuleFeasibilityAgent(BaseAgent):
                     await asyncio.sleep(self.retry_delay * (2**attempt))
 
             except Exception as e:
-                logger.error(f"❌ Exception on attempt {attempt + 1}: {e}")
+                logger.error("exception_on_attempt", e=e)
                 if attempt == self.max_retries - 1:
                     return AgentResult(
                         success=False,

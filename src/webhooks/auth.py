@@ -1,12 +1,12 @@
 import hashlib
 import hmac
-import logging
 
+import structlog
 from fastapi import HTTPException, Request
 
 from src.core.config import config
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 GITHUB_WEBHOOK_SECRET = config.github.webhook_secret
 
@@ -26,7 +26,7 @@ async def verify_github_signature(request: Request) -> bool:
     """
     signature = request.headers.get("X-Hub-Signature-256")
     if not signature:
-        logger.warning("Received a request without the X-Hub-Signature-256 header.")
+        logger.warning("received_a_request_without_the_xhubsignature256")
         raise HTTPException(status_code=401, detail="Missing GitHub webhook signature.")
 
     # Get the raw request payload  as bytes
@@ -38,8 +38,8 @@ async def verify_github_signature(request: Request) -> bool:
 
     # Securely compare the signatures
     if not hmac.compare_digest(signature, expected_signature):
-        logger.error("Invalid webhook signature.")
+        logger.error("invalid_webhook_signature")
         raise HTTPException(status_code=401, detail="Invalid GitHub webhook signature.")
 
-    logger.debug("GitHub webhook signature verified successfully.")
+    logger.debug("github_webhook_signature_verified_successfully")
     return True

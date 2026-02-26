@@ -1,10 +1,10 @@
-import logging
+import structlog
 
 from src.core.models import WebhookEvent
 from src.tasks.task_queue import task_queue
 from src.webhooks.handlers.base import EventHandler
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class CheckRunEventHandler(EventHandler):
@@ -15,7 +15,7 @@ class CheckRunEventHandler(EventHandler):
 
     async def handle(self, event: WebhookEvent):
         """Handle check run events by enqueuing them for background processing."""
-        logger.info(f"🔄 Enqueuing check run event for {event.repo_full_name}")
+        logger.info("enqueuing_check_run_event_for", repo_full_name=event.repo_full_name)
 
         task_id = await task_queue.enqueue(
             event_type="check_run",
@@ -24,6 +24,6 @@ class CheckRunEventHandler(EventHandler):
             payload=event.payload,
         )
 
-        logger.info(f"✅ Check run event enqueued with task ID: {task_id}")
+        logger.info("check_run_event_enqueued_with_task", task_id=task_id)
 
         return {"status": "enqueued", "task_id": task_id, "message": "Check run event has been queued for processing"}

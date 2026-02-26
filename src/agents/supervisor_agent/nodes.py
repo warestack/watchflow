@@ -3,12 +3,13 @@ LangGraph nodes for the Rule Supervisor Agent.
 """
 
 import asyncio
-import logging
 import time
+
+import structlog
 
 from src.agents.supervisor_agent.models import AgentTask, CoordinationResult, SupervisorAgentResult, SupervisorState
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 async def coordinate_agents(state: SupervisorState) -> SupervisorState:
@@ -16,7 +17,7 @@ async def coordinate_agents(state: SupervisorState) -> SupervisorState:
     Coordinate multiple agents to execute tasks in parallel.
     """
     try:
-        logger.info(f"🔧 Starting agent coordination for {state.event_type}")
+        logger.info("starting_agent_coordination_for", event_type=state.event_type)
 
         # Create tasks for each agent based on the event type and rules
         tasks = _create_agent_tasks(state)
@@ -35,7 +36,7 @@ async def coordinate_agents(state: SupervisorState) -> SupervisorState:
         logger.info(f"🔧 Successful executions: {len(successful_results)}/{len(results)}")
 
     except Exception as e:
-        logger.error(f"❌ Error in agent coordination: {e}")
+        logger.error("error_in_agent_coordination", e=e)
         state.errors.append(f"Coordination failed: {str(e)}")
 
     return state
@@ -46,7 +47,7 @@ async def validate_results(state: SupervisorState) -> SupervisorState:
     Validate and cross-check results from multiple agents.
     """
     try:
-        logger.info("🔍 Validating agent results")
+        logger.info("validating_agent_results")
 
         # Check for conflicting results
         conflicts = _detect_result_conflicts(state.agent_results)
@@ -60,10 +61,10 @@ async def validate_results(state: SupervisorState) -> SupervisorState:
             logger.warning(f"⚠️ Found {len(quality_issues)} quality issues")
             state.errors.extend(quality_issues)
 
-        logger.info("🔍 Result validation completed")
+        logger.info("result_validation_completed")
 
     except Exception as e:
-        logger.error(f"❌ Error in result validation: {e}")
+        logger.error("error_in_result_validation", e=e)
         state.errors.append(f"Validation failed: {str(e)}")
 
     return state
@@ -74,7 +75,7 @@ async def synthesize_final_result(state: SupervisorState) -> SupervisorState:
     Synthesize final decision from multiple agent results.
     """
     try:
-        logger.info("🧠 Synthesizing final result from agent outputs")
+        logger.info("synthesizing_final_result_from_agent_outputs")
 
         # Create coordination result
         coordination_result = _synthesize_coordination_result(state)
@@ -83,11 +84,11 @@ async def synthesize_final_result(state: SupervisorState) -> SupervisorState:
         # Set end time
         state.end_time = time.time()
 
-        logger.info(f"✅ Final synthesis completed: success={coordination_result.overall_success}")
-        logger.info(f"✅ Confidence score: {coordination_result.confidence_score}")
+        logger.info("final_synthesis_completed_success", overall_success=coordination_result.overall_success)
+        logger.info("confidence_score", confidence_score=coordination_result.confidence_score)
 
     except Exception as e:
-        logger.error(f"❌ Error in final synthesis: {e}")
+        logger.error("error_in_final_synthesis", e=e)
         state.errors.append(f"Synthesis failed: {str(e)}")
 
         # Create fallback result

@@ -1,12 +1,13 @@
-import logging
 import time
 from typing import Any
+
+import structlog
 
 from src.agents.engine_agent.agent import RuleEngineAgent
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.tasks.task_queue import Task
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class CheckRunProcessor(BaseEventProcessor):
@@ -29,13 +30,13 @@ class CheckRunProcessor(BaseEventProcessor):
 
         # Ignore our own check runs to prevent infinite loops
         if "watchflow" in check_run.get("name", "").lower():
-            logger.info("Ignoring Watchflow's own check run to prevent recursive loops.")
+            logger.info("ignoring_watchflows_own_check_run_to")
             return ProcessingResult(
                 success=True, violations=[], api_calls_made=0, processing_time_ms=int((time.time() - start_time) * 1000)
             )
 
         logger.info("=" * 80)
-        logger.info(f"🚀 Processing CHECK RUN event for {task.repo_full_name}")
+        logger.info("processing_check_run_event_for", repo_full_name=task.repo_full_name)
         logger.info(f"   Name: {check_run.get('name')}")
         logger.info(f"   Status: {check_run.get('status')}")
         logger.info(f"   Conclusion: {check_run.get('conclusion')}")

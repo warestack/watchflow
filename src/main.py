@@ -1,7 +1,7 @@
 import asyncio
-import logging
 from contextlib import asynccontextmanager
 
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -24,10 +24,7 @@ from src.webhooks.router import router as webhook_router
 
 # --- Application Setup ---
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)8s %(message)s",
-)
+logger = structlog.get_logger()
 
 
 @asynccontextmanager
@@ -65,7 +62,7 @@ async def lifespan(_app: FastAPI):
 
     # Start the deployment scheduler
     asyncio.create_task(get_deployment_scheduler().start_background_scheduler())
-    logging.info("🚀 Deployment scheduler started")
+    logger.info("deployment_scheduler_started")
 
     yield
 

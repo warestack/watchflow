@@ -2,10 +2,11 @@
 Utilities for analyzing repository contributors and determining contribution history.
 """
 
-import logging
 from datetime import datetime, timedelta
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.get_logger()
 
 
 class ContributorAnalyzer:
@@ -37,11 +38,11 @@ class ContributorAnalyzer:
         if cache_key in self._contributors_cache:
             cached_data = self._contributors_cache[cache_key]
             if datetime.now().timestamp() - cached_data.get("timestamp", 0) < self._cache_ttl:
-                logger.debug(f"Using cached past contributors for {repo}")
+                logger.debug("using_cached_past_contributors_for", repo=repo)
                 return set(cached_data.get("contributors", []))
 
         try:
-            logger.info(f"Fetching past contributors for {repo}")
+            logger.info("fetching_past_contributors_for", repo=repo)
 
             # Get contributors from GitHub API
             contributors = await self._fetch_contributors(repo, installation_id)
@@ -69,7 +70,7 @@ class ContributorAnalyzer:
             return past_contributors
 
         except Exception as e:
-            logger.error(f"Error fetching past contributors for {repo}: {e}")
+            logger.error("error_fetching_past_contributors_for", repo=repo, e=e)
             return set()
 
     async def is_new_contributor(
@@ -95,11 +96,11 @@ class ContributorAnalyzer:
             # Check if user is in the past contributors list
             is_new = username not in past_contributors
 
-            logger.debug(f"User {username} is {'new' if is_new else 'established'} contributor in {repo}")
+            logger.debug("user_is_contributor_in", username=username, repo=repo)
             return is_new
 
         except Exception as e:
-            logger.error(f"Error checking if {username} is new contributor in {repo}: {e}")
+            logger.error("error_checking_if_is_new_contributor", username=username, repo=repo, e=e)
             # Default to treating as new contributor on error
             return True
 
@@ -161,7 +162,7 @@ class ContributorAnalyzer:
             return stats
 
         except Exception as e:
-            logger.error(f"Error getting contribution stats for {username} in {repo}: {e}")
+            logger.error("error_getting_contribution_stats_for_in", username=username, repo=repo, e=e)
             return {
                 "username": username,
                 "total_commits": 0,
@@ -179,7 +180,7 @@ class ContributorAnalyzer:
             contributors = await self.github_client.get_repository_contributors(repo, installation_id)
             return contributors or []
         except Exception as e:
-            logger.error(f"Error fetching contributors for {repo}: {e}")
+            logger.error("error_fetching_contributors_for", repo=repo, e=e)
             return []
 
     async def _has_recent_activity(self, repo: str, username: str, installation_id: int, cutoff_date: datetime) -> bool:
@@ -208,7 +209,7 @@ class ContributorAnalyzer:
             return False
 
         except Exception as e:
-            logger.error(f"Error checking recent activity for {username} in {repo}: {e}")
+            logger.error("error_checking_recent_activity_for_in", username=username, repo=repo, e=e)
             return False
 
     async def _fetch_user_commits(self, repo: str, username: str, installation_id: int, limit: int = 100) -> list[dict]:
@@ -216,7 +217,7 @@ class ContributorAnalyzer:
         try:
             return await self.github_client.get_user_commits(repo, username, installation_id, limit)
         except Exception as e:
-            logger.error(f"Error fetching commits for {username} in {repo}: {e}")
+            logger.error("error_fetching_commits_for_in", username=username, repo=repo, e=e)
             return []
 
     async def _fetch_user_pull_requests(
@@ -226,7 +227,7 @@ class ContributorAnalyzer:
         try:
             return await self.github_client.get_user_pull_requests(repo, username, installation_id, limit)
         except Exception as e:
-            logger.error(f"Error fetching PRs for {username} in {repo}: {e}")
+            logger.error("error_fetching_prs_for_in", username=username, repo=repo, e=e)
             return []
 
     async def _fetch_user_issues(self, repo: str, username: str, installation_id: int, limit: int = 100) -> list[dict]:
@@ -234,7 +235,7 @@ class ContributorAnalyzer:
         try:
             return await self.github_client.get_user_issues(repo, username, installation_id, limit)
         except Exception as e:
-            logger.error(f"Error fetching issues for {username} in {repo}: {e}")
+            logger.error("error_fetching_issues_for_in", username=username, repo=repo, e=e)
             return []
 
 

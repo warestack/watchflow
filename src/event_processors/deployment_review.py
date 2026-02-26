@@ -1,12 +1,13 @@
-import logging
 import time
 from typing import Any
+
+import structlog
 
 from src.agents.engine_agent.agent import RuleEngineAgent
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.tasks.task_queue import Task
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class DeploymentReviewProcessor(BaseEventProcessor):
@@ -28,7 +29,7 @@ class DeploymentReviewProcessor(BaseEventProcessor):
         deployment_review = payload.get("deployment_review", {})
 
         logger.info("=" * 80)
-        logger.info(f"🚀 Processing DEPLOYMENT REVIEW event for {task.repo_full_name}")
+        logger.info("processing_deployment_review_event_for", repo_full_name=task.repo_full_name)
         logger.info(f"   State: {deployment_review.get('state')}")
         logger.info(f"   Environment: {deployment_review.get('environment')}")
         logger.info("=" * 80)
@@ -78,7 +79,7 @@ class DeploymentReviewProcessor(BaseEventProcessor):
                 deployment_review_rules.append(r)
 
         if not deployment_review_rules:
-            logger.info("📋 No deployment_review rules found")
+            logger.info("no_deploymentreview_rules_found")
             return ProcessingResult(
                 success=True, violations=[], api_calls_made=1, processing_time_ms=int((time.time() - start_time) * 1000)
             )

@@ -1,12 +1,11 @@
-import logging
-
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from src.core.models import EventType, WebhookEvent
 from src.webhooks.auth import verify_github_signature
 from src.webhooks.dispatcher import WebhookDispatcher, dispatcher
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 router = APIRouter()
 
 
@@ -24,13 +23,13 @@ def _create_event_from_request(event_name: str | None, payload: dict) -> Webhook
 
     # Normalize event name for events like deployment_review.requested
     normalized_event_name = event_name.split(".")[0]
-    logger.info(f"Received event: {event_name}, normalized: {normalized_event_name}")
+    logger.info("received_event_normalized", event_name=event_name, normalized_event_name=normalized_event_name)
 
     try:
         # Map the string from the header (e.g., "pull_request") to our enum
         event_type = EventType(normalized_event_name)
     except ValueError as e:
-        logger.warning(f"Received an unsupported event type: {event_name} - {e}")
+        logger.warning("received_an_unsupported_event_type", event_name=event_name, e=e)
         # If the event isn't in our enum, we can't process it.
         # We'll return a success response to GitHub to acknowledge receipt
         # but won't do any work.

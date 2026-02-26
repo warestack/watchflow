@@ -1,10 +1,11 @@
-import logging
 import re
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.get_logger()
 
 
 class Condition(ABC):
@@ -54,17 +55,17 @@ class AuthorTeamCondition(Condition):
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         team_name = parameters.get("team")
         if not team_name:
-            logger.warning("AuthorTeamCondition: No team specified in parameters")
+            logger.warning("authorteamcondition_no_team_specified_in_parameters")
             return False
 
         # Get author from event
         author_login = event.get("sender", {}).get("login", "")
         if not author_login:
-            logger.warning("AuthorTeamCondition: No sender login found in event")
+            logger.warning("authorteamcondition_no_sender_login_found_in")
             return False
 
         # Placeholder logic - replace with actual GitHub API call
-        logger.debug(f"Checking if {author_login} is in team {team_name}")
+        logger.debug("checking_if_is_in_team", author_login=author_login, team_name=team_name)
 
         # For testing purposes, let's assume certain users are in certain teams
         team_memberships = {
@@ -90,14 +91,14 @@ class FilePatternCondition(Condition):
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         pattern = parameters.get("pattern")
         if not pattern:
-            logger.warning("FilePatternCondition: No pattern specified in parameters")
+            logger.warning("filepatterncondition_no_pattern_specified_in_parameters")
             return False
 
         # Get the list of changed files from the event
         changed_files = self._get_changed_files(event)
 
         if not changed_files:
-            logger.debug("No files to check against pattern")
+            logger.debug("no_files_to_check_against_pattern")
             return False
 
         # Convert glob pattern to regex
@@ -227,7 +228,11 @@ class MinApprovalsCondition(Condition):
             if review.get("state") == "APPROVED":
                 approved_count += 1
 
-        logger.debug(f"MinApprovalsCondition: PR has {approved_count} approvals, requires {min_approvals}")
+        logger.debug(
+            "minapprovalscondition_pr_has_approvals_requires",
+            approved_count=approved_count,
+            min_approvals=min_approvals,
+        )
 
         return approved_count >= min_approvals
 
@@ -265,13 +270,13 @@ class DaysCondition(Condition):
             is_restricted = weekday in days
 
             logger.debug(
-                f"DaysCondition: PR merged on {weekday}, restricted days: {days}, is_restricted: {is_restricted}"
+                "dayscondition_pr_merged_on_restricted_days", weekday=weekday, days=days, is_restricted=is_restricted
             )
 
             return not is_restricted  # Return True if NOT restricted (no violation)
 
         except Exception as e:
-            logger.error(f"DaysCondition: Error parsing merged_at timestamp '{merged_at}': {e}")
+            logger.error("dayscondition_error_parsing_mergedat_timestamp", merged_at=merged_at, e=e)
             return True  # No violation if we can't parse the date
 
 
@@ -301,10 +306,10 @@ class TitlePatternCondition(Condition):
         # Test the pattern
         try:
             matches = bool(re.match(pattern, title))
-            logger.debug(f"TitlePatternCondition: Title '{title}' matches pattern '{pattern}': {matches}")
+            logger.debug("titlepatterncondition_title_matches_pattern", title=title, pattern=pattern, matches=matches)
             return matches
         except re.error as e:
-            logger.error(f"TitlePatternCondition: Invalid regex pattern '{pattern}': {e}")
+            logger.error("titlepatterncondition_invalid_regex_pattern", pattern=pattern, e=e)
             return True  # No violation if pattern is invalid
 
 
@@ -333,7 +338,10 @@ class MinDescriptionLengthCondition(Condition):
         is_valid = description_length >= min_length
 
         logger.debug(
-            f"MinDescriptionLengthCondition: Description length {description_length}, requires {min_length}: {is_valid}"
+            "mindescriptionlengthcondition_description_length_requires",
+            description_length=description_length,
+            min_length=min_length,
+            is_valid=is_valid,
         )
 
         return is_valid
@@ -366,7 +374,11 @@ class RequiredLabelsCondition(Condition):
         is_valid = len(missing_labels) == 0
 
         logger.debug(
-            f"RequiredLabelsCondition: PR has labels {pr_labels}, requires {required_labels}, missing {missing_labels}: {is_valid}"
+            "requiredlabelscondition_pr_has_labels_requires_missing",
+            pr_labels=pr_labels,
+            required_labels=required_labels,
+            missing_labels=missing_labels,
+            is_valid=is_valid,
         )
 
         return is_valid
@@ -387,7 +399,7 @@ class MaxFileSizeCondition(Condition):
 
         # If no files data is available, we can't evaluate this rule
         if not files:
-            logger.debug("MaxFileSizeCondition: No files data available, skipping validation")
+            logger.debug("maxfilesizecondition_no_files_data_available_skipping")
             return True  # No violation if we can't check
 
         # Check each file's size
@@ -399,7 +411,7 @@ class MaxFileSizeCondition(Condition):
                 filename = file.get("filename", "unknown")
                 oversized_files.append(f"{filename} ({size_mb:.2f}MB)")
                 logger.debug(
-                    f"MaxFileSizeCondition: File {filename} exceeds size limit: {size_mb:.2f}MB > {max_size_mb}MB"
+                    "maxfilesizecondition_file_exceeds_size_limit_mb", filename=filename, max_size_mb=max_size_mb
                 )
 
         is_valid = len(oversized_files) == 0
@@ -437,10 +449,10 @@ class PatternCondition(Condition):
 
         try:
             matches = bool(re.match(pattern, title))
-            logger.debug(f"PatternCondition: Title '{title}' matches pattern '{pattern}': {matches}")
+            logger.debug("patterncondition_title_matches_pattern", title=title, pattern=pattern, matches=matches)
             return matches
         except re.error as e:
-            logger.error(f"PatternCondition: Invalid regex pattern '{pattern}': {e}")
+            logger.error("patterncondition_invalid_regex_pattern", pattern=pattern, e=e)
             return True  # No violation if pattern is invalid
 
 
@@ -486,7 +498,10 @@ class ProtectedBranchesCondition(Condition):
         is_protected = base_branch in protected_branches
 
         logger.debug(
-            f"ProtectedBranchesCondition: Base branch '{base_branch}' in protected list {protected_branches}: {is_protected}"
+            "protectedbranchescondition_base_branch_in_protected_list",
+            base_branch=base_branch,
+            protected_branches=protected_branches,
+            is_protected=is_protected,
         )
 
         return not is_protected  # Return True if NOT protected (no violation)
@@ -556,13 +571,16 @@ class AllowedHoursCondition(Condition):
             current_time = datetime.now(tz)
         except (ImportError, pytz.exceptions.UnknownTimeZoneError):
             # Fallback to UTC if pytz is not available or timezone is invalid
-            logger.warning(f"Invalid timezone '{timezone_str}', using UTC")
+            logger.warning("invalid_timezone_using_utc", timezone_str=timezone_str)
             current_time = datetime.now()
 
         current_hour = current_time.hour
 
         logger.debug(
-            f"AllowedHoursCondition: Current hour {current_hour} in timezone {timezone_str}, allowed hours: {allowed_hours}"
+            "allowedhourscondition_current_hour_in_timezone_allowed",
+            current_hour=current_hour,
+            timezone_str=timezone_str,
+            allowed_hours=allowed_hours,
         )
         return current_hour in allowed_hours
 
@@ -590,7 +608,12 @@ class BranchesCondition(Condition):
 
         is_allowed = base_branch in branches
 
-        logger.debug(f"BranchesCondition: Base branch '{base_branch}' in allowed branches {branches}: {is_allowed}")
+        logger.debug(
+            "branchescondition_base_branch_in_allowed_branches",
+            base_branch=base_branch,
+            branches=branches,
+            is_allowed=is_allowed,
+        )
 
         return is_allowed
 
@@ -631,7 +654,7 @@ class CodeOwnersCondition(Condition):
         # Get the list of changed files from the event
         changed_files = self._get_changed_files(event)
         if not changed_files:
-            logger.debug("CodeOwnersCondition: No files to check")
+            logger.debug("codeownerscondition_no_files_to_check")
             return True
 
         # Check if any of the changed files require code owner review
@@ -645,7 +668,9 @@ class CodeOwnersCondition(Condition):
         )
 
         logger.debug(
-            f"CodeOwnersCondition: Files {changed_files} require code owner review: {requires_code_owner_review}"
+            "codeownerscondition_files_require_code_owner_review",
+            changed_files=changed_files,
+            requires_code_owner_review=requires_code_owner_review,
         )
         return not requires_code_owner_review  # Return True if NO code owner review needed
 
@@ -681,7 +706,7 @@ class PastContributorApprovalCondition(Condition):
         author_login = pull_request.get("user", {}).get("login", "")
 
         if not author_login:
-            logger.warning("PastContributorApprovalCondition: No author found")
+            logger.warning("pastcontributorapprovalcondition_no_author_found")
             return False
 
         # Get repository and installation info from event
@@ -689,13 +714,13 @@ class PastContributorApprovalCondition(Condition):
         installation_id = event.get("installation", {}).get("id")
 
         if not repo or not installation_id:
-            logger.warning("PastContributorApprovalCondition: Missing repo or installation_id")
+            logger.warning("pastcontributorapprovalcondition_missing_repo_or_installationid")
             return False
 
         # Get GitHub client from event (passed by event processor)
         github_client = event.get("github_client")
         if not github_client:
-            logger.warning("PastContributorApprovalCondition: No GitHub client available")
+            logger.warning("pastcontributorapprovalcondition_no_github_client_available")
             return False
 
         # Check if author is a new contributor using the contributor analyzer
@@ -704,13 +729,13 @@ class PastContributorApprovalCondition(Condition):
         is_author_new = await is_new_contributor(author_login, repo, github_client, installation_id)
 
         if not is_author_new:
-            logger.debug(f"PastContributorApprovalCondition: {author_login} is not a new contributor")
+            logger.debug("pastcontributorapprovalcondition_is_not_a_new_contributor", author_login=author_login)
             return True
 
         # Get PR reviews
         reviews = event.get("reviews", [])
         if not reviews:
-            logger.debug(f"PastContributorApprovalCondition: No reviews found for new contributor {author_login}")
+            logger.debug("pastcontributorapprovalcondition_no_reviews_found_for_new", author_login=author_login)
             return False
 
         # Count approvals from past contributors
@@ -725,7 +750,11 @@ class PastContributorApprovalCondition(Condition):
 
         is_valid = past_contributor_approvals >= min_past_contributors
         logger.debug(
-            f"PastContributorApprovalCondition: {author_login} has {past_contributor_approvals} past contributor approvals, needs {min_past_contributors}: {is_valid}"
+            "pastcontributorapprovalcondition_has_past_contributor_approvals_needs",
+            author_login=author_login,
+            past_contributor_approvals=past_contributor_approvals,
+            min_past_contributors=min_past_contributors,
+            is_valid=is_valid,
         )
         return is_valid
 

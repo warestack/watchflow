@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from src.core.models import EventType
 
 
-class RuleSeverity(str, Enum):
+class RuleSeverity(StrEnum):
     """Enumerates the severity levels of a rule violation."""
 
     LOW = "low"

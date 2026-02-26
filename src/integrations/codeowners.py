@@ -2,11 +2,12 @@
 Utilities for parsing and using CODEOWNERS files.
 """
 
-import logging
 import re
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.get_logger()
 
 
 class CodeOwnersParser:
@@ -35,7 +36,7 @@ class CodeOwnersParser:
             # Split on whitespace, first part is pattern, rest are owners
             parts = line.split()
             if len(parts) < 2:
-                logger.warning(f"Invalid CODEOWNERS line {line_num}: {line}")
+                logger.warning("invalid_codeowners_line", line_num=line_num, line=line)
                 continue
 
             pattern = parts[0]
@@ -95,7 +96,7 @@ class CodeOwnersParser:
         try:
             return bool(re.match(regex_pattern, file_path))
         except re.error:
-            logger.error(f"Invalid regex pattern: {regex_pattern}")
+            logger.error("invalid_regex_pattern", regex_pattern=regex_pattern)
             return False
 
     def _pattern_to_regex(self, pattern: str) -> str:
@@ -170,7 +171,7 @@ def load_codeowners(repo_path: str = ".") -> CodeOwnersParser | None:
     codeowners_path = Path(repo_path) / "CODEOWNERS"
 
     if not codeowners_path.exists():
-        logger.warning(f"CODEOWNERS file not found at {codeowners_path}")
+        logger.warning("codeowners_file_not_found_at", codeowners_path=codeowners_path)
         return None
 
     try:
@@ -179,7 +180,7 @@ def load_codeowners(repo_path: str = ".") -> CodeOwnersParser | None:
 
         return CodeOwnersParser(content)
     except Exception as e:
-        logger.error(f"Error loading CODEOWNERS file: {e}")
+        logger.error("error_loading_codeowners_file", e=e)
         return None
 
 

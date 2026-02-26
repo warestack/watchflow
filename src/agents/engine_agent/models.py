@@ -2,13 +2,13 @@
 Data models for the Rule Engine Agent.
 """
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class ValidationStrategy(str, Enum):
+class ValidationStrategy(StrEnum):
     """Validation strategies for rule evaluation."""
 
     VALIDATOR = "validator"  # Use fast validator

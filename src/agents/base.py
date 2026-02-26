@@ -3,15 +3,15 @@ Base agent classes and utilities for agents.
 """
 
 import asyncio
-import logging
 from abc import ABC, abstractmethod
 from typing import Any, TypeVar
 
+import structlog
 from langchain_openai import ChatOpenAI
 
 from src.core.config import config
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 T = TypeVar("T")
 
@@ -53,7 +53,7 @@ class BaseAgent(ABC):
             temperature=config.ai.temperature,
         )
         self.graph = self._build_graph()
-        logger.info(f"🔧 {self.__class__.__name__} initialized with max_retries={max_retries}")
+        logger.info("initialized_with_maxretries", __name__=self.__class__.__name__, max_retries=max_retries)
 
     @abstractmethod
     def _build_graph(self):
@@ -82,15 +82,15 @@ class BaseAgent(ABC):
             try:
                 result = await structured_llm.ainvoke(prompt, **kwargs)
                 if attempt > 0:
-                    logger.info(f"✅ Structured output succeeded on attempt {attempt + 1}")
+                    logger.info("structured_output_succeeded_on_attempt")
                 return result
             except Exception as e:
                 if attempt == self.max_retries - 1:
-                    logger.error(f"❌ Structured output failed after {self.max_retries} attempts: {e}")
+                    logger.error("structured_output_failed_after_attempts", max_retries=self.max_retries, e=e)
                     raise Exception(f"Structured output failed after {self.max_retries} attempts: {str(e)}") from e
 
                 wait_time = self.retry_delay * (2**attempt)
-                logger.warning(f"⚠️ Structured output attempt {attempt + 1} failed, retrying in {wait_time}s: {e}")
+                logger.warning("structured_output_attempt_failed_retrying_in", wait_time=wait_time, e=e)
                 await asyncio.sleep(wait_time)
 
         raise Exception(f"Structured output failed after {self.max_retries} attempts")

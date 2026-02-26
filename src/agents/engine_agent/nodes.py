@@ -3,10 +3,10 @@ LangGraph nodes for the Rule Engine Agent with hybrid validation strategy.
 """
 
 import asyncio
-import logging
 import time
 from typing import Any
 
+import structlog
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
@@ -27,7 +27,7 @@ from src.agents.engine_agent.prompts import (
 from src.core.config import config
 from src.rules.validators import VALIDATOR_REGISTRY
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 async def analyze_rule_descriptions(state: EngineState) -> EngineState:
@@ -53,11 +53,11 @@ async def analyze_rule_descriptions(state: EngineState) -> EngineState:
         state.rule_descriptions = applicable_rules
         state.analysis_steps.append(f"Found {len(applicable_rules)} applicable rules out of {len(state.rules)} total")
 
-        analysis_time = (time.time() - start_time) * 1000
-        logger.info(f"🔍 Rule analysis completed in {analysis_time:.2f}ms")
+        (time.time() - start_time) * 1000
+        logger.info("rule_analysis_completed_in_ms")
 
     except Exception as e:
-        logger.error(f"❌ Error in rule analysis: {e}")
+        logger.error("error_in_rule_analysis", e=e)
         state.analysis_steps.append(f"Error in rule analysis: {str(e)}")
 
     return state
@@ -93,18 +93,18 @@ async def select_validation_strategy(state: EngineState) -> EngineState:
 
                 logger.info(f"🎯 Rule '{rule_desc.description[:50]}...' using {rule_desc.validation_strategy} strategy")
                 if rule_desc.validator_name:
-                    logger.info(f"🎯 Selected validator: {rule_desc.validator_name}")
+                    logger.info("selected_validator", validator_name=rule_desc.validator_name)
 
             except Exception as e:
                 logger.warning(f"⚠️ LLM strategy selection failed for rule '{rule_desc.description[:50]}...': {e}")
                 rule_desc.validation_strategy = ValidationStrategy.HYBRID
                 rule_desc.validator_name = None
 
-        strategy_time = (time.time() - start_time) * 1000
-        logger.info(f"🎯 Strategy selection completed in {strategy_time:.2f}ms")
+        (time.time() - start_time) * 1000
+        logger.info("strategy_selection_completed_in_ms")
 
     except Exception as e:
-        logger.error(f"❌ Error in validation strategy selection: {e}")
+        logger.error("error_in_validation_strategy_selection", e=e)
         state.analysis_steps.append(f"Error in strategy selection: {str(e)}")
 
     return state
@@ -123,7 +123,7 @@ async def execute_validator_evaluation(state: EngineState) -> EngineState:
         logger.info(f"⚡ Executing {len(validator_rules)} validator evaluations")
 
         if not validator_rules:
-            logger.info("⚡ No validator rules to evaluate")
+            logger.info("no_validator_rules_to_evaluate")
             return state
 
         # Execute validators concurrently
@@ -154,11 +154,11 @@ async def execute_validator_evaluation(state: EngineState) -> EngineState:
                     if validator_name:
                         state.validator_usage[validator_name] = state.validator_usage.get(validator_name, 0) + 1
 
-        validator_time = (time.time() - start_time) * 1000
-        logger.info(f"⚡ Validator evaluation completed in {validator_time:.2f}ms")
+        (time.time() - start_time) * 1000
+        logger.info("validator_evaluation_completed_in_ms")
 
     except Exception as e:
-        logger.error(f"❌ Error in validator evaluation: {e}")
+        logger.error("error_in_validator_evaluation", e=e)
         state.analysis_steps.append(f"Error in validator evaluation: {str(e)}")
 
     return state
@@ -179,7 +179,7 @@ async def execute_llm_fallback(state: EngineState) -> EngineState:
         logger.info(f"🧠 Executing {len(llm_rules)} LLM evaluations")
 
         if not llm_rules:
-            logger.info("🧠 No LLM rules to evaluate")
+            logger.info("no_llm_rules_to_evaluate")
             return state
 
         # Execute LLM evaluations concurrently (with rate limiting)
@@ -217,11 +217,11 @@ async def execute_llm_fallback(state: EngineState) -> EngineState:
         # Track LLM usage
         state.llm_usage = len(llm_rules)
 
-        llm_time = (time.time() - start_time) * 1000
-        logger.info(f"🧠 LLM evaluation completed in {llm_time:.2f}ms")
+        (time.time() - start_time) * 1000
+        logger.info("llm_evaluation_completed_in_ms")
 
     except Exception as e:
-        logger.error(f"❌ Error in LLM evaluation: {e}")
+        logger.error("error_in_llm_evaluation", e=e)
         state.analysis_steps.append(f"Error in LLM evaluation: {str(e)}")
 
     return state
@@ -328,7 +328,7 @@ async def _generate_dynamic_how_to_fix(
         return how_to_fix_result.how_to_fix
 
     except Exception as e:
-        logger.error(f"❌ Error generating how to fix message: {e}")
+        logger.error("error_generating_how_to_fix_message", e=e)
         # Fallback to generic message
         return f"Review and address the requirements for rule: {rule_desc.description}"
 

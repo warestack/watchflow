@@ -1,16 +1,16 @@
 import base64
-import logging
 import time
 from typing import Any
 
 import aiohttp
 import httpx
 import jwt
+import structlog
 from cachetools import TTLCache
 
 from src.core.config import config
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class GitHubClient:
@@ -35,7 +35,7 @@ class GitHubClient:
         Caches the token to avoid regenerating it for every request.
         """
         if installation_id in self._token_cache:
-            logger.debug(f"Using cached installation token for installation_id {installation_id}.")
+            logger.debug("using_cached_installation_token_for_installationid", installation_id=installation_id)
             return self._token_cache[installation_id]
 
         jwt_token = self._generate_jwt()
@@ -51,7 +51,7 @@ class GitHubClient:
                 data = await response.json()
                 token = data["token"]
                 self._token_cache[installation_id] = token
-                logger.info(f"Generated new installation token for installation_id {installation_id}.")
+                logger.info("generated_new_installation_token_for_installationid", installation_id=installation_id)
                 return token
             else:
                 error_text = await response.text()
@@ -78,10 +78,10 @@ class GitHubClient:
         session = await self._get_session()
         async with session.get(url, headers=headers) as response:
             if response.status == 200:
-                logger.info(f"Successfully fetched file '{file_path}' from '{repo_full_name}'.")
+                logger.info("successfully_fetched_file_from", file_path=file_path, repo_full_name=repo_full_name)
                 return await response.text()
             elif response.status == 404:
-                logger.info(f"File '{file_path}' not found in '{repo_full_name}'.")
+                logger.info("file_not_found_in", file_path=file_path, repo_full_name=repo_full_name)
                 return None
             else:
                 error_text = await response.text()
@@ -125,7 +125,7 @@ class GitHubClient:
             # Then get check runs for that SHA
             return await self.get_check_runs(repo_full_name, head_sha, installation_id)
         except Exception as e:
-            logger.error(f"Error getting checks for PR #{pr_number} in {repo_full_name}: {e}")
+            logger.error("error_getting_checks_for_pr_in", pr_number=pr_number, repo_full_name=repo_full_name, e=e)
             return []
 
     async def get_user_teams(self, repo: str, username: str, installation_id: int) -> list:
@@ -160,7 +160,7 @@ class GitHubClient:
         try:
             token = await self.get_installation_access_token(installation_id)
             if not token:
-                logger.error(f"Failed to get installation token for {installation_id}")
+                logger.error("failed_to_get_installation_token_for", installation_id=installation_id)
                 return {}
 
             headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
@@ -172,16 +172,20 @@ class GitHubClient:
             async with session.post(url, headers=headers, json=data) as response:
                 if response.status == 201:
                     result = await response.json()
-                    logger.info(f"Created comment on PR #{pr_number} in {repo}")
+                    logger.info("created_comment_on_pr_in", pr_number=pr_number, repo=repo)
                     return result
                 else:
                     error_text = await response.text()
                     logger.error(
-                        f"Failed to create comment on PR #{pr_number} in {repo}. Status: {response.status}, Response: {error_text}"
+                        "failed_to_create_comment_on_pr",
+                        pr_number=pr_number,
+                        repo=repo,
+                        status=response.status,
+                        error_text=error_text,
                     )
                     return {}
         except Exception as e:
-            logger.error(f"Error creating comment on PR #{pr_number} in {repo}: {e}")
+            logger.error("error_creating_comment_on_pr_in", pr_number=pr_number, repo=repo, e=e)
             return {}
 
     async def create_check_run(
@@ -191,7 +195,7 @@ class GitHubClient:
         try:
             token = await self.get_installation_access_token(installation_id)
             if not token:
-                logger.error(f"Failed to get installation token for {installation_id}")
+                logger.error("failed_to_get_installation_token_for", installation_id=installation_id)
                 return {}
 
             headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
@@ -203,16 +207,20 @@ class GitHubClient:
             async with session.post(url, headers=headers, json=data) as response:
                 if response.status == 201:
                     result = await response.json()
-                    logger.info(f"Created check run '{name}' for {repo}")
+                    logger.info("created_check_run_for", name=name, repo=repo)
                     return result
                 else:
                     error_text = await response.text()
                     logger.error(
-                        f"Failed to create check run '{name}' for {repo}. Status: {response.status}, Response: {error_text}"
+                        "failed_to_create_check_run_for",
+                        name=name,
+                        repo=repo,
+                        status=response.status,
+                        error_text=error_text,
                     )
                     return {}
         except Exception as e:
-            logger.error(f"Error creating check run '{name}' for {repo}: {e}")
+            logger.error("error_creating_check_run_for", name=name, repo=repo, e=e)
             return {}
 
     async def update_check_run(
@@ -222,7 +230,7 @@ class GitHubClient:
         try:
             token = await self.get_installation_access_token(installation_id)
             if not token:
-                logger.error(f"Failed to get installation token for {installation_id}")
+                logger.error("failed_to_get_installation_token_for", installation_id=installation_id)
                 return {}
 
             headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
@@ -234,16 +242,20 @@ class GitHubClient:
             async with session.patch(url, headers=headers, json=data) as response:
                 if response.status == 200:
                     result = await response.json()
-                    logger.info(f"Updated check run {check_run_id} for {repo}")
+                    logger.info("updated_check_run_for", check_run_id=check_run_id, repo=repo)
                     return result
                 else:
                     error_text = await response.text()
                     logger.error(
-                        f"Failed to update check run {check_run_id} for {repo}. Status: {response.status}, Response: {error_text}"
+                        "failed_to_update_check_run_for",
+                        check_run_id=check_run_id,
+                        repo=repo,
+                        status=response.status,
+                        error_text=error_text,
                     )
                     return {}
         except Exception as e:
-            logger.error(f"Error updating check run {check_run_id} for {repo}: {e}")
+            logger.error("error_updating_check_run_for", check_run_id=check_run_id, repo=repo, e=e)
             return {}
 
     async def get_check_runs(self, repo: str, sha: str, installation_id: int) -> list[dict[str, Any]]:
@@ -251,7 +263,7 @@ class GitHubClient:
         try:
             token = await self.get_installation_access_token(installation_id)
             if not token:
-                logger.error(f"Failed to get installation token for {installation_id}")
+                logger.error("failed_to_get_installation_token_for", installation_id=installation_id)
                 return []
 
             headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
@@ -266,11 +278,15 @@ class GitHubClient:
                 else:
                     error_text = await response.text()
                     logger.error(
-                        f"Failed to get check runs for {repo} commit {sha}. Status: {response.status}, Response: {error_text}"
+                        "failed_to_get_check_runs_for",
+                        repo=repo,
+                        sha=sha,
+                        status=response.status,
+                        error_text=error_text,
                     )
                     return []
         except Exception as e:
-            logger.error(f"Error getting check runs for {repo} commit {sha}: {e}")
+            logger.error("error_getting_check_runs_for_commit", repo=repo, sha=sha, e=e)
             return []
 
     async def get_pull_request_reviews(self, repo: str, pr_number: int, installation_id: int) -> list[dict[str, Any]]:
@@ -278,7 +294,7 @@ class GitHubClient:
         try:
             token = await self.get_installation_access_token(installation_id)
             if not token:
-                logger.error(f"Failed to get installation token for {installation_id}")
+                logger.error("failed_to_get_installation_token_for", installation_id=installation_id)
                 return []
 
             headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
@@ -294,11 +310,15 @@ class GitHubClient:
                 else:
                     error_text = await response.text()
                     logger.error(
-                        f"Failed to get reviews for PR #{pr_number} in {repo}. Status: {response.status}, Response: {error_text}"
+                        "failed_to_get_reviews_for_pr",
+                        pr_number=pr_number,
+                        repo=repo,
+                        status=response.status,
+                        error_text=error_text,
                     )
                     return []
         except Exception as e:
-            logger.error(f"Error getting reviews for PR #{pr_number} in {repo}: {e}")
+            logger.error("error_getting_reviews_for_pr_in", pr_number=pr_number, repo=repo, e=e)
             return []
 
     async def get_pull_request_files(self, repo: str, pr_number: int, installation_id: int) -> list[dict[str, Any]]:
@@ -306,7 +326,7 @@ class GitHubClient:
         try:
             token = await self.get_installation_access_token(installation_id)
             if not token:
-                logger.error(f"Failed to get installation token for {installation_id}")
+                logger.error("failed_to_get_installation_token_for", installation_id=installation_id)
                 return []
 
             headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
@@ -322,11 +342,15 @@ class GitHubClient:
                 else:
                     error_text = await response.text()
                     logger.error(
-                        f"Failed to get files for PR #{pr_number} in {repo}. Status: {response.status}, Response: {error_text}"
+                        "failed_to_get_files_for_pr",
+                        pr_number=pr_number,
+                        repo=repo,
+                        status=response.status,
+                        error_text=error_text,
                     )
                     return []
         except Exception as e:
-            logger.error(f"Error getting files for PR #{pr_number} in {repo}: {e}")
+            logger.error("error_getting_files_for_pr_in", pr_number=pr_number, repo=repo, e=e)
             return []
 
     async def create_comment_reply(
@@ -336,7 +360,7 @@ class GitHubClient:
         try:
             token = await self.get_installation_access_token(installation_id)
             if not token:
-                logger.error(f"Failed to get installation token for {installation_id}")
+                logger.error("failed_to_get_installation_token_for", installation_id=installation_id)
                 return {}
 
             headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
@@ -347,16 +371,20 @@ class GitHubClient:
             session = await self._get_session()
             async with session.post(url, headers=headers, json=data) as response:
                 if response.status == 201:
-                    logger.info(f"Added reaction to comment {comment_id} in {repo}")
+                    logger.info("added_reaction_to_comment_in", comment_id=comment_id, repo=repo)
                     return await response.json()
                 else:
                     error_text = await response.text()
                     logger.error(
-                        f"Failed to add reaction to comment {comment_id} in {repo}. Status: {response.status}, Response: {error_text}"
+                        "failed_to_add_reaction_to_comment",
+                        comment_id=comment_id,
+                        repo=repo,
+                        status=response.status,
+                        error_text=error_text,
                     )
                     return {}
         except Exception as e:
-            logger.error(f"Error adding reaction to comment {comment_id} in {repo}: {e}")
+            logger.error("error_adding_reaction_to_comment_in", comment_id=comment_id, repo=repo, e=e)
             return {}
 
     async def create_issue_comment(
@@ -366,7 +394,7 @@ class GitHubClient:
         try:
             token = await self.get_installation_access_token(installation_id)
             if not token:
-                logger.error(f"Failed to get installation token for {installation_id}")
+                logger.error("failed_to_get_installation_token_for", installation_id=installation_id)
                 return {}
 
             headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
@@ -378,16 +406,20 @@ class GitHubClient:
             async with session.post(url, headers=headers, json=data) as response:
                 if response.status == 201:
                     result = await response.json()
-                    logger.info(f"Created comment on issue #{issue_number} in {repo}")
+                    logger.info("created_comment_on_issue_in", issue_number=issue_number, repo=repo)
                     return result
                 else:
                     error_text = await response.text()
                     logger.error(
-                        f"Failed to create comment on issue #{issue_number} in {repo}. Status: {response.status}, Response: {error_text}"
+                        "failed_to_create_comment_on_issue",
+                        issue_number=issue_number,
+                        repo=repo,
+                        status=response.status,
+                        error_text=error_text,
                     )
                     return {}
         except Exception as e:
-            logger.error(f"Error creating comment on issue #{issue_number} in {repo}: {e}")
+            logger.error("error_creating_comment_on_issue_in", issue_number=issue_number, repo=repo, e=e)
             return {}
 
     async def get_pull_request(self, repo: str, pr_number: int, installation_id: int) -> dict:
@@ -395,7 +427,7 @@ class GitHubClient:
         try:
             token = await self.get_installation_access_token(installation_id)
             if not token:
-                logger.error(f"Failed to get installation token for {installation_id}")
+                logger.error("failed_to_get_installation_token_for", installation_id=installation_id)
                 return {}
 
             headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
@@ -406,16 +438,20 @@ class GitHubClient:
             async with session.get(url, headers=headers) as response:
                 if response.status == 200:
                     result = await response.json()
-                    logger.info(f"Retrieved PR #{pr_number} details from {repo}")
+                    logger.info("retrieved_pr_details_from", pr_number=pr_number, repo=repo)
                     return result
                 else:
                     error_text = await response.text()
                     logger.error(
-                        f"Failed to get PR #{pr_number} from {repo}. Status: {response.status}, Response: {error_text}"
+                        "failed_to_get_pr_from_status",
+                        pr_number=pr_number,
+                        repo=repo,
+                        status=response.status,
+                        error_text=error_text,
                     )
                     return None
         except Exception as e:
-            logger.error(f"Error getting PR #{pr_number} from {repo}: {e}")
+            logger.error("error_getting_pr_from", pr_number=pr_number, repo=repo, e=e)
             return {}
 
     async def create_deployment_status(
@@ -432,7 +468,7 @@ class GitHubClient:
         try:
             token = await self.get_installation_access_token(installation_id)
             if not token:
-                logger.error(f"Failed to get installation token for {installation_id}")
+                logger.error("failed_to_get_installation_token_for", installation_id=installation_id)
                 return None
 
             headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
@@ -444,16 +480,20 @@ class GitHubClient:
             async with session.post(url, headers=headers, json=data) as response:
                 if response.status == 201:
                     result = await response.json()
-                    logger.info(f"Created deployment status for deployment {deployment_id} in {repo}")
+                    logger.info("created_deployment_status_for_deployment_in", deployment_id=deployment_id, repo=repo)
                     return result
                 else:
                     error_text = await response.text()
                     logger.error(
-                        f"Failed to create deployment status for deployment {deployment_id} in {repo}. Status: {response.status}, Response: {error_text}"
+                        "failed_to_create_deployment_status_for",
+                        deployment_id=deployment_id,
+                        repo=repo,
+                        status=response.status,
+                        error_text=error_text,
                     )
                     return None
         except Exception as e:
-            logger.error(f"Error creating deployment status for deployment {deployment_id} in {repo}: {e}")
+            logger.error("error_creating_deployment_status_for_deployment", deployment_id=deployment_id, repo=repo, e=e)
             return None
 
     async def review_deployment_protection_rule(
@@ -463,7 +503,7 @@ class GitHubClient:
         try:
             token = await self.get_installation_access_token(installation_id)
             if not token:
-                logger.error(f"Failed to get installation token for {installation_id} to review deployment.")
+                logger.error("failed_to_get_installation_token_for", installation_id=installation_id)
                 return None
 
             headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
@@ -476,7 +516,7 @@ class GitHubClient:
             session = await self._get_session()
             async with session.post(callback_url, headers=headers, json=data) as response:
                 if response.status in [200, 204]:  # 204 No Content is also a success
-                    logger.info(f"Successfully reviewed deployment protection rule with state {state}.")
+                    logger.info("successfully_reviewed_deployment_protection_rule_with", state=state)
                     if response.status == 200:
                         return await response.json()
                     else:
@@ -484,13 +524,16 @@ class GitHubClient:
                 else:
                     error_text = await response.text()
                     logger.error(
-                        f"Failed to review deployment protection rule for environment {environment}. Status: {response.status}, Response: {error_text}"
+                        "failed_to_review_deployment_protection_rule",
+                        environment=environment,
+                        status=response.status,
+                        error_text=error_text,
                     )
-                    logger.error(f"Request URL: {callback_url}")
-                    logger.error(f"Request payload: {data}")
+                    logger.error("request_url", callback_url=callback_url)
+                    logger.error("request_payload", data=data)
                     return None
         except Exception as e:
-            logger.error(f"Error reviewing deployment protection rule: {e}")
+            logger.error("error_reviewing_deployment_protection_rule", e=e)
             return None
 
     async def get_issue_comments(self, repo: str, issue_number: int, installation_id: int) -> list[dict[str, Any]]:
@@ -498,7 +541,7 @@ class GitHubClient:
         try:
             token = await self.get_installation_access_token(installation_id)
             if not token:
-                logger.error(f"Failed to get installation token for {installation_id}")
+                logger.error("failed_to_get_installation_token_for", installation_id=installation_id)
                 return []
 
             headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
@@ -514,11 +557,15 @@ class GitHubClient:
                 else:
                     error_text = await response.text()
                     logger.error(
-                        f"Failed to get comments for issue #{issue_number} in {repo}. Status: {response.status}, Response: {error_text}"
+                        "failed_to_get_comments_for_issue",
+                        issue_number=issue_number,
+                        repo=repo,
+                        status=response.status,
+                        error_text=error_text,
                     )
                     return []
         except Exception as e:
-            logger.error(f"Error getting comments for issue #{issue_number} in {repo}: {e}")
+            logger.error("error_getting_comments_for_issue_in", issue_number=issue_number, repo=repo, e=e)
             return []
 
     async def update_deployment_status(
@@ -539,16 +586,16 @@ class GitHubClient:
             async with session.post(callback_url, headers=headers, json=data) as response:
                 if response.status == 200:
                     result = await response.json()
-                    logger.info(f"Updated deployment status to {state}")
+                    logger.info("updated_deployment_status_to", state=state)
                     return result
                 else:
                     error_text = await response.text()
                     logger.error(
-                        f"Failed to update deployment status. Status: {response.status}, Response: {error_text}"
+                        "failed_to_update_deployment_status_status", status=response.status, error_text=error_text
                     )
                     return None
         except Exception as e:
-            logger.error(f"Error updating deployment status: {e}")
+            logger.error("error_updating_deployment_status", e=e)
             return None
 
     async def get_repository_contributors(self, repo: str, installation_id: int) -> list[dict[str, Any]]:
@@ -574,7 +621,7 @@ class GitHubClient:
             else:
                 error_text = await response.text()
                 logger.error(
-                    f"Failed to get contributors for {repo}. Status: {response.status}, Response: {error_text}"
+                    "failed_to_get_contributors_for_status", repo=repo, status=response.status, error_text=error_text
                 )
                 return []
 
@@ -603,7 +650,11 @@ class GitHubClient:
             else:
                 error_text = await response.text()
                 logger.error(
-                    f"Failed to get commits by {username} in {repo}. Status: {response.status}, Response: {error_text}"
+                    "failed_to_get_commits_by_in",
+                    username=username,
+                    repo=repo,
+                    status=response.status,
+                    error_text=error_text,
                 )
                 return []
 
@@ -632,7 +683,11 @@ class GitHubClient:
             else:
                 error_text = await response.text()
                 logger.error(
-                    f"Failed to get PRs by {username} in {repo}. Status: {response.status}, Response: {error_text}"
+                    "failed_to_get_prs_by_in",
+                    username=username,
+                    repo=repo,
+                    status=response.status,
+                    error_text=error_text,
                 )
                 return []
 
@@ -663,7 +718,11 @@ class GitHubClient:
             else:
                 error_text = await response.text()
                 logger.error(
-                    f"Failed to get issues by {username} in {repo}. Status: {response.status}, Response: {error_text}"
+                    "failed_to_get_issues_by_in",
+                    username=username,
+                    repo=repo,
+                    status=response.status,
+                    error_text=error_text,
                 )
                 return []
 
@@ -695,7 +754,7 @@ class GitHubClient:
             decoded_key = base64.b64decode(config.github.private_key).decode("utf-8")
             return decoded_key
         except Exception as e:
-            logger.error(f"Failed to decode private key: {e}")
+            logger.error("failed_to_decode_private_key", e=e)
             raise ValueError("Invalid private key format. Expected base64-encoded PEM key.") from e
 
 

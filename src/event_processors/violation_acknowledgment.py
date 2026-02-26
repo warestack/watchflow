@@ -1,7 +1,8 @@
-import logging
 import re
 import time
 from typing import Any
+
+import structlog
 
 from src.agents.acknowledgment_agent.agent import AcknowledgmentAgent
 from src.agents.engine_agent.agent import RuleEngineAgent
@@ -9,7 +10,7 @@ from src.core.models import EventType
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.tasks.task_queue import Task
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 # Add at the top
 acknowledged_prs = set()
@@ -47,8 +48,8 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             commenter = event_data.get("comment", {}).get("user", {}).get("login")
 
             logger.info("=" * 80)
-            logger.info(f"🔍 Processing VIOLATION ACKNOWLEDGMENT for {repo}#{pr_number}")
-            logger.info(f"    Commenter: {commenter}")
+            logger.info("processing_violation_acknowledgment_for", repo=repo, pr_number=pr_number)
+            logger.info("commenter", commenter=commenter)
             logger.info(f"    Comment: {comment_body[:100]}...")
             logger.info("=" * 80)
 
@@ -56,7 +57,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             acknowledgment_reason = self._extract_acknowledgment_reason(comment_body)
 
             if not acknowledgment_reason:
-                logger.info("❌ No valid acknowledgment reason found in comment")
+                logger.info("no_valid_acknowledgment_reason_found_in")
 
                 # Post a helpful comment explaining what went wrong
                 help_comment = (
@@ -86,7 +87,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             api_calls += 1
 
             if not github_token:
-                logger.error(f"❌ Failed to get installation token for {installation_id}")
+                logger.error("failed_to_get_installation_token_for", installation_id=installation_id)
                 return ProcessingResult(
                     success=False,
                     violations=[],
@@ -168,7 +169,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             # Note: Rule Engine returns success=False when violations are found, which is correct
             # We need to check if there's actual data to determine if the analysis worked
             if not analysis_result.data or "evaluation_result" not in analysis_result.data:
-                logger.warning(f"⚠️ Rule analysis failed: {analysis_result.message}")
+                logger.warning("rule_analysis_failed", message=analysis_result.message)
                 await self._post_comment(
                     repo,
                     pr_number,
@@ -187,7 +188,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
                 )
 
             if not all_violations:
-                logger.info("✅ No violations found - acknowledgment not needed")
+                logger.info("no_violations_found_acknowledgment_not_needed")
                 await self._post_comment(
                     repo, pr_number, installation_id, "✅ No rule violations detected. Acknowledgment not needed."
                 )
@@ -259,7 +260,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
 
             processing_time = int((time.time() - start_time) * 1000)
             logger.info("=" * 80)
-            logger.info(f"🏁 VIOLATION ACKNOWLEDGMENT processing completed in {processing_time}ms")
+            logger.info("violation_acknowledgment_processing_completed_in_ms", processing_time=processing_time)
             logger.info(f"    Status: {'accepted' if evaluation_result['valid'] else 'rejected'}")
             logger.info("=" * 80)
 
@@ -300,7 +301,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
 
     def _extract_acknowledgment_reason(self, comment_body: str) -> str:
         """Extract acknowledgment reason from comment."""
-        logger.info(f"🔍 Extracting acknowledgment reason from: '{comment_body}'")
+        logger.info("extracting_acknowledgment_reason_from", comment_body=comment_body)
 
         # Look for acknowledgment patterns with better quote handling
         patterns = [
@@ -314,7 +315,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             r"/bypass\s+(.+)",
         ]
 
-        for i, pattern in enumerate(patterns):
+        for _i, pattern in enumerate(patterns):
             match = re.search(pattern, comment_body, re.IGNORECASE | re.DOTALL)
             if match:
                 # For patterns with quotes, group 2 contains the reason
@@ -324,13 +325,13 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
                 else:
                     reason = match.group(1).strip()
 
-                logger.info(f"✅ Pattern {i + 1} matched! Reason: '{reason}'")
+                logger.info("pattern_matched_reason", reason=reason)
                 if reason:  # Make sure we got a non-empty reason
                     return reason
             else:
-                logger.info(f"❌ Pattern {i + 1} did not match")
+                logger.info("pattern_did_not_match")
 
-        logger.info("❌ No patterns matched for acknowledgment reason")
+        logger.info("no_patterns_matched_for_acknowledgment_reason")
         return ""
 
     async def _evaluate_acknowledgment(
@@ -345,7 +346,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
         Use intelligent LLM-based evaluation to determine which violations can be acknowledged vs. require fixes.
         """
         try:
-            logger.info("🧠 Using intelligent acknowledgment agent for evaluation")
+            logger.info("using_intelligent_acknowledgment_agent_for_evaluation")
 
             # Use the rules parameter that was passed in (already formatted)
             # Don't fetch rules again - use the ones passed from the calling method
@@ -360,7 +361,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             )
 
             if not agent_result.success:
-                logger.error(f"🧠 Acknowledgment agent failed: {agent_result.message}")
+                logger.error("acknowledgment_agent_failed", message=agent_result.message)
                 return {
                     "valid": False,
                     "acknowledgable_violations": [],
@@ -379,12 +380,12 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             confidence = evaluation_data.get("confidence", 0.5)
             recommendations = evaluation_data.get("recommendations", [])
 
-            logger.info("🧠 Intelligent evaluation completed:")
-            logger.info(f"    Valid: {is_valid}")
-            logger.info(f"    Reasoning: {reasoning}")
+            logger.info("intelligent_evaluation_completed")
+            logger.info("valid", is_valid=is_valid)
+            logger.info("reasoning", reasoning=reasoning)
             logger.info(f"    Acknowledged violations: {len(acknowledgable_violations)}")
             logger.info(f"    Require fixes: {len(require_fixes)}")
-            logger.info(f"    Confidence: {confidence}")
+            logger.info("confidence", confidence=confidence)
 
             return {
                 "valid": is_valid,
@@ -401,7 +402,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             }
 
         except Exception as e:
-            logger.error(f"🧠 Error in intelligent acknowledgment evaluation: {e}")
+            logger.error("error_in_intelligent_acknowledgment_evaluation", e=e)
             return {
                 "valid": False,
                 "acknowledgable_violations": [],
@@ -569,7 +570,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             sha = pr_data.get("head", {}).get("sha")
 
             if not sha:
-                logger.warning("No commit SHA found, skipping check run update")
+                logger.warning("no_commit_sha_found_skipping_check")
                 return
 
             # The acknowledgable_violations and require_fixes are already passed as parameters
@@ -603,7 +604,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
                 logger.error(f"❌ Failed to update check run for commit {sha[:8]}")
 
         except Exception as e:
-            logger.error(f"Error updating check run: {e}")
+            logger.error("error_updating_check_run", e=e)
 
     def _format_check_run_output(
         self, acknowledgable_violations: list[dict[str, Any]], require_fixes: list[dict[str, Any]]

@@ -3,10 +3,10 @@ Rule Supervisor Agent for coordinating multiple specialized agents.
 """
 
 import asyncio
-import logging
 import time
 from typing import Any
 
+import structlog
 from langgraph.graph import END, START, StateGraph
 
 from src.agents.acknowledgment_agent import AcknowledgmentAgent
@@ -16,7 +16,7 @@ from src.agents.feasibility_agent import RuleFeasibilityAgent
 from src.agents.supervisor_agent.models import AgentTask, SupervisorAgentResult, SupervisorState
 from src.agents.supervisor_agent.nodes import coordinate_agents, synthesize_final_result, validate_results
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class RuleSupervisorAgent(SupervisorAgent):
@@ -43,8 +43,8 @@ class RuleSupervisorAgent(SupervisorAgent):
         }
 
         logger.info(f"🔧 RuleSupervisorAgent initialized with {len(self.sub_agents)} sub-agents")
-        logger.info(f"🔧 Max concurrent agents: {max_concurrent_agents}")
-        logger.info(f"🔧 Timeout: {timeout}s")
+        logger.info("max_concurrent_agents", max_concurrent_agents=max_concurrent_agents)
+        logger.info("timeout_s", timeout=timeout)
 
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph workflow for supervisor coordination."""
@@ -61,7 +61,7 @@ class RuleSupervisorAgent(SupervisorAgent):
         workflow.add_edge("validate_results", "synthesize_final_result")
         workflow.add_edge("synthesize_final_result", END)
 
-        logger.info("🔧 RuleSupervisorAgent graph built with coordination workflow")
+        logger.info("rulesupervisoragent_graph_built_with_coordination_workflow")
         return workflow.compile()
 
     async def execute(
@@ -73,7 +73,7 @@ class RuleSupervisorAgent(SupervisorAgent):
         start_time = time.time()
 
         try:
-            logger.info(f"🚀 RuleSupervisorAgent starting coordinated evaluation for {event_type}")
+            logger.info("rulesupervisoragent_starting_coordinated_evaluation_for", event_type=event_type)
             logger.info(f"🚀 Processing {len(rules)} rules with {len(self.sub_agents)} agents")
 
             # Prepare initial state
@@ -89,7 +89,7 @@ class RuleSupervisorAgent(SupervisorAgent):
             result = await self._execute_with_timeout(self.graph.ainvoke(initial_state), timeout=self.timeout)
 
             execution_time = time.time() - start_time
-            logger.info(f"✅ RuleSupervisorAgent coordination completed in {execution_time:.2f}s")
+            logger.info("rulesupervisoragent_coordination_completed_in_s")
 
             # Extract coordination result
             coordination_result = result.get("coordination_result")
@@ -114,7 +114,7 @@ class RuleSupervisorAgent(SupervisorAgent):
 
         except TimeoutError:
             execution_time = time.time() - start_time
-            logger.error(f"⏰ RuleSupervisorAgent coordination timed out after {execution_time:.2f}s")
+            logger.error("rulesupervisoragent_coordination_timed_out_after_s")
             return AgentResult(
                 success=False,
                 message=f"Supervisor coordination timed out after {self.timeout}s",
@@ -128,7 +128,7 @@ class RuleSupervisorAgent(SupervisorAgent):
 
         except Exception as e:
             execution_time = time.time() - start_time
-            logger.error(f"❌ RuleSupervisorAgent coordination failed: {e}")
+            logger.error("rulesupervisoragent_coordination_failed", e=e)
             return AgentResult(
                 success=False,
                 message=f"Supervisor coordination failed: {str(e)}",
@@ -141,7 +141,7 @@ class RuleSupervisorAgent(SupervisorAgent):
         Coordinate multiple agents to complete a complex task.
         """
         try:
-            logger.info(f"🔧 Coordinating agents for task: {task}")
+            logger.info("coordinating_agents_for_task", task=task)
 
             # Create tasks for each sub-agent
             tasks = []
@@ -162,7 +162,7 @@ class RuleSupervisorAgent(SupervisorAgent):
             agent_results = []
             for result in results:
                 if isinstance(result, Exception):
-                    logger.error(f"❌ Agent task failed: {result}")
+                    logger.error("agent_task_failed", result=result)
                     agent_results.append(
                         SupervisorAgentResult(success=False, message=f"Agent task failed: {str(result)}", data={})
                     )
@@ -177,7 +177,7 @@ class RuleSupervisorAgent(SupervisorAgent):
             )
 
         except Exception as e:
-            logger.error(f"❌ Agent coordination failed: {e}")
+            logger.error("agent_coordination_failed", e=e)
             return AgentResult(
                 success=False,
                 message=f"Agent coordination failed: {str(e)}",
@@ -194,7 +194,7 @@ class RuleSupervisorAgent(SupervisorAgent):
             if not agent:
                 raise Exception(f"Unknown agent: {task.agent_name}")
 
-            logger.info(f"🔧 Executing {task.agent_name} agent for {task.task_type}")
+            logger.info("executing_agent_for", agent_name=task.agent_name, task_type=task.task_type)
 
             # Execute the agent with timeout
             result = await asyncio.wait_for(agent.execute(**task.parameters), timeout=task.timeout)
@@ -211,7 +211,7 @@ class RuleSupervisorAgent(SupervisorAgent):
             )
 
         except TimeoutError:
-            logger.error(f"⏰ {task.agent_name} agent timed out after {task.timeout}s")
+            logger.error("agent_timed_out_after_s", agent_name=task.agent_name, timeout=task.timeout)
             return SupervisorAgentResult(
                 success=False,
                 message=f"{task.agent_name} agent timed out after {task.timeout}s",
@@ -220,7 +220,7 @@ class RuleSupervisorAgent(SupervisorAgent):
             )
 
         except Exception as e:
-            logger.error(f"❌ {task.agent_name} agent failed: {e}")
+            logger.error("agent_failed", agent_name=task.agent_name, e=e)
             return SupervisorAgentResult(
                 success=False,
                 message=f"{task.agent_name} agent failed: {str(e)}",

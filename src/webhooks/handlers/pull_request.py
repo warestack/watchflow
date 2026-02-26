@@ -1,12 +1,13 @@
-import logging
 from typing import Any
+
+import structlog
 
 from src.core.models import WebhookEvent
 from src.rules.utils import validate_rules_yaml_from_repo
 from src.tasks.task_queue import task_queue
 from src.webhooks.handlers.base import EventHandler
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class PullRequestEventHandler(EventHandler):
@@ -17,7 +18,7 @@ class PullRequestEventHandler(EventHandler):
 
     async def handle(self, event: WebhookEvent) -> dict[str, Any]:
         """Handle pull request events by enqueuing them for background processing."""
-        logger.info(f"🔄 Enqueuing pull request event for {event.repo_full_name}")
+        logger.info("enqueuing_pull_request_event", repo_full_name=event.repo_full_name)
 
         # If the pull request is opened, validate the rules.yaml file
         if event.payload.get("action") == "opened":
@@ -36,7 +37,7 @@ class PullRequestEventHandler(EventHandler):
             payload=event.payload,
         )
 
-        logger.info(f"✅ Pull request event enqueued with task ID: {task_id}")
+        logger.info("pull_request_event_enqueued", task_id=task_id)
 
         return {
             "status": "enqueued",

@@ -1,17 +1,17 @@
 import asyncio
 import hashlib
 import json
-import logging
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
+import structlog
 from pydantic import BaseModel
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -102,11 +102,11 @@ class TaskQueue:
 
         # Debug logging for issue_comment events
         if event_type == "issue_comment":
-            logger.info(f"🔍 Event hash debug for {event_type}:")
+            logger.info("event_hash_debug_for", event_type=event_type)
             logger.info(f"    Comment ID: {event_data.get('comment_id')}")
             logger.info(f"    Comment body: {event_data.get('comment_body', '')[:50]}...")
             logger.info(f"    Comment created at: {event_data.get('comment_created_at')}")
-            logger.info(f"    Event hash: {event_hash}")
+            logger.info("event_hash", event_hash=event_hash)
 
         return event_hash
 
@@ -127,7 +127,7 @@ class TaskQueue:
 
         self.tasks[task_id] = task
 
-        logger.info(f"Enqueued task {task_id} for {repo_full_name}")
+        logger.info("enqueued_task_for", task_id=task_id, repo_full_name=repo_full_name)
 
         return task_id
 
@@ -137,7 +137,7 @@ class TaskQueue:
         for i in range(num_workers):
             worker = asyncio.create_task(self._worker(f"worker-{i}"))
             self.workers.append(worker)
-        logger.info(f"Started {num_workers} background workers")
+        logger.info("started_background_workers", num_workers=num_workers)
 
     async def stop_workers(self):
         """Stop background workers."""
@@ -145,11 +145,11 @@ class TaskQueue:
         for worker in self.workers:
             worker.cancel()
         await asyncio.gather(*self.workers, return_exceptions=True)
-        logger.info("Stopped all background workers")
+        logger.info("stopped_all_background_workers")
 
     async def _worker(self, worker_name: str):
         """Background worker that processes tasks."""
-        logger.info(f"Worker {worker_name} started")
+        logger.info("worker_started", worker_name=worker_name)
 
         last_cleanup = datetime.now()
         cleanup_interval = 3600  # Clean up every hour
@@ -173,10 +173,10 @@ class TaskQueue:
                     await asyncio.sleep(1)
 
             except Exception as e:
-                logger.error(f"Worker {worker_name} error: {e}")
+                logger.error("worker_error", worker_name=worker_name, e=e)
                 await asyncio.sleep(5)
 
-        logger.info(f"Worker {worker_name} stopped")
+        logger.info("worker_stopped", worker_name=worker_name)
 
     async def _process_task(self, task: Task, worker_name: str):
         """Process a single task."""
@@ -184,7 +184,7 @@ class TaskQueue:
             task.status = TaskStatus.RUNNING
             task.started_at = datetime.now()
 
-            logger.info(f"Worker {worker_name} processing task {task.id}")
+            logger.info("worker_processing_task", worker_name=worker_name, id=task.id)
 
             # Get the appropriate processor
             processor = self._get_processor(task.event_type)
@@ -194,13 +194,13 @@ class TaskQueue:
             task.completed_at = datetime.now()
             task.result = result.__dict__ if hasattr(result, "__dict__") else result
 
-            logger.info(f"Task {task.id} completed successfully")
+            logger.info("task_completed_successfully", id=task.id)
 
         except Exception as e:
             task.status = TaskStatus.FAILED
             task.completed_at = datetime.now()
             task.error = str(e)
-            logger.error(f"Task {task.id} failed: {e}")
+            logger.error("task_failed", id=task.id, e=e)
 
     def cleanup_old_tasks(self, max_age_hours: int = 24):
         """Clean up old completed tasks and their event hashes to prevent memory leaks."""

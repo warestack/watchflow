@@ -1,11 +1,12 @@
-import logging
 from typing import Any
+
+import structlog
 
 from src.core.models import EventType, WebhookEvent
 from src.tasks.task_queue import task_queue
 from src.webhooks.handlers.base import EventHandler
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class DeploymentEventHandler(EventHandler):
@@ -21,15 +22,15 @@ class DeploymentEventHandler(EventHandler):
         installation_id = payload.get("installation", {}).get("id")
 
         if not installation_id:
-            logger.error(f"No installation ID found in deployment event for {repo_full_name}")
+            logger.error("no_installation_id_found_in_deployment", repo_full_name=repo_full_name)
             return {"status": "error", "message": "Missing installation ID"}
 
         # Extract deployment info
         deployment = payload.get("deployment", {})
         environment = deployment.get("environment", "unknown")
 
-        logger.info(f"🔄 Enqueuing deployment event for {repo_full_name}")
-        logger.info(f"   Environment: {environment}")
+        logger.info("enqueuing_deployment_event_for", repo_full_name=repo_full_name)
+        logger.info("environment", environment=environment)
         logger.info(f"   Ref: {deployment.get('ref', 'unknown')}")
 
         # Enqueue the task using the global task_queue
@@ -37,7 +38,7 @@ class DeploymentEventHandler(EventHandler):
             event_type="deployment", repo_full_name=repo_full_name, installation_id=installation_id, payload=payload
         )
 
-        logger.info(f"✅ Deployment event enqueued with task ID: {task_id}")
+        logger.info("deployment_event_enqueued_with_task_id", task_id=task_id)
 
         return {
             "status": "success",

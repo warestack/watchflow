@@ -2,15 +2,14 @@
 LangGraph nodes for the Rule Feasibility Agent with enhanced error handling.
 """
 
-import logging
-
+import structlog
 from langchain_openai import ChatOpenAI
 
 from src.agents.feasibility_agent.models import FeasibilityAnalysis, FeasibilityState, YamlGeneration
 from src.agents.feasibility_agent.prompts import RULE_FEASIBILITY_PROMPT, YAML_GENERATION_PROMPT
 from src.core.config import config
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 async def analyze_rule_feasibility(state: FeasibilityState) -> FeasibilityState:
@@ -43,13 +42,13 @@ async def analyze_rule_feasibility(state: FeasibilityState) -> FeasibilityState:
         state.feedback = result.feedback
         state.analysis_steps = result.analysis_steps
 
-        logger.info(f"🔍 Rule feasibility analysis completed: {state.is_feasible}")
-        logger.info(f"🔍 Rule type identified: {state.rule_type}")
-        logger.info(f"🔍 Confidence score: {state.confidence_score}")
+        logger.info("rule_feasibility_analysis_completed", is_feasible=state.is_feasible)
+        logger.info("rule_type_identified", rule_type=state.rule_type)
+        logger.info("confidence_score", confidence_score=state.confidence_score)
         logger.info(f"🔍 Analysis steps: {len(state.analysis_steps)} steps")
 
     except Exception as e:
-        logger.error(f"❌ Error in rule feasibility analysis: {e}")
+        logger.error("error_in_rule_feasibility_analysis", e=e)
         state.is_feasible = False
         state.feedback = f"Analysis failed: {str(e)}"
         state.confidence_score = 0.0
@@ -64,7 +63,7 @@ async def generate_yaml_config(state: FeasibilityState) -> FeasibilityState:
     This node only runs if the rule is feasible.
     """
     if not state.is_feasible or not state.rule_type:
-        logger.info("🔧 Skipping YAML generation - rule not feasible or no rule type")
+        logger.info("skipping_yaml_generation_rule_not_feasible")
         return state
 
     try:
@@ -89,14 +88,14 @@ async def generate_yaml_config(state: FeasibilityState) -> FeasibilityState:
 
         # Basic validation of generated YAML
         if not state.yaml_content or len(state.yaml_content) < 10:
-            logger.warning("⚠️ Generated YAML seems too short, may be invalid")
+            logger.warning("generated_yaml_seems_too_short_may")
             state.feedback += "\nWarning: Generated YAML may be incomplete"
 
-        logger.info(f"🔧 YAML configuration generated for rule type: {state.rule_type}")
+        logger.info("yaml_configuration_generated_for_rule_type", rule_type=state.rule_type)
         logger.info(f"🔧 Generated YAML length: {len(state.yaml_content)} characters")
 
     except Exception as e:
-        logger.error(f"❌ Error generating YAML configuration: {e}")
+        logger.error("error_generating_yaml_configuration", e=e)
         state.feedback += f"\nYAML generation failed: {str(e)}"
         state.yaml_content = ""
 

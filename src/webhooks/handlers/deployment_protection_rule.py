@@ -1,10 +1,10 @@
-import logging
+import structlog
 
 from src.core.models import WebhookEvent
 from src.tasks.task_queue import task_queue
 from src.webhooks.handlers.base import EventHandler
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class DeploymentProtectionRuleEventHandler(EventHandler):
@@ -15,7 +15,7 @@ class DeploymentProtectionRuleEventHandler(EventHandler):
 
     async def handle(self, event: WebhookEvent):
         """Handle deployment protection rule events by enqueuing them for background processing."""
-        logger.info(f"🔄 Enqueuing deployment protection rule event for {event.repo_full_name}")
+        logger.info("enqueuing_deployment_protection_rule_event", repo_full_name=event.repo_full_name)
 
         task_id = await task_queue.enqueue(
             event_type="deployment_protection_rule",
@@ -24,7 +24,7 @@ class DeploymentProtectionRuleEventHandler(EventHandler):
             payload=event.payload,
         )
 
-        logger.info(f"✅ Deployment protection rule event enqueued with task ID: {task_id}")
+        logger.info("deployment_protection_rule_event_enqueued", task_id=task_id)
 
         return {
             "status": "enqueued",
