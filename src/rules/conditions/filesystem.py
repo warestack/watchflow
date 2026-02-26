@@ -241,7 +241,9 @@ class MaxPrLocCondition(BaseCondition):
         parameters = context.get("parameters", {})
         event = context.get("event", {})
 
-        max_lines = parameters.get("max_lines") or parameters.get("max_pr_loc") or parameters.get("max_changed_lines") or 0
+        max_lines = (
+            parameters.get("max_lines") or parameters.get("max_pr_loc") or parameters.get("max_changed_lines") or 0
+        )
         if not max_lines:
             logger.debug("MaxPrLocCondition: No max_lines specified, skipping validation")
             return []
@@ -266,7 +268,9 @@ class MaxPrLocCondition(BaseCondition):
 
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         """Legacy validation interface for backward compatibility."""
-        max_lines = parameters.get("max_lines") or parameters.get("max_pr_loc") or parameters.get("max_changed_lines") or 0
+        max_lines = (
+            parameters.get("max_lines") or parameters.get("max_pr_loc") or parameters.get("max_changed_lines") or 0
+        )
         if not max_lines:
             return True
 
