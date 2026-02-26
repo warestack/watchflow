@@ -100,9 +100,9 @@ affinity: {}
 
 # Application secrets configuration - only the required ones (no defaults in config.py)
 secrets:
-  APP_NAME_GITHUB: ""
-  CLIENT_ID_GITHUB: ""
-  APP_CLIENT_SECRET: ""
+  APP_NAME_GITHUB: "watchflow"
+  APP_CLIENT_ID_GITHUB: ""
+  APP_CLIENT_SECRET_GITHUB: ""
   PRIVATE_KEY_BASE64_GITHUB: ""
   WEBHOOK_SECRET_GITHUB: ""
   OPENAI_API_KEY: ""
