@@ -5,8 +5,9 @@ Provides a simple interface to get agents by their type name,
 centralizing agent instantiation for consistency.
 """
 
-import logging
 from typing import Any
+
+import structlog
 
 from src.agents.acknowledgment_agent import AcknowledgmentAgent
 from src.agents.base import BaseAgent
@@ -14,7 +15,7 @@ from src.agents.engine_agent import RuleEngineAgent
 from src.agents.feasibility_agent import RuleFeasibilityAgent
 from src.agents.repository_analysis_agent import RepositoryAnalysisAgent
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 def get_agent(agent_type: str, **kwargs: Any) -> BaseAgent:

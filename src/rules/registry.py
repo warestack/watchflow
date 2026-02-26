@@ -5,7 +5,7 @@ This module maps RuleIDs and parameters to their corresponding Condition classes
 enabling dynamic loading and execution of rules.
 """
 
-import logging
+import structlog
 
 from src.rules.acknowledgment import RuleID
 from src.rules.conditions.access_control import (
@@ -36,7 +36,7 @@ from src.rules.conditions.temporal import (
 )
 from src.rules.conditions.workflow import WorkflowDurationCondition
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 # Map RuleID to Condition classes
 RULE_ID_TO_CONDITION: dict[RuleID, type[BaseCondition]] = {
@@ -111,8 +111,8 @@ class ConditionRegistry:
                 try:
                     condition = condition_cls()
                     matched_conditions.append(condition)
-                    logger.debug(f"Matches condition: {condition_cls.name}")
+                    logger.debug("matches_condition", name=condition_cls.name)
                 except Exception as e:
-                    logger.error(f"Failed to instantiate condition {condition_cls.name}: {e}")
+                    logger.error("failed_to_instantiate_condition", name=condition_cls.name, e=e)
 
         return matched_conditions

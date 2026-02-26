@@ -1,10 +1,10 @@
-import logging
+import structlog
 
 from src.core.models import EventType, WebhookEvent, WebhookResponse
 from src.tasks.task_queue import task_queue
 from src.webhooks.handlers.base import EventHandler
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class DeploymentStatusEventHandler(EventHandler):
@@ -20,7 +20,7 @@ class DeploymentStatusEventHandler(EventHandler):
         installation_id = payload.get("installation", {}).get("id")
 
         if not installation_id:
-            logger.error(f"No installation ID found in deployment_status event for {repo_full_name}")
+            logger.error("no_installation_id_found_in_deploymentstatus", repo_full_name=repo_full_name)
             return WebhookResponse(status="error", detail="Missing installation ID")
 
         # Extract status—fragile if GitHub changes payload structure.
@@ -28,8 +28,8 @@ class DeploymentStatusEventHandler(EventHandler):
         deployment = payload.get("deployment", {})
         state = deployment_status.get("state", "")
 
-        logger.info(f"🔄 Enqueuing deployment status event for {repo_full_name}")
-        logger.info(f"   State: {state}")
+        logger.info("enqueuing_deployment_status_event_for", repo_full_name=repo_full_name)
+        logger.info("state", state=state)
         logger.info(f"   Environment: {deployment.get('environment', 'unknown')}")
 
         from src.event_processors.deployment_status import DeploymentStatusProcessor
@@ -43,7 +43,7 @@ class DeploymentStatusEventHandler(EventHandler):
             payload=payload,
         )
 
-        logger.info(f"✅ Deployment status event enqueued with task ID: {task_id}")
+        logger.info("deployment_status_event_enqueued_with_task", task_id=task_id)
 
         return WebhookResponse(
             status="ok",

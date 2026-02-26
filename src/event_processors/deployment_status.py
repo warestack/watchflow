@@ -1,11 +1,12 @@
-import logging
 import time
 from typing import Any
+
+import structlog
 
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.tasks.task_queue import Task
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class DeploymentStatusProcessor(BaseEventProcessor):
@@ -29,23 +30,23 @@ class DeploymentStatusProcessor(BaseEventProcessor):
         creator = deployment.get("creator", {}).get("login", "")
 
         logger.info("=" * 80)
-        logger.info(f"📊 Processing DEPLOYMENT_STATUS event for {task.repo_full_name}")
-        logger.info(f"   State: {state}")
-        logger.info(f"   Environment: {environment}")
-        logger.info(f"   Creator: {creator}")
+        logger.info("processing_deploymentstatus_event_for", repo_full_name=task.repo_full_name)
+        logger.info("state", state=state)
+        logger.info("environment", environment=environment)
+        logger.info("creator", creator=creator)
         logger.info("=" * 80)
 
         # Log different states for monitoring purposes
         if state == "error":
-            logger.info(f"💥 Deployment to {environment} had an error")
+            logger.info("deployment_to_had_an_error", environment=environment)
         elif state == "waiting":
-            logger.info(f"⏳ Deployment to {environment} is waiting for protection rule review")
+            logger.info("deployment_to_is_waiting_for_protection", environment=environment)
         elif state == "success":
-            logger.info(f"✅ Deployment to {environment} was successful")
+            logger.info("deployment_to_was_successful", environment=environment)
         elif state == "failure":
-            logger.info(f"❌ Deployment to {environment} failed")
+            logger.info("deployment_to_failed", environment=environment)
         else:
-            logger.info(f"📋 Deployment to {environment} has state: {state}")
+            logger.info("deployment_to_has_state", environment=environment, state=state)
 
         logger.info("=" * 80)
         logger.info(f"🏁 DEPLOYMENT_STATUS processing completed in {int((time.time() - start_time) * 1000)}ms")

@@ -1,5 +1,6 @@
-import logging
 import re
+
+import structlog
 
 from src.agents import get_agent
 from src.core.models import EventType, WebhookEvent
@@ -8,7 +9,7 @@ from src.rules.utils import _validate_rules_yaml
 from src.tasks.task_queue import task_queue
 from src.webhooks.handlers.base import EventHandler, WebhookResponse
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class IssueCommentEventHandler(EventHandler):
@@ -34,10 +35,10 @@ class IssueCommentEventHandler(EventHandler):
             # Bot self-reply guard—avoids infinite loop, spam.
             bot_usernames = ["watchflow[bot]", "watchflow-bot", "watchflow", "watchflowbot", "watchflow_bot"]
             if commenter and any(bot_name.lower() in commenter.lower() for bot_name in bot_usernames):
-                logger.info(f"🤖 Ignoring comment from bot user: {commenter}")
+                logger.info("ignoring_comment_from_bot_user", commenter=commenter)
                 return WebhookResponse(status="ignored", detail="Bot comment")
 
-            logger.info(f"👤 Processing comment from human user: {commenter}")
+            logger.info("processing_comment_from_human_user", commenter=commenter)
 
             # Help command—user likely lost/confused.
             if self._is_help_comment(comment_body):
@@ -49,7 +50,7 @@ class IssueCommentEventHandler(EventHandler):
                     "- @watchflow validate — Validate the .watchflow/rules.yaml file.\n"
                     "- @watchflow help — Show this help message.\n"
                 )
-                logger.info("ℹ️ Responding to help command.")
+                logger.info("responding_to_help_command")
                 pr_number = (
                     event.payload.get("issue", {}).get("number")
                     or event.payload.get("pull_request", {}).get("number")
@@ -62,10 +63,10 @@ class IssueCommentEventHandler(EventHandler):
                         comment=help_message,
                         installation_id=installation_id,
                     )
-                    logger.info(f"ℹ️ Posted help message as a comment to PR/issue #{pr_number}.")
+                    logger.info("posted_help_message_as_a_comment", pr_number=pr_number)
                     return WebhookResponse(status="ok")
                 else:
-                    logger.warning("Could not determine PR or issue number to post help message.")
+                    logger.warning("could_not_determine_pr_or_issue")
                     return WebhookResponse(status="ok", detail=help_message)
 
             # Acknowledgment—user wants to mark violation as known/accepted.
@@ -89,7 +90,7 @@ class IssueCommentEventHandler(EventHandler):
                     "violation_acknowledgment",
                     ack_payload,
                 )
-                logger.info(f"✅ Acknowledgment comment enqueued: {result}")
+                logger.info("acknowledgment_comment_enqueued", result=result)
                 return WebhookResponse(
                     status="ok",
                     detail=f"Acknowledgment enqueued with reason: {ack_reason}",
@@ -124,15 +125,15 @@ class IssueCommentEventHandler(EventHandler):
                         comment=comment,
                         installation_id=installation_id,
                     )
-                    logger.info(f"📝 Posted feasibility evaluation result as a comment to PR/issue #{pr_number}.")
+                    logger.info("posted_feasibility_evaluation_result_as_a", pr_number=pr_number)
                     return WebhookResponse(status="ok")
                 else:
-                    logger.warning("Could not determine PR or issue number to post feasibility evaluation result.")
+                    logger.warning("could_not_determine_pr_or_issue")
                     return WebhookResponse(status="ok", detail=comment)
 
             # Validate—user wants rules.yaml sanity check.
             if self._is_validate_comment(comment_body):
-                logger.info("🔍 Processing validate command.")
+                logger.info("processing_validate_command")
                 validation_result = await _validate_rules_yaml(repo, installation_id)
                 pr_number = (
                     event.payload.get("issue", {}).get("number")
@@ -146,15 +147,15 @@ class IssueCommentEventHandler(EventHandler):
                         comment=str(validation_result),
                         installation_id=installation_id,
                     )
-                    logger.info(f"✅ Posted validation result as a comment to PR/issue #{pr_number}.")
+                    logger.info("posted_validation_result_as_a_comment", pr_number=pr_number)
                     return WebhookResponse(status="ok")
                 else:
-                    logger.warning("Could not determine PR or issue number to post validation result.")
+                    logger.warning("could_not_determine_pr_or_issue")
                     return WebhookResponse(status="ok", detail=str(validation_result))
 
             else:
                 # No match—ignore, avoid noise.
-                logger.info("📋 Comment does not match any known patterns - ignoring")
+                logger.info("comment_does_not_match_any_known")
                 return WebhookResponse(status="ignored", detail="No matching patterns")
 
         except Exception as e:
@@ -165,7 +166,7 @@ class IssueCommentEventHandler(EventHandler):
         """Extract the quoted reason from an acknowledgment command, or None if not present."""
         comment_body = comment_body.strip()
 
-        logger.info("extracting_acknowledgment_reason")
+        logger.info("extractingacknowledgmentreason")
 
         # Regex flexibility—users type commands in unpredictable ways.
         patterns = [
@@ -174,18 +175,18 @@ class IssueCommentEventHandler(EventHandler):
             r"@watchflow\s+(acknowledge|ack)\s+([^\n\r]+)",  # No quotes—last resort
         ]
 
-        for i, pattern in enumerate(patterns):
+        for _i, pattern in enumerate(patterns):
             match = re.search(pattern, comment_body, re.IGNORECASE | re.DOTALL)
             if match:
                 # All patterns: group 2 = reason. Brittle if GitHub changes format.
                 reason = match.group(2).strip()
-                logger.info(f"✅ Pattern {i + 1} matched! Reason: '{reason}'")
+                logger.info("pattern_matched_reason", reason=reason)
                 if reason:  # Defensive: skip empty reasons—user typo, bot spam.
                     return reason
             else:
-                logger.info(f"❌ Pattern {i + 1} did not match")
+                logger.info("pattern_did_not_match")
 
-        logger.info("❌ No patterns matched for acknowledgment reason")
+        logger.info("no_patterns_matched_for_acknowledgment_reason")
         return None
 
     def _extract_evaluate_rule(self, comment_body: str) -> str | None:

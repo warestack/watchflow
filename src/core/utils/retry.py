@@ -6,12 +6,13 @@ configurable exponential backoff strategies.
 """
 
 import asyncio
-import logging
 from collections.abc import Awaitable, Callable
 from functools import wraps
 from typing import Any, TypeVar
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.get_logger()
 
 T = TypeVar("T")
 
@@ -52,12 +53,12 @@ def retry_with_backoff(
                 try:
                     result = await func(*args, **kwargs)
                     if attempt > 0:
-                        logger.info(f"✅ {func.__name__} succeeded on attempt {attempt + 1}/{max_retries}")
+                        logger.info("succeeded_on_attempt", __name__=func.__name__, max_retries=max_retries)
                     return result
                 except exceptions as e:
                     last_exception = e
                     if attempt == max_retries - 1:
-                        logger.error(f"❌ {func.__name__} failed after {max_retries} attempts: {e}")
+                        logger.error("failed_after_attempts", __name__=func.__name__, max_retries=max_retries, e=e)
                         raise
 
                     wait_time = min(delay, max_delay)
@@ -119,13 +120,11 @@ async def retry_async[T](
         except exceptions as e:
             last_exception = e
             if attempt == max_retries - 1:
-                logger.error(f"❌ {func.__name__} failed after {max_retries} attempts: {e}")
+                logger.error("failed_after_attempts", __name__=func.__name__, max_retries=max_retries, e=e)
                 raise
 
             wait_time = min(delay, max_delay)
-            logger.warning(
-                f"⚠️ {func.__name__} attempt {attempt + 1}/{max_retries} failed, retrying in {wait_time:.2f}s: {e}"
-            )
+            logger.warning("attempt_failed_retrying_in_s", __name__=func.__name__, max_retries=max_retries, e=e)
             await asyncio.sleep(wait_time)
             delay *= exponential_base
 

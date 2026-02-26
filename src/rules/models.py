@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -9,7 +9,7 @@ from src.core.models import EventType  # noqa: TCH001, TCH002, TC001
 from src.rules.conditions.base import BaseCondition  # noqa: TCH001, TCH002, TC001
 
 
-class RuleSeverity(str, Enum):
+class RuleSeverity(StrEnum):
     """Enumerates the severity levels of a rule violation."""
 
     LOW = "low"
@@ -20,7 +20,7 @@ class RuleSeverity(str, Enum):
     WARNING = "warning"  # Added for backward compatibility
 
 
-class RuleCategory(str, Enum):
+class RuleCategory(StrEnum):
     """Enumerates rule categories for organizational and filtering purposes."""
 
     SECURITY = "security"  # Authentication, secrets, CVE scanning

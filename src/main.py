@@ -1,4 +1,5 @@
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -53,9 +54,11 @@ logging.basicConfig(
     format="%(message)s",  # structlog handles formatting
 )
 
+logger = structlog.get_logger()
+
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> Any:
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan manager for startup and shutdown logic."""
 
     logging.info("Watchflow application starting up...")
@@ -73,26 +76,26 @@ async def lifespan(_app: FastAPI) -> Any:
     deployment_review_handler = DeploymentReviewEventHandler()
     deployment_protection_rule_handler = DeploymentProtectionRuleEventHandler()
 
-    dispatcher.register_handler(EventType.PULL_REQUEST, pull_request_handler.handle)
-    dispatcher.register_handler(EventType.PUSH, push_handler.handle)
-    dispatcher.register_handler(EventType.CHECK_RUN, check_run_handler.handle)
-    dispatcher.register_handler(EventType.ISSUE_COMMENT, issue_comment_handler.handle)
-    dispatcher.register_handler(EventType.DEPLOYMENT, deployment_handler.handle)
-    dispatcher.register_handler(EventType.DEPLOYMENT_STATUS, deployment_status_handler.handle)
-    dispatcher.register_handler(EventType.DEPLOYMENT_REVIEW, deployment_review_handler.handle)
-    dispatcher.register_handler(EventType.DEPLOYMENT_PROTECTION_RULE, deployment_protection_rule_handler.handle)
+    dispatcher.register_handler(EventType.PULL_REQUEST.value, pull_request_handler.handle)
+    dispatcher.register_handler(EventType.PUSH.value, push_handler.handle)
+    dispatcher.register_handler(EventType.CHECK_RUN.value, check_run_handler.handle)
+    dispatcher.register_handler(EventType.ISSUE_COMMENT.value, issue_comment_handler.handle)
+    dispatcher.register_handler(EventType.DEPLOYMENT.value, deployment_handler.handle)
+    dispatcher.register_handler(EventType.DEPLOYMENT_STATUS.value, deployment_status_handler.handle)
+    dispatcher.register_handler(EventType.DEPLOYMENT_REVIEW.value, deployment_review_handler.handle)
+    dispatcher.register_handler(EventType.DEPLOYMENT_PROTECTION_RULE.value, deployment_protection_rule_handler.handle)
 
-    logging.info("Event handlers registered, background workers started, and deployment scheduler started.")
+    logger.info("Event handlers registered, background workers started, and deployment scheduler started.")
 
     yield
 
-    logging.info("Watchflow application shutting down...")
+    logger.info("Watchflow application shutting down...")
 
     await get_deployment_scheduler().stop()
 
     await task_queue.stop_workers()
 
-    logging.info("Background workers and deployment scheduler stopped.")
+    logger.info("Background workers and deployment scheduler stopped.")
 
 
 app = FastAPI(

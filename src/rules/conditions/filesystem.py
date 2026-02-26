@@ -4,14 +4,15 @@ This module contains conditions that validate file-related aspects
 of pull requests and push events.
 """
 
-import logging
 import re
 from typing import Any
+
+import structlog
 
 from src.core.models import Severity, Violation
 from src.rules.conditions.base import BaseCondition
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class FilePatternCondition(BaseCondition):
@@ -40,7 +41,7 @@ class FilePatternCondition(BaseCondition):
 
         pattern = parameters.get("pattern")
         if not pattern:
-            logger.warning("FilePatternCondition: No pattern specified in parameters")
+            logger.warning("filepatterncondition_no_pattern_specified_in_parameters")
             return [
                 Violation(
                     rule_description=self.description,
@@ -53,7 +54,7 @@ class FilePatternCondition(BaseCondition):
         changed_files = self._get_changed_files(event)
 
         if not changed_files:
-            logger.debug("No files to check against pattern")
+            logger.debug("no_files_to_check_against_pattern")
             return [
                 Violation(
                     rule_description=self.description,
@@ -96,13 +97,13 @@ class FilePatternCondition(BaseCondition):
         """Legacy validation interface for backward compatibility."""
         pattern = parameters.get("pattern")
         if not pattern:
-            logger.warning("FilePatternCondition: No pattern specified in parameters")
+            logger.warning("filepatterncondition_no_pattern_specified_in_parameters")
             return False
 
         changed_files = self._get_changed_files(event)
 
         if not changed_files:
-            logger.debug("No files to check against pattern")
+            logger.debug("no_files_to_check_against_pattern")
             return False
 
         regex_pattern = self._glob_to_regex(pattern)
@@ -159,7 +160,7 @@ class MaxFileSizeCondition(BaseCondition):
         files = event.get("files", [])
 
         if not files:
-            logger.debug("MaxFileSizeCondition: No files data available, skipping validation")
+            logger.debug("maxfilesizecondition_no_files_data_available_skipping")
             return []
 
         violations: list[Violation] = []
@@ -172,7 +173,7 @@ class MaxFileSizeCondition(BaseCondition):
                 filename = file.get("filename", "unknown")
                 oversized_files.append(f"{filename} ({size_mb:.2f}MB)")
                 logger.debug(
-                    f"MaxFileSizeCondition: File {filename} exceeds size limit: {size_mb:.2f}MB > {max_size_mb}MB"
+                    "maxfilesizecondition_file_exceeds_size_limit_mb", filename=filename, max_size_mb=max_size_mb
                 )
 
         if oversized_files:
@@ -196,7 +197,7 @@ class MaxFileSizeCondition(BaseCondition):
         files = event.get("files", [])
 
         if not files:
-            logger.debug("MaxFileSizeCondition: No files data available, skipping validation")
+            logger.debug("maxfilesizecondition_no_files_data_available_skipping")
             return True
 
         oversized_files: list[str] = []
@@ -207,7 +208,7 @@ class MaxFileSizeCondition(BaseCondition):
                 filename = file.get("filename", "unknown")
                 oversized_files.append(f"{filename} ({size_mb:.2f}MB)")
                 logger.debug(
-                    f"MaxFileSizeCondition: File {filename} exceeds size limit: {size_mb:.2f}MB > {max_size_mb}MB"
+                    "maxfilesizecondition_file_exceeds_size_limit_mb", filename=filename, max_size_mb=max_size_mb
                 )
 
         is_valid = len(oversized_files) == 0
@@ -243,7 +244,7 @@ class MaxPrLocCondition(BaseCondition):
 
         max_lines = parameters.get("max_lines", 0)
         if not max_lines:
-            logger.debug("MaxPrLocCondition: No max_lines specified, skipping validation")
+            logger.debug("maxprloccondition_no_maxlines_specified_skipping_validation")
             return []
 
         changed_files = event.get("changed_files", []) or event.get("files", [])

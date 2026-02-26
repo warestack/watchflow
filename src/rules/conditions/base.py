@@ -3,13 +3,14 @@
 This module defines the abstract base class that all conditions must implement.
 """
 
-import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
+import structlog
+
 from src.core.models import Violation
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class BaseCondition(ABC):

@@ -6,12 +6,13 @@ import asyncio
 import logging
 
 import pytest
+import structlog
 
 from src.agents.acknowledgment_agent.agent import AcknowledgmentAgent
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 @pytest.mark.asyncio
@@ -72,7 +73,7 @@ async def test_acknowledgment_agent() -> None:
         },
     ]
 
-    logger.info("🧠 Testing Intelligent Acknowledgment Agent...")
+    logger.info("testing_intelligent_acknowledgment_agent")
 
     try:
         # Test evaluation
@@ -85,7 +86,7 @@ async def test_acknowledgment_agent() -> None:
         )
 
         if result.success:
-            logger.info("✅ Acknowledgment evaluation completed successfully")
+            logger.info("acknowledgment_evaluation_completed_successfully")
             logger.info(f"   Valid: {result.data.get('is_valid', False)}")
             logger.info(f"   Reasoning: {result.data.get('reasoning', 'No reasoning')}")
             logger.info(f"   Acknowledged violations: {len(result.data.get('acknowledgable_violations', []))}")
@@ -94,25 +95,25 @@ async def test_acknowledgment_agent() -> None:
 
             # Print detailed results
             if result.data.get("acknowledgable_violations"):
-                logger.info("\n📋 Acknowledged Violations:")
+                logger.info("n_acknowledged_violations")
                 for violation in result.data["acknowledgable_violations"]:
                     logger.info(f"   • {violation.get('rule_name')} - {violation.get('reason')}")
 
             if result.data.get("require_fixes"):
-                logger.info("\n⚠️ Violations Requiring Fixes:")
+                logger.info("n_violations_requiring_fixes")
                 for violation in result.data["require_fixes"]:
                     logger.info(f"   • {violation.get('rule_name')} - {violation.get('reason')}")
 
             if result.data.get("recommendations"):
-                logger.info("\n💡 Recommendations:")
+                logger.info("n_recommendations")
                 for rec in result.data["recommendations"]:
-                    logger.info(f"   • {rec}")
+                    logger.info("event", rec=rec)
 
         else:
-            logger.error(f"❌ Acknowledgment evaluation failed: {result.message}")
+            logger.error("acknowledgment_evaluation_failed", message=result.message)
 
     except Exception as e:
-        logger.error(f"❌ Test failed with error: {e}")
+        logger.error("test_failed_with_error", e=e)
 
 
 if __name__ == "__main__":

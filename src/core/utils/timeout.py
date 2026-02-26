@@ -5,11 +5,12 @@ Provides functions for executing async operations with timeout handling.
 """
 
 import asyncio
-import logging
 from collections.abc import Coroutine
 from typing import Any
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.get_logger()
 
 
 async def execute_with_timeout(
@@ -41,7 +42,7 @@ async def execute_with_timeout(
         return await asyncio.wait_for(coro, timeout=timeout)
     except TimeoutError as err:
         msg = timeout_message or f"Operation timed out after {timeout} seconds"
-        logger.error(f"❌ {msg}")
+        logger.error("event", msg=msg)
         raise TimeoutError(msg) from err
 
 

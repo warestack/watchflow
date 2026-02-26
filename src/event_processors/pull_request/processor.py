@@ -1,6 +1,7 @@
-import logging
 import time
 from typing import Any
+
+import structlog
 
 from src.agents import get_agent
 from src.core.models import Violation
@@ -11,7 +12,7 @@ from src.presentation import github_formatter
 from src.rules.loaders.github_loader import RulesFileNotFoundError
 from src.tasks.task_queue import Task
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class PullRequestProcessor(BaseEventProcessor):
@@ -39,7 +40,7 @@ class PullRequestProcessor(BaseEventProcessor):
         sha = pr_data.get("head", {}).get("sha")
 
         if not installation_id:
-            logger.error("No installation ID found in task")
+            logger.error("no_installation_id_found_in_task")
             return ProcessingResult(
                 success=False,
                 violations=[],
@@ -64,9 +65,9 @@ class PullRequestProcessor(BaseEventProcessor):
 
         try:
             logger.info("=" * 80)
-            logger.info(f"🚀 Processing PR event for {repo_full_name}")
+            logger.info("processing_pr_event_for", repo_full_name=repo_full_name)
             logger.info(f"   Action: {task.payload.get('action')}")
-            logger.info(f"   PR Number: {pr_number}")
+            logger.info("pr_number", pr_number=pr_number)
             logger.info("=" * 80)
 
             github_token_optional = await self.github_client.get_installation_access_token(installation_id)
@@ -84,7 +85,7 @@ class PullRequestProcessor(BaseEventProcessor):
                 rules = rules_optional if rules_optional is not None else []
                 api_calls += 1
             except RulesFileNotFoundError as e:
-                logger.warning(f"Rules file not found: {e}")
+                logger.warning("rules_file_not_found", e=e)
                 if sha:
                     await self.check_run_manager.create_check_run(
                         repo=repo_full_name,
@@ -105,7 +106,7 @@ class PullRequestProcessor(BaseEventProcessor):
                             repo_full_name, pr_number, welcome_comment, installation_id
                         )
                     except Exception as comment_err:
-                        logger.warning(f"Could not post rules-not-configured comment: {comment_err}")
+                        logger.warning("could_not_post_rulesnotconfigured_comment", comment_err=comment_err)
                 return ProcessingResult(
                     success=True,
                     violations=[],
@@ -178,7 +179,7 @@ class PullRequestProcessor(BaseEventProcessor):
 
             processing_time = int((time.time() - start_time) * 1000)
             logger.info("=" * 80)
-            logger.info(f"🏁 PR processing completed in {processing_time}ms")
+            logger.info("pr_processing_completed_in_ms", processing_time=processing_time)
             logger.info("=" * 80)
 
             return ProcessingResult(
@@ -189,7 +190,7 @@ class PullRequestProcessor(BaseEventProcessor):
             )
 
         except Exception as e:
-            logger.error(f"❌ Error processing PR event: {e}")
+            logger.error("error_processing_pr_event", e=e)
             if sha:
                 await self.check_run_manager.create_check_run(
                     repo=repo_full_name,
@@ -219,7 +220,7 @@ class PullRequestProcessor(BaseEventProcessor):
                 task.repo_full_name, pr_number, comment_body, task.installation_id
             )
         except Exception as e:
-            logger.error(f"Error posting violations to GitHub: {e}")
+            logger.error("error_posting_violations_to_github", e=e)
 
     async def prepare_webhook_data(self, task: Task) -> dict[str, Any]:
         """Extract data available in webhook payload."""

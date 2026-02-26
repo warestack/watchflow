@@ -4,14 +4,15 @@ This module contains conditions that validate PR-specific aspects
 such as title patterns, description length, and required labels.
 """
 
-import logging
 import re
 from typing import Any
+
+import structlog
 
 from src.core.models import Severity, Violation
 from src.rules.conditions.base import BaseCondition
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class TitlePatternCondition(BaseCondition):
@@ -56,7 +57,7 @@ class TitlePatternCondition(BaseCondition):
 
         try:
             matches = bool(re.match(pattern, title))
-            logger.debug(f"TitlePatternCondition: Title '{title}' matches pattern '{pattern}': {matches}")
+            logger.debug("titlepatterncondition_title_matches_pattern", title=title, pattern=pattern, matches=matches)
 
             if not matches:
                 return [
@@ -69,7 +70,7 @@ class TitlePatternCondition(BaseCondition):
                     )
                 ]
         except re.error as e:
-            logger.error(f"TitlePatternCondition: Invalid regex pattern '{pattern}': {e}")
+            logger.error("titlepatterncondition_invalid_regex_pattern", pattern=pattern, e=e)
             return []  # No violation if pattern is invalid
 
         return []
@@ -90,10 +91,10 @@ class TitlePatternCondition(BaseCondition):
 
         try:
             matches = bool(re.match(pattern, title))
-            logger.debug(f"TitlePatternCondition: Title '{title}' matches pattern '{pattern}': {matches}")
+            logger.debug("titlepatterncondition_title_matches_pattern", title=title, pattern=pattern, matches=matches)
             return matches
         except re.error as e:
-            logger.error(f"TitlePatternCondition: Invalid regex pattern '{pattern}': {e}")
+            logger.error("titlepatterncondition_invalid_regex_pattern", pattern=pattern, e=e)
             return True  # No violation if pattern is invalid
 
 
@@ -139,7 +140,10 @@ class MinDescriptionLengthCondition(BaseCondition):
         is_valid = description_length >= min_length
 
         logger.debug(
-            f"MinDescriptionLengthCondition: Description length {description_length}, requires {min_length}: {is_valid}"
+            "mindescriptionlengthcondition_description_length_requires",
+            description_length=description_length,
+            min_length=min_length,
+            is_valid=is_valid,
         )
 
         if not is_valid:
@@ -171,7 +175,10 @@ class MinDescriptionLengthCondition(BaseCondition):
         is_valid = description_length >= min_length
 
         logger.debug(
-            f"MinDescriptionLengthCondition: Description length {description_length}, requires {min_length}: {is_valid}"
+            "mindescriptionlengthcondition_description_length_requires",
+            description_length=description_length,
+            min_length=min_length,
+            is_valid=is_valid,
         )
 
         return is_valid
@@ -211,7 +218,10 @@ class RequiredLabelsCondition(BaseCondition):
         missing_labels = [label for label in required_labels if label not in pr_labels]
 
         logger.debug(
-            f"RequiredLabelsCondition: PR has labels {pr_labels}, requires {required_labels}, missing {missing_labels}"
+            "requiredlabelscondition_pr_has_labels_requires_missing",
+            pr_labels=pr_labels,
+            required_labels=required_labels,
+            missing_labels=missing_labels,
         )
 
         if missing_labels:
@@ -248,7 +258,11 @@ class RequiredLabelsCondition(BaseCondition):
         is_valid = len(missing_labels) == 0
 
         logger.debug(
-            f"RequiredLabelsCondition: PR has labels {pr_labels}, requires {required_labels}, missing {missing_labels}: {is_valid}"
+            "requiredlabelscondition_pr_has_labels_requires_missing",
+            pr_labels=pr_labels,
+            required_labels=required_labels,
+            missing_labels=missing_labels,
+            is_valid=is_valid,
         )
 
         return is_valid
@@ -340,7 +354,7 @@ class RequireLinkedIssueCondition(BaseCondition):
         combined = f"{title}\n{body}"
 
         if _ISSUE_REF_PATTERN.search(combined):
-            logger.debug("RequireLinkedIssueCondition: PR references an issue")
+            logger.debug("requirelinkedissuecondition_pr_references_an_issue")
             return []
 
         return [

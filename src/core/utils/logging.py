@@ -8,14 +8,18 @@ with timing, error tracking, and metadata.
 from __future__ import annotations
 
 import inspect
-import logging
 import time
-from collections.abc import Callable  # noqa: TCH003
+from collections.abc import AsyncIterator, Callable  # noqa: TCH003
 from contextlib import asynccontextmanager
 from functools import wraps
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-logger = logging.getLogger(__name__)
+import structlog
+
+if TYPE_CHECKING:
+    import logging
+
+logger = structlog.get_logger()
 
 
 @asynccontextmanager
@@ -23,7 +27,7 @@ async def log_operation(
     operation: str,
     subject_ids: dict[str, str] | None = None,
     **context: Any,
-) -> Any:  # AsyncGenerator[None, None]
+) -> AsyncIterator[None]:
     """
     Context manager for structured operation logging.
 
@@ -87,12 +91,12 @@ def log_function_call(operation: str | None = None) -> Any:
         @wraps(func)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
             start_time = time.time()
-            logger.info(f"🚀 Calling {op_name}")
+            logger.info("calling", op_name=op_name)
 
             try:
                 result = await func(*args, **kwargs)
                 latency_ms = int((time.time() - start_time) * 1000)
-                logger.info(f"✅ {op_name} completed in {latency_ms}ms")
+                logger.info("completed_in_ms", op_name=op_name, latency_ms=latency_ms)
                 return result
             except Exception as e:
                 latency_ms = int((time.time() - start_time) * 1000)
@@ -105,12 +109,12 @@ def log_function_call(operation: str | None = None) -> Any:
         @wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
             start_time = time.time()
-            logger.info(f"🚀 Calling {op_name}")
+            logger.info("calling", op_name=op_name)
 
             try:
                 result = func(*args, **kwargs)
                 latency_ms = int((time.time() - start_time) * 1000)
-                logger.info(f"✅ {op_name} completed in {latency_ms}ms")
+                logger.info("completed_in_ms", op_name=op_name, latency_ms=latency_ms)
                 return result
             except Exception as e:
                 latency_ms = int((time.time() - start_time) * 1000)
