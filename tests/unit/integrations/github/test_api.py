@@ -222,3 +222,52 @@ async def test_list_pull_requests_success(github_client, mock_aiohttp_session):
     prs = await github_client.list_pull_requests("owner/repo", installation_id=123)
 
     assert prs == [{"number": 1}]
+
+
+@pytest.mark.asyncio
+async def test_get_repository_tree_success(github_client, mock_aiohttp_session):
+    """get_repository_tree returns tree entries when ref is resolved and tree GET succeeds."""
+    from unittest.mock import AsyncMock, patch
+
+    tree_sha = "fake_tree_sha_123"
+    tree_response = mock_aiohttp_session.create_mock_response(
+        200,
+        json_data={
+            "sha": tree_sha,
+            "tree": [
+                {"path": "README.md", "type": "blob", "sha": "a"},
+                {"path": "docs/guidelines.md", "type": "blob", "sha": "b"},
+                {"path": "src/main.py", "type": "blob", "sha": "c"},
+            ],
+            "truncated": False,
+        },
+    )
+
+    mock_headers = {"Authorization": "Bearer fake", "Accept": "application/vnd.github.v3+json"}
+    with (
+        patch.object(
+            github_client,
+            "_get_auth_headers",
+            new_callable=AsyncMock,
+            return_value=mock_headers,
+        ),
+        patch.object(
+            github_client,
+            "_resolve_tree_sha",
+            new_callable=AsyncMock,
+            return_value=tree_sha,
+        ),
+    ):
+        mock_aiohttp_session.get.return_value = tree_response
+
+        result = await github_client.get_repository_tree(
+            "owner/repo",
+            ref="main",
+            installation_id=123,
+        )
+
+    assert len(result) == 3
+    paths = [e["path"] for e in result]
+    assert "README.md" in paths
+    assert "docs/guidelines.md" in paths
+    assert "src/main.py" in paths

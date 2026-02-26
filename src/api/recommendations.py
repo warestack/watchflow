@@ -14,6 +14,9 @@ from src.api.rate_limit import rate_limiter
 from src.core.models import User
 from src.integrations.github.api import github_client
 
+# 
+from src.rules.ai_rules_scan import scan_repo_for_ai_rule_files
+
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/rules", tags=["Recommendations"])
@@ -134,6 +137,43 @@ class MetricConfig(TypedDict):
     category: str
     thresholds: dict[str, float]
     explanation: Callable[[float | int], str]
+
+class ScanAIFilesRequest(BaseModel):
+    """
+    Payload for scanning a repo for AI assistant rule files (Cursor, Claude, Copilot, etc.).
+    """
+
+    repo_url: HttpUrl = Field(
+        ..., description="Full URL of the GitHub repository (e.g., https://github.com/owner/repo)"
+    )
+    github_token: str | None = Field(
+        None, description="Optional GitHub Personal Access Token (higher rate limits / private repos)"
+    )
+    installation_id: int | None = Field(
+        None, description="GitHub App installation ID (optional; used to get installation token)"
+    )
+    include_content: bool = Field(
+        False, description="If True, include file content in response (for translation pipeline)"
+    )
+
+
+class ScanAIFilesCandidate(BaseModel):
+    """A single candidate AI rule file."""
+
+    path: str = Field(..., description="Repository-relative file path")
+    has_keywords: bool = Field(..., description="True if content contains known AI-instruction keywords")
+    content: str | None = Field(None, description="File content; only set when include_content was True")
+
+
+class ScanAIFilesResponse(BaseModel):
+    """Response from the scan-ai-files endpoint."""
+
+    repo_full_name: str = Field(..., description="Repository in owner/repo form")
+    ref: str = Field(..., description="Branch or ref that was scanned (e.g. main)")
+    candidate_files: list[ScanAIFilesCandidate] = Field(
+        default_factory=list, description="Candidate AI rule files matching path patterns"
+    )
+    warnings: list[str] = Field(default_factory=list, description="Warnings (e.g. rate limit, partial results)")
 
 
 def _get_severity_label(value: float, thresholds: dict[str, float]) -> tuple[str, str]:
@@ -795,3 +835,107 @@ async def proceed_with_pr(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create pull request. Please try again.",
         ) from e
+
+@router.post(
+    "/scan-ai-files",
+    response_model=ScanAIFilesResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Scan repository for AI rule files",
+    description=(
+        "Lists files matching *rules*.md, *guidelines*.md, *prompt*.md, .cursor/rules/*.mdc. "
+        "Optionally fetches content and flags files that contain AI-instruction keywords."
+    ),
+    dependencies=[Depends(rate_limiter)],
+)
+async def scan_ai_rule_files(
+    request: Request,
+    payload: ScanAIFilesRequest,
+    user: User | None = Depends(get_current_user_optional),
+    ) -> ScanAIFilesResponse:
+    """
+    Scan a repository for AI assistant rule files (Cursor, Claude, Copilot, etc.).
+    """
+    repo_url_str = str(payload.repo_url)
+    client_ip = request.client.host if request.client else "unknown"
+    logger.info("scan_ai_files_requested", repo_url=repo_url_str, ip=client_ip)
+
+    try:
+        repo_full_name = parse_repo_from_url(repo_url_str)
+    except ValueError as e:
+        logger.warning("invalid_url_provided", url=repo_url_str, error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)
+        ) from e
+
+    # Resolve token (same as recommend_rules)
+    github_token = None
+    if user and user.github_token:
+        try:
+            github_token = user.github_token.get_secret_value()
+        except (AttributeError, TypeError):
+            github_token = str(user.github_token) if user.github_token else None
+    elif payload.github_token:
+        github_token = payload.github_token
+    elif payload.installation_id:
+        installation_token = await github_client.get_installation_access_token(payload.installation_id)
+        if installation_token:
+            github_token = installation_token
+
+    installation_id = payload.installation_id
+
+    # Default branch
+    repo_data = await github_client.get_repository(
+        repo_full_name, installation_id=installation_id, user_token=github_token
+    )
+    if not repo_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository '{repo_full_name}' not found or inaccessible.",
+        )
+    default_branch = repo_data.get("default_branch") or "main"
+    ref = default_branch
+
+    # Full tree
+    tree_entries = await github_client.get_repository_tree(
+        repo_full_name,
+        ref=ref,
+        installation_id=installation_id,
+        user_token=github_token,
+        recursive=True,
+    )
+    if not tree_entries:
+        return ScanAIFilesResponse(
+            repo_full_name=repo_full_name,
+            ref=ref,
+            candidate_files=[],
+            warnings=["Could not load repository tree; check access and ref."],
+        )
+
+    # Optional content fetcher for keyword scan (and optionally include in response)
+    async def get_content(path: str):
+        return await github_client.get_file_content(
+            repo_full_name, path, installation_id, github_token
+        )
+
+    # Always fetch content so has_keywords is set; strip content in response unless include_content
+    raw_candidates = await scan_repo_for_ai_rule_files(
+        tree_entries,
+        fetch_content=True,
+        get_file_content=get_content,
+    )
+
+    candidates = [
+        ScanAIFilesCandidate(
+            path=c["path"],
+            has_keywords=c["has_keywords"],
+            content=c["content"] if payload.include_content else None,
+        )
+        for c in raw_candidates
+    ]
+
+    return ScanAIFilesResponse(
+        repo_full_name=repo_full_name,
+        ref=ref,
+        candidate_files=candidates,
+        warnings=[],
+    )

@@ -164,6 +164,46 @@ class GitHubClient:
             response.raise_for_status()
             return []
 
+
+    async def get_repository_tree(
+    self,
+    repo_full_name: str,
+    ref: str | None = None,
+    installation_id: int | None = None,
+    user_token: str | None = None,
+    recursive: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Get the tree of a repository."""
+        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
+        if not headers:
+            return []
+        ref = ref or "main"
+        tree_sha = await self._resolve_tree_sha(repo_full_name, ref, headers)
+        if not tree_sha:
+            return []
+        
+        url = ( f"{config.github.api_base_url}"
+                f"/repos/{repo_full_name}/git/trees/{tree_sha}"
+                f"?recursive={recursive}" )
+        
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as response:
+            if response.status != 200:
+                return []
+            data = await response.json()
+            return cast("list[dict[str, Any]]", data.get("tree", []))
+
+        
+    async def _resolve_tree_sha(self, repo_full_name: str, ref: str, headers: dict[str, str]) -> str | None:
+        """Resolve the SHA of a tree."""
+        url = f"{config.github.api_base_url}/repos/{repo_full_name}/git/ref/heads/{ref}"
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as response:
+            if response.status != 200:
+                return None
+
+
+
     async def get_file_content(
         self, repo_full_name: str, file_path: str, installation_id: int | None, user_token: str | None = None
     ) -> str | None:
