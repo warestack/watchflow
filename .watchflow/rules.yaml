@@ -18,7 +18,7 @@ rules:
     severity: "medium"
     event_types: ["pull_request"]
     parameters:
-      max_lines: 500
+      max_pr_loc: 500
 
   - description: "PR titles must follow a pattern (e.g. feat:, fix:, docs:) and descriptions must align diff."
     enabled: true

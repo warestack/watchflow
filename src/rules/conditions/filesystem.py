@@ -225,9 +225,9 @@ class MaxPrLocCondition(BaseCondition):
 
     name = "max_pr_loc"
     description = "Validates that total lines changed (additions + deletions) in a PR do not exceed a maximum; enforces a maximum LOC per pull request."
-    parameter_patterns = ["max_lines"]
+    parameter_patterns = ["max_lines", "max_pr_loc", "max_changed_lines"]
     event_types = ["pull_request"]
-    examples = [{"max_lines": 500}, {"max_lines": 1000}]
+    examples = [{"max_lines": 500}, {"max_pr_loc": 1000}]
 
     async def evaluate(self, context: Any) -> list[Violation]:
         """Evaluate max PR LOC condition.
@@ -241,7 +241,7 @@ class MaxPrLocCondition(BaseCondition):
         parameters = context.get("parameters", {})
         event = context.get("event", {})
 
-        max_lines = parameters.get("max_lines", 0)
+        max_lines = parameters.get("max_lines") or parameters.get("max_pr_loc") or parameters.get("max_changed_lines") or 0
         if not max_lines:
             logger.debug("MaxPrLocCondition: No max_lines specified, skipping validation")
             return []
@@ -266,7 +266,7 @@ class MaxPrLocCondition(BaseCondition):
 
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         """Legacy validation interface for backward compatibility."""
-        max_lines = parameters.get("max_lines", 0)
+        max_lines = parameters.get("max_lines") or parameters.get("max_pr_loc") or parameters.get("max_changed_lines") or 0
         if not max_lines:
             return True
 
