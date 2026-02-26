@@ -1,12 +1,14 @@
-import logging
 import time
 from typing import Any
 
+import structlog
+
 from src.agents.engine_agent.agent import RuleEngineAgent
+from src.core.utils.event_filter import NULL_SHA
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.tasks.task_queue import Task
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class PushProcessor(BaseEventProcessor):
@@ -30,10 +32,25 @@ class PushProcessor(BaseEventProcessor):
         commits = payload.get("commits", [])
 
         logger.info("=" * 80)
-        logger.info(f"🚀 Processing PUSH event for {task.repo_full_name}")
-        logger.info(f"   Ref: {ref}")
-        logger.info(f"   Commits: {len(commits)}")
+        logger.info("🚀 Processing PUSH event for {repo}", repo=task.repo_full_name)
+        logger.info("   Ref: {ref}", ref=ref)
+        logger.info("   Commits: {num_commits}", num_commits=len(commits))
         logger.info("=" * 80)
+
+        if payload.get("deleted") or not payload.get("after") or payload.get("after") == NULL_SHA:
+            logger.info(
+                "push_skipped_deleted_or_empty",
+                operation="process_push",
+                subject_ids={"repo": task.repo_full_name, "ref": ref},
+                decision="skip",
+                latency_ms=int((time.time() - start_time) * 1000),
+            )
+            return ProcessingResult(
+                success=True,
+                violations=[],
+                api_calls_made=0,
+                processing_time_ms=int((time.time() - start_time) * 1000),
+            )
 
         # Prepare event_data for the agent
         event_data = {
@@ -55,12 +72,12 @@ class PushProcessor(BaseEventProcessor):
         rules = await self.rule_provider.get_rules(task.repo_full_name, task.installation_id)
 
         if not rules:
-            logger.info("No rules found for this repository")
+            logger.info("no_rules_found", repo=task.repo_full_name)
             return ProcessingResult(
                 success=True, violations=[], api_calls_made=1, processing_time_ms=int((time.time() - start_time) * 1000)
             )
 
-        logger.info(f"📋 Loaded {len(rules)} rules for evaluation")
+        logger.info("rules_loaded", num_rules=len(rules))
 
         # Convert rules to the new format expected by the agent
         formatted_rules = self._convert_rules_to_new_format(rules)
@@ -80,18 +97,27 @@ class PushProcessor(BaseEventProcessor):
 
         # Summary
         logger.info("=" * 80)
-        logger.info(f"🏁 PUSH processing completed in {processing_time}ms")
-        logger.info(f"   Rules evaluated: {len(formatted_rules)}")
-        logger.info(f"   Violations found: {len(violations)}")
-        logger.info(f"   API calls made: {api_calls}")
+        logger.info(
+            "push_processing_complete",
+            operation="process_push",
+            subject_ids={"repo": task.repo_full_name, "ref": ref},
+            rules_evaluated=len(formatted_rules),
+            violations_found=len(violations),
+            api_calls=api_calls,
+            latency_ms=processing_time,
+        )
 
         if violations:
-            logger.warning("🚨 VIOLATION SUMMARY:")
             for i, violation in enumerate(violations, 1):
-                logger.warning(f"   {i}. {violation.get('rule', 'Unknown')} ({violation.get('severity', 'medium')})")
-                logger.warning(f"      {violation.get('message', '')}")
+                logger.warning(
+                    "violation_found",
+                    num=i,
+                    rule=violation.get("rule", "Unknown"),
+                    severity=violation.get("severity", "medium"),
+                    message=violation.get("message", ""),
+                )
         else:
-            logger.info("✅ All rules passed - no violations detected!")
+            logger.info("all_rules_passed", repo=task.repo_full_name)
 
         logger.info("=" * 80)
 
@@ -145,11 +171,15 @@ class PushProcessor(BaseEventProcessor):
     async def _create_check_run(self, task: Task, violations: list[dict[str, Any]]):
         """Create a check run with violation results."""
         try:
-            # head_commit = task.payload.get("head_commit")
-            sha = task.payload.get("after")  # Use 'after' SHA instead of head_commit.id
+            sha = task.payload.get("after")
 
-            if not sha or sha == "0000000000000000000000000000000000000000":
-                logger.warning("No valid commit SHA found (likely branch deletion), skipping check run creation")
+            if not sha or sha == NULL_SHA:
+                logger.warning(
+                    "no_valid_sha",
+                    operation="create_check_run",
+                    subject_ids={"repo": task.repo_full_name},
+                    reason="likely branch deletion",
+                )
                 return
 
             # Determine check run status
@@ -174,12 +204,26 @@ class PushProcessor(BaseEventProcessor):
             )
 
             if result:
-                logger.info(f"✅ Successfully created check run for commit {sha[:8]} with conclusion: {conclusion}")
+                logger.info(
+                    "check_run_created",
+                    operation="create_check_run",
+                    subject_ids={"repo": task.repo_full_name, "sha": sha[:8]},
+                    conclusion=conclusion,
+                )
             else:
-                logger.error(f"❌ Failed to create check run for commit {sha[:8]}")
+                logger.error(
+                    "check_run_failed",
+                    operation="create_check_run",
+                    subject_ids={"repo": task.repo_full_name, "sha": sha[:8]},
+                )
 
         except Exception as e:
-            logger.error(f"Error creating check run: {e}")
+            logger.error(
+                "check_run_error",
+                operation="create_check_run",
+                subject_ids={"repo": task.repo_full_name},
+                error=str(e),
+            )
 
     def _format_check_run_output(self, violations: list[dict[str, Any]]) -> dict[str, Any]:
         """Format violations for check run output."""

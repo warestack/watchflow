@@ -1,14 +1,15 @@
-import logging
 import re
 import time
 from typing import Any
+
+import structlog
 
 from src.agents.engine_agent.agent import RuleEngineAgent
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.rules.github_provider import RulesFileNotFoundError
 from src.tasks.task_queue import Task
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class PullRequestProcessor(BaseEventProcessor):
@@ -31,14 +32,38 @@ class PullRequestProcessor(BaseEventProcessor):
 
         try:
             logger.info("=" * 80)
-            logger.info(f"🚀 Processing PR event for {task.repo_full_name}")
-            logger.info(f"   Action: {task.payload.get('action')}")
-            logger.info(f"   PR Number: {task.payload.get('pull_request', {}).get('number')}")
-            logger.info(f"   Title: {task.payload.get('pull_request', {}).get('title')}")
+            logger.info(
+                "processing_pr_event",
+                operation="process_pr",
+                subject_ids={
+                    "repo": task.repo_full_name,
+                    "pr_number": task.payload.get("pull_request", {}).get("number"),
+                },
+                action=task.payload.get("action"),
+                pr_title=task.payload.get("pull_request", {}).get("title"),
+            )
             logger.info("=" * 80)
 
             pr_data = task.payload.get("pull_request", {})
-            # user = pr_data.get("user", {}).get("login")
+
+            if pr_data.get("state") == "closed" or pr_data.get("merged") or pr_data.get("draft"):
+                logger.info(
+                    "pr_skipped_invalid_state",
+                    operation="process_pr",
+                    subject_ids={"repo": task.repo_full_name, "pr_number": pr_data.get("number")},
+                    decision="skip",
+                    state=pr_data.get("state"),
+                    merged=pr_data.get("merged"),
+                    draft=pr_data.get("draft"),
+                    latency_ms=int((time.time() - start_time) * 1000),
+                )
+                return ProcessingResult(
+                    success=True,
+                    violations=[],
+                    api_calls_made=0,
+                    processing_time_ms=int((time.time() - start_time) * 1000),
+                )
+
             github_token = await self.github_client.get_installation_access_token(task.installation_id)
 
             # Prepare event_data for the agent
@@ -50,7 +75,7 @@ class PullRequestProcessor(BaseEventProcessor):
                 rules = await self.rule_provider.get_rules(task.repo_full_name, task.installation_id)
                 api_calls += 1
             except RulesFileNotFoundError as e:
-                logger.warning(f"Rules file not found: {e}")
+                logger.warning("rules_file_not_found", repo=task.repo_full_name, error=str(e))
                 # Create a neutral check run for missing rules file with helpful guidance
                 await self._create_check_run(
                     task,
@@ -70,11 +95,14 @@ class PullRequestProcessor(BaseEventProcessor):
             formatted_rules = self._convert_rules_to_new_format(rules)
 
             # Debug logging
-            logger.info(f" Total rules loaded: {len(rules)}")
-            logger.info("📋 Rules applicable to pull_request events:")
+            logger.info("rules_loaded", num_rules=len(rules))
             for rule in formatted_rules:
                 if "pull_request" in rule.get("event_types", []):
-                    logger.info(f"   - {rule.get('name', 'Unknown')} ({rule.get('id', 'unknown')})")
+                    logger.info(
+                        "rule_applicable",
+                        rule_name=rule.get("name", "Unknown"),
+                        rule_id=rule.get("id", "unknown"),
+                    )
 
             # Check for existing acknowledgments from previous comments first
             pr_data = task.payload.get("pull_request", {})
@@ -87,8 +115,11 @@ class PullRequestProcessor(BaseEventProcessor):
                     task.repo_full_name, pr_number, task.installation_id
                 )
                 if previous_acknowledgments:
-                    logger.info(f"📋 Found previous acknowledgments for PR #{pr_number}")
-                    logger.info(f"   Acknowledged rule IDs: {list(previous_acknowledgments.keys())}")
+                    logger.info(
+                        "previous_acknowledgments_found",
+                        pr_number=pr_number,
+                        acknowledged_rule_ids=list(previous_acknowledgments.keys()),
+                    )
 
             # Run engine-based rule evaluation
             result = await self.engine_agent.execute(
@@ -114,14 +145,16 @@ class PullRequestProcessor(BaseEventProcessor):
                 rule_description = violation.get("rule_description", "")
                 if rule_description in previous_acknowledgments:
                     # This violation was previously acknowledged
-                    logger.info(f" Violation for rule '{rule_description}' was previously acknowledged")
+                    logger.info("violation_previously_acknowledged", rule_description=rule_description)
                     acknowledgable_violations.append(violation)
                 else:
                     # This violation requires acknowledgment
                     require_acknowledgment_violations.append(violation)
 
             logger.info(
-                f"📊 Violation breakdown: {len(acknowledgable_violations)} acknowledged, {len(require_acknowledgment_violations)} requiring fixes"
+                "violation_breakdown",
+                acknowledged_count=len(acknowledgable_violations),
+                requiring_fix_count=len(require_acknowledgment_violations),
             )
 
             # Use violations requiring fixes for final result
@@ -141,29 +174,35 @@ class PullRequestProcessor(BaseEventProcessor):
 
             # Post violations as comments (if any)
             if violations:
-                logger.info(f"🚨 Found {len(violations)} violations, posting to PR...")
+                logger.info("posting_violations_to_pr", num_violations=len(violations))
                 await self._post_violations_to_github(task, violations)
                 api_calls += 1
             else:
-                logger.info("✅ No violations found, skipping PR comment")
+                logger.info("no_violations_skipping_comment", repo=task.repo_full_name)
 
             # Summary
             logger.info("=" * 80)
-            logger.info(f"🏁 PR processing completed in {processing_time}ms")
-            logger.info(f"   Rules evaluated: {len(formatted_rules)}")
-            logger.info(f"   Violations found: {len(violations)}")
-            logger.info(f"   API calls made: {api_calls}")
+            logger.info(
+                "pr_processing_complete",
+                operation="process_pr",
+                subject_ids={"repo": task.repo_full_name, "pr_number": pr_number},
+                rules_evaluated=len(formatted_rules),
+                violations_found=len(violations),
+                api_calls=api_calls,
+                latency_ms=processing_time,
+            )
 
             if violations:
-                logger.warning("🚨 VIOLATION SUMMARY:")
-                # Format violations for logging
                 for i, violation in enumerate(violations, 1):
-                    logger.info(
-                        f"   {i}. {violation.get('rule_description', 'Unknown')} ({violation.get('severity', 'medium')})"
+                    logger.warning(
+                        "violation_found",
+                        num=i,
+                        rule_description=violation.get("rule_description", "Unknown"),
+                        severity=violation.get("severity", "medium"),
+                        message=violation.get("message", ""),
                     )
-                    logger.warning(f"      {violation.get('message', '')}")
             else:
-                logger.info("✅ All rules passed - no violations detected!")
+                logger.info("all_rules_passed", repo=task.repo_full_name)
 
             logger.info("=" * 80)
 
@@ -175,7 +214,12 @@ class PullRequestProcessor(BaseEventProcessor):
             )
 
         except Exception as e:
-            logger.error(f"❌ Error processing PR event: {e}")
+            logger.error(
+                "pr_processing_error",
+                operation="process_pr",
+                subject_ids={"repo": task.repo_full_name},
+                error=str(e),
+            )
             # Create a failing check run for errors
             await self._create_check_run(task, [], "failure", error=str(e))
             return ProcessingResult(
@@ -219,7 +263,7 @@ class PullRequestProcessor(BaseEventProcessor):
                 event_data["files"] = files or []
 
             except Exception as e:
-                logger.warning(f"Error enriching event data: {e}")
+                logger.warning("error_enriching_event_data", error=str(e))
 
         return event_data
 
@@ -255,7 +299,11 @@ class PullRequestProcessor(BaseEventProcessor):
             sha = pr_data.get("head", {}).get("sha")
 
             if not sha:
-                logger.warning("No commit SHA found, skipping check run creation")
+                logger.warning(
+                    "no_commit_sha",
+                    operation="create_check_run",
+                    subject_ids={"repo": task.repo_full_name},
+                )
                 return
 
             # Determine check run status
@@ -284,12 +332,26 @@ class PullRequestProcessor(BaseEventProcessor):
             )
 
             if result:
-                logger.info(f"✅ Successfully created check run for commit {sha[:8]} with conclusion: {conclusion}")
+                logger.info(
+                    "check_run_created",
+                    operation="create_check_run",
+                    subject_ids={"repo": task.repo_full_name, "sha": sha[:8]},
+                    conclusion=conclusion,
+                )
             else:
-                logger.error(f"❌ Failed to create check run for commit {sha[:8]}")
+                logger.error(
+                    "check_run_failed",
+                    operation="create_check_run",
+                    subject_ids={"repo": task.repo_full_name, "sha": sha[:8]},
+                )
 
         except Exception as e:
-            logger.error(f"Error creating check run: {e}")
+            logger.error(
+                "check_run_error",
+                operation="create_check_run",
+                subject_ids={"repo": task.repo_full_name},
+                error=str(e),
+            )
 
     def _format_check_run_output(self, violations: list[dict[str, Any]], error: str | None = None) -> dict[str, Any]:
         """Format violations for check run output."""
@@ -417,7 +479,11 @@ class PullRequestProcessor(BaseEventProcessor):
                 api_data["files"] = files or []
 
         except Exception as e:
-            logger.error(f"Error fetching API data: {e}")
+            logger.error(
+                "fetch_api_data_error",
+                operation="prepare_api_data",
+                error=str(e),
+            )
 
         return api_data
 
@@ -426,25 +492,45 @@ class PullRequestProcessor(BaseEventProcessor):
         try:
             pr_number = task.payload.get("pull_request", {}).get("number")
             if not pr_number:
-                logger.warning("No PR number found, skipping GitHub comment")
+                logger.warning(
+                    "no_pr_number",
+                    operation="post_violations_to_github",
+                    subject_ids={"repo": task.repo_full_name},
+                )
                 return
 
-            logger.info(f"📝 Preparing to post {len(violations)} violations to PR #{pr_number}")
+            logger.info(
+                "posting_violations",
+                operation="post_violations_to_github",
+                subject_ids={"repo": task.repo_full_name, "pr_number": pr_number},
+                num_violations=len(violations),
+            )
             comment_body = self._format_violations_comment(violations)
-            logger.debug(f"Comment body: {comment_body[:200]}...")
+            logger.debug("comment_body_preview", body_preview=comment_body[:200])
 
             result = await self.github_client.create_pull_request_comment(
                 task.repo_full_name, pr_number, comment_body, task.installation_id
             )
 
             if result:
-                logger.info(f"✅ Successfully posted violations comment to PR #{pr_number}")
+                logger.info(
+                    "violations_comment_posted",
+                    operation="post_violations_to_github",
+                    subject_ids={"repo": task.repo_full_name, "pr_number": pr_number},
+                )
             else:
-                logger.error(f"❌ Failed to post violations comment to PR #{pr_number}")
+                logger.error(
+                    "violations_comment_failed",
+                    operation="post_violations_to_github",
+                    subject_ids={"repo": task.repo_full_name, "pr_number": pr_number},
+                )
 
         except Exception as e:
-            logger.error(f"Error posting violations to GitHub: {e}")
-            logger.exception("Full traceback:")
+            logger.error(
+                "posting_violations_error",
+                operation="post_violations_to_github",
+                error=str(e),
+            )
 
     def _format_violations_comment(self, violations: list[dict[str, Any]]) -> str:
         """Format violations as a GitHub comment."""
@@ -513,7 +599,11 @@ class PullRequestProcessor(BaseEventProcessor):
             return acknowledgments
 
         except Exception as e:
-            logger.error(f"Error fetching previous acknowledgments: {e}")
+            logger.error(
+                "fetch_acknowledgments_error",
+                operation="get_previous_acknowledgments",
+                error=str(e),
+            )
             return {}
 
     def _is_acknowledgment_comment(self, comment_body: str) -> bool:
@@ -675,7 +765,11 @@ Please address the remaining violations or acknowledge them with a valid reason.
             )
 
         except Exception as e:
-            logger.error(f"Error creating check run with acknowledgment: {e}")
+            logger.error(
+                "check_run_with_ack_error",
+                operation="create_check_run_with_acknowledgment",
+                error=str(e),
+            )
 
     def _format_acknowledgment_summary(
         self, acknowledgable_violations: list[dict[str, Any]], acknowledgments: dict[str, dict[str, Any]]

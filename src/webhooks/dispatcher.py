@@ -1,10 +1,12 @@
-import logging
 from typing import Any
 
+import structlog
+
 from src.core.models import EventType, WebhookEvent
+from src.core.utils.event_filter import should_process_event
 from src.webhooks.handlers.base import EventHandler  # Import the base handler
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class WebhookDispatcher:
@@ -25,9 +27,9 @@ class WebhookDispatcher:
             handler: An instance of a class that implements the EventHandler interface.
         """
         if event_type in self._handlers:
-            logger.warning(f"Handler for event type {event_type} is being overridden.")
+            logger.warning("handler_overridden", event_type=event_type.name)
         self._handlers[event_type] = handler
-        logger.info(f"Registered handler for {event_type.name}: {handler.__class__.__name__}")
+        logger.info("handler_registered", event_type=event_type.name, handler=handler.__class__.__name__)
 
     async def dispatch(self, event: WebhookEvent) -> dict[str, Any]:
         """
@@ -43,17 +45,46 @@ class WebhookDispatcher:
         handler_instance = self._handlers.get(event.event_type)
 
         if not handler_instance:
-            logger.warning(f"No handler registered for event type {event.event_type}. Skipping.")
+            logger.warning(
+                "handler_not_found",
+                operation="dispatch",
+                subject_ids={"repo": event.repo_full_name},
+                event_type=event.event_type.name,
+            )
             return {"status": "skipped", "reason": f"No handler for event type {event.event_type.name}"}
+
+        # Apply event filtering before dispatching
+        filter_result = should_process_event(event)
+        if not filter_result.should_process:
+            logger.info(
+                "event_filtered",
+                operation="dispatch",
+                subject_ids={"repo": event.repo_full_name},
+                event_type=event.event_type.name,
+                reason=filter_result.reason,
+            )
+            return {"status": "filtered", "reason": filter_result.reason, "event_type": event.event_type.name}
 
         try:
             handler_name = handler_instance.__class__.__name__
-            logger.info(f"Dispatching event {event.event_type.name} to handler {handler_name}.")
+            logger.info(
+                "dispatching_event",
+                operation="dispatch",
+                subject_ids={"repo": event.repo_full_name},
+                event_type=event.event_type.name,
+                handler=handler_name,
+            )
             # Call the 'handle' method on the registered handler instance
             result = await handler_instance.handle(event)
             return {"status": "processed", "handler": handler_name, "result": result}
         except Exception as e:
-            logger.exception(f"Error executing handler for event {event.event_type.name}: {e}")
+            logger.exception(
+                "handler_error",
+                operation="dispatch",
+                subject_ids={"repo": event.repo_full_name},
+                event_type=event.event_type.name,
+                error=str(e),
+            )
             return {"status": "error", "reason": str(e)}
 
 
