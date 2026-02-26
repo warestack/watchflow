@@ -77,9 +77,17 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
             if not rules:
                 logger.info("No rules found for repository")
                 if can_call_callback:
-                    await self._approve_deployment(
+                    approved = await self._approve_deployment(
                         deployment_callback_url, environment, "No rules configured", installation_id
                     )
+                    if not approved:
+                        return ProcessingResult(
+                            success=False,
+                            violations=[],
+                            api_calls_made=1,
+                            processing_time_ms=int((time.time() - start_time) * 1000),
+                            error="Approval API failed after retries",
+                        )
                 return ProcessingResult(
                     success=True,
                     violations=[],
@@ -103,9 +111,20 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
             if not deployment_rules:
                 logger.info("No deployment rules found")
                 if can_call_callback:
-                    await self._approve_deployment(
-                        deployment_callback_url, environment, "No deployment rules configured", installation_id
+                    approved = await self._approve_deployment(
+                        deployment_callback_url,
+                        environment,
+                        "No deployment rules configured",
+                        installation_id,
                     )
+                    if not approved:
+                        return ProcessingResult(
+                            success=False,
+                            violations=[],
+                            api_calls_made=1,
+                            processing_time_ms=int((time.time() - start_time) * 1000),
+                            error="Approval API failed after retries",
+                        )
                 return ProcessingResult(
                     success=True,
                     violations=[],
@@ -152,9 +171,17 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
 
             if not violations:
                 if can_call_callback:
-                    await self._approve_deployment(
+                    approved = await self._approve_deployment(
                         deployment_callback_url, environment, "All deployment rules passed", installation_id
                     )
+                    if not approved:
+                        return ProcessingResult(
+                            success=False,
+                            violations=[],
+                            api_calls_made=1,
+                            processing_time_ms=int((time.time() - start_time) * 1000),
+                            error="Approval API failed after retries",
+                        )
                 logger.info("All rules passed, deployment approved")
             else:
                 time_based_violations = self._check_time_based_violations(violations)
@@ -176,7 +203,17 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                     logger.info("Time-based violations detected, added to scheduler for re-evaluation")
 
                 if can_call_callback:
-                    await self._reject_deployment(deployment_callback_url, environment, violations, installation_id)
+                    rejected = await self._reject_deployment(
+                        deployment_callback_url, environment, violations, installation_id
+                    )
+                    if not rejected:
+                        return ProcessingResult(
+                            success=False,
+                            violations=violations,
+                            api_calls_made=1,
+                            processing_time_ms=int((time.time() - start_time) * 1000),
+                            error="Rejection API failed after retries",
+                        )
                 logger.info("Deployment rejected due to %d violations", len(violations))
 
             processing_time = int((time.time() - start_time) * 1000)
@@ -214,17 +251,34 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
             )
             if self._is_valid_callback_url(exc_callback_url) and self._is_valid_environment(exc_environment):
                 fallback_comment = "Processing failed. Approved as fallback to avoid indefinite blocking."
-                await self._approve_deployment(
+                approved = await self._approve_deployment(
                     exc_callback_url, exc_environment, fallback_comment, task.installation_id
                 )
-                logger.info(
-                    "deployment_fallback_approval",
-                    extra={
-                        "operation": "deployment_protection_rule",
-                        "deployment_id": exc_deployment_id,
-                        "reason": "exception during processing",
-                    },
-                )
+                if approved:
+                    logger.info(
+                        "deployment_fallback_approval",
+                        extra={
+                            "operation": "deployment_protection_rule",
+                            "deployment_id": exc_deployment_id,
+                            "reason": "exception during processing",
+                        },
+                    )
+                else:
+                    logger.warning(
+                        "deployment_fallback_approval_failed",
+                        extra={
+                            "operation": "deployment_protection_rule",
+                            "deployment_id": exc_deployment_id,
+                            "reason": "fallback approval API failed after retries",
+                        },
+                    )
+                    return ProcessingResult(
+                        success=False,
+                        violations=[],
+                        api_calls_made=0,
+                        processing_time_ms=processing_time,
+                        error=f"{e!s}. Fallback approval also failed.",
+                    )
             return ProcessingResult(
                 success=False,
                 violations=[],
@@ -278,14 +332,16 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
             )
             return False
 
-    async def _approve_deployment(self, callback_url: str, environment: str, comment: str, installation_id: int):
-        await self._send_deployment_review(callback_url, environment, "approved", comment, installation_id)
+    async def _approve_deployment(
+        self, callback_url: str, environment: str, comment: str, installation_id: int
+    ) -> bool:
+        return await self._send_deployment_review(callback_url, environment, "approved", comment, installation_id)
 
     async def _reject_deployment(
         self, callback_url: str, environment: str, violations: list[dict[str, Any]], installation_id: int
-    ):
+    ) -> bool:
         comment_text = self._format_violations_comment(violations)
-        await self._send_deployment_review(callback_url, environment, "rejected", comment_text, installation_id)
+        return await self._send_deployment_review(callback_url, environment, "rejected", comment_text, installation_id)
 
     def _convert_rules_to_new_format(self, rules: list[Any]) -> list[dict[str, Any]]:
         formatted_rules = []

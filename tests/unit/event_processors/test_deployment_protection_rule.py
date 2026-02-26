@@ -109,7 +109,10 @@ async def test_validation_rejects_invalid_callback_url(processor, mock_agent):
         data={
             "evaluation_result": MagicMock(
                 violations=[
-                    {"rule_description": "Deploy only during business hours", "message": "Deployment outside allowed time"}
+                    {
+                        "rule_description": "Deploy only during business hours",
+                        "message": "Deployment outside allowed time",
+                    }
                 ]
             )
         }
@@ -166,7 +169,8 @@ async def test_retry_exhaustion_returns_failure(processor, mock_agent, task):
     result = await processor.process(task)
 
     assert result.success is False
-    assert result.error == "agent failed"
+    assert "agent failed" in result.error
+    assert "fallback" in result.error.lower()
     assert processor.github_client.review_deployment_protection_rule.call_count >= 1
 
 
@@ -208,9 +212,7 @@ async def test_happy_path_with_violations_rejects(processor, mock_agent, task):
     mock_agent.execute.return_value = MagicMock(
         data={
             "evaluation_result": MagicMock(
-                violations=[
-                    {"rule_description": "No deployment on weekends", "message": "Deployment blocked"}
-                ]
+                violations=[{"rule_description": "No deployment on weekends", "message": "Deployment blocked"}]
             )
         }
     )
