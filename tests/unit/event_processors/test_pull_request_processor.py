@@ -57,6 +57,28 @@ async def test_process_success(processor, mock_agent):
 
 
 @pytest.mark.asyncio
+async def test_process_closed_pr_skipped(processor):
+    task = MagicMock(spec=Task)
+    task.repo_full_name = "owner/repo"
+    task.installation_id = 1
+    task.payload = {
+        "action": "closed",
+        "pull_request": {
+            "number": 1,
+            "state": "closed",
+            "merged": True,
+            "head": {"sha": "sha123"},
+        },
+    }
+
+    result = await processor.process(task)
+
+    assert result.success is True
+    assert result.violations == []
+    processor.enricher.enrich_event_data.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_process_with_violations(processor, mock_agent):
     task = MagicMock(spec=Task)
     task.repo_full_name = "owner/repo"

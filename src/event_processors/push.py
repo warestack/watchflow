@@ -4,6 +4,7 @@ from typing import Any
 
 from src.agents import get_agent
 from src.core.models import Severity, Violation
+from src.core.utils.event_filter import NULL_SHA
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.integrations.github.check_runs import CheckRunManager
 from src.tasks.task_queue import Task
@@ -36,6 +37,15 @@ class PushProcessor(BaseEventProcessor):
         logger.info(f"   Ref: {ref}")
         logger.info(f"   Commits: {len(commits)}")
         logger.info("=" * 80)
+
+        if payload.get("deleted") or not payload.get("after") or payload.get("after") == NULL_SHA:
+            logger.info("push_skipped_deleted_or_empty")
+            return ProcessingResult(
+                success=True,
+                violations=[],
+                api_calls_made=0,
+                processing_time_ms=int((time.time() - start_time) * 1000),
+            )
 
         event_data = {
             "push": {

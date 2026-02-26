@@ -33,15 +33,6 @@ class PullRequestEventHandler(EventHandler):
             pr_number=event.payload.get("pull_request", {}).get("number"),
             action=event.payload.get("action"),
         )
-
-        # Filter relevant actions to reduce noise (optional but good practice)
-        action = event.payload.get("action")
-        if action not in ["opened", "synchronize", "reopened", "edited"]:
-            log.info("pr_action_ignored", action=action)
-            return WebhookResponse(
-                status="ignored", detail=f"PR action '{action}' is not processed", event_type=EventType.PULL_REQUEST
-            )
-
         log.info("pr_handler_invoked")
 
         try:

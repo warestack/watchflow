@@ -48,6 +48,20 @@ class PullRequestProcessor(BaseEventProcessor):
                 error="No installation ID found",
             )
 
+        if pr_data.get("state") == "closed" or pr_data.get("merged") or pr_data.get("draft"):
+            logger.info(
+                "pr_skipped_invalid_state",
+                state=pr_data.get("state"),
+                merged=pr_data.get("merged"),
+                draft=pr_data.get("draft"),
+            )
+            return ProcessingResult(
+                success=True,
+                violations=[],
+                api_calls_made=0,
+                processing_time_ms=int((time.time() - start_time) * 1000),
+            )
+
         try:
             logger.info("=" * 80)
             logger.info(f"🚀 Processing PR event for {repo_full_name}")
