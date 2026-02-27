@@ -7,7 +7,9 @@ requirements and determine critical file patterns.
 
 import logging
 import re
-from pathlib import Path
+from typing import Any
+
+from src.core.utils.caching import AsyncCache
 
 logger = logging.getLogger(__name__)
 
@@ -176,66 +178,41 @@ def path_has_owner(file_path: str, codeowners_content: str) -> bool:
     return parser.has_owners(file_path)
 
 
-def load_codeowners(repo_path: str = ".") -> CodeOwnersParser | None:
-    """
-    Load and parse CODEOWNERS file from repository.
-
-    Args:
-        repo_path: Path to repository root
-
-    Returns:
-        CodeOwnersParser instance or None if file not found
-    """
-    codeowners_path = Path(repo_path) / "CODEOWNERS"
-
-    if not codeowners_path.exists():
-        logger.warning(f"CODEOWNERS file not found at {codeowners_path}")
-        return None
-
-    try:
-        with open(codeowners_path, encoding="utf-8") as f:
-            content = f.read()
-
-        return CodeOwnersParser(content)
-    except Exception as e:
-        logger.error(f"Error loading CODEOWNERS file: {e}")
-        return None
-
-
-def get_file_owners(file_path: str, repo_path: str = ".") -> list[str]:
+def get_file_owners(file_path: str, codeowners_content: str | None = None) -> list[str]:
     """
     Get owners for a specific file.
 
     Args:
         file_path: Path to the file relative to repository root
-        repo_path: Path to repository root
+        codeowners_content: Content of the CODEOWNERS file
 
     Returns:
         List of owner usernames/teams
     """
-    parser = load_codeowners(repo_path)
-    if not parser:
+    if not codeowners_content:
         return []
 
+    parser = CodeOwnersParser(codeowners_content)
     return parser.get_owners_for_file(file_path)
 
 
-def is_critical_file(file_path: str, repo_path: str = ".", critical_owners: list[str] | None = None) -> bool:
+def is_critical_file(file_path: str, codeowners_content: str | None = None, critical_owners: list[str] | None = None) -> bool:
     """
-    Check if a file is considered critical based on CODEOWNERS.
+    Check if a file is considered critical based on CODEOWNERS content.
 
     Args:
         file_path: Path to the file relative to repository root
-        repo_path: Path to repository root
+        codeowners_content: Raw content of the CODEOWNERS file
         critical_owners: List of owner usernames/teams that indicate critical files
                         If None, any file with owners is considered critical
 
     Returns:
         True if the file is critical
     """
-    parser = load_codeowners(repo_path)
-    if not parser:
+    if not codeowners_content:
         return False
+
+    parser = CodeOwnersParser(codeowners_content)
 
     # If no critical owners specified, consider any file with owners as critical
     if critical_owners is None:
@@ -244,3 +221,4 @@ def is_critical_file(file_path: str, repo_path: str = ".", critical_owners: list
     # Check if file has any of the critical owners
     owners = parser.get_owners_for_file(file_path)
     return any(owner in critical_owners for owner in owners)
+
