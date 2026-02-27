@@ -24,7 +24,14 @@ SEVERITY_STR_EMOJI = {
 
 
 def _build_collapsible_violations_text(violations: list[Violation]) -> str:
-    """Builds a collapsible Markdown string grouped by severity for a list of violations."""
+    """Builds a collapsible Markdown string grouped by severity for a list of violations.
+
+    Args:
+        violations: A list of Violation objects to format.
+
+    Returns:
+        A Markdown formatted string with collapsible details blocks for each severity level.
+    """
     if not violations:
         return ""
 
@@ -67,7 +74,17 @@ def format_check_run_output(
     repo_full_name: str | None = None,
     installation_id: int | None = None,
 ) -> dict[str, Any]:
-    """Format violations for check run output."""
+    """Format violations for check run output.
+
+    Args:
+        violations: List of rule violations to report.
+        error: Optional error message if rule processing failed entirely.
+        repo_full_name: The full repository name (e.g., owner/repo).
+        installation_id: The GitHub App installation ID.
+
+    Returns:
+        A dictionary matching the GitHub Check Run Output schema containing title, summary, and text.
+    """
     if error:
         # Check if it's a missing rules file error
         if "rules not configured" in error.lower() or "rules file not found" in error.lower():
@@ -176,7 +193,15 @@ def format_rules_not_configured_comment(
 
 
 def format_violations_comment(violations: list[Violation]) -> str:
-    """Format violations as a GitHub comment."""
+    """Format violations as a GitHub comment.
+
+    Args:
+        violations: List of rule violations to include in the comment.
+
+    Returns:
+        A Markdown formatted string suitable for a Pull Request timeline comment.
+        Returns an empty string if there are no violations.
+    """
     if not violations:
         return ""
 

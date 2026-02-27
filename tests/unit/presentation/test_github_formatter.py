@@ -33,6 +33,19 @@ def test_format_violations_comment_empty():
     assert comment == ""
 
 
+def test_build_collapsible_violations_text_fallback_severity():
+    """Test that a violation with an unknown severity falls back to 'low' severity bucket."""
+    # Create a violation and use object.__setattr__ to bypass Pydantic validation for testing
+    v = Violation(rule_description="Weird Rule", severity=Severity.LOW, message="Weird error")
+    object.__setattr__(v, "severity", "super_critical_unknown")
+
+    comment = format_violations_comment([v])
+
+    # It should fall back to low severity
+    assert "<summary><b>🟢 Low Severity (1)</b></summary>" in comment
+    assert "Weird error" in comment
+
+
 def test_format_check_run_output_success():
     output = format_check_run_output([])
     assert output["title"] == "All rules passed"
