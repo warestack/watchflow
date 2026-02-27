@@ -365,3 +365,127 @@ class RequireLinkedIssueCondition(BaseCondition):
         title = pull_request.get("title") or ""
         combined = f"{title}\n{body}"
         return bool(_ISSUE_REF_PATTERN.search(combined))
+
+
+class DiffPatternCondition(BaseCondition):
+    """Validates that a PR diff does not contain specified restricted patterns."""
+
+    name = "diff_pattern"
+    description = "Checks if code changes contain restricted patterns or fail to contain required patterns."
+    parameter_patterns = ["diff_restricted_patterns"]
+    event_types = ["pull_request"]
+    examples = [{"diff_restricted_patterns": ["console\\.log", "TODO:"]}]
+
+    async def evaluate(self, context: Any) -> list[Violation]:
+        """Evaluate diff-pattern condition."""
+        parameters = context.get("parameters", {})
+        event = context.get("event", {})
+
+        restricted_patterns = parameters.get("diff_restricted_patterns")
+        if not restricted_patterns or not isinstance(restricted_patterns, list):
+            return []
+
+        changed_files = event.get("changed_files", [])
+        if not changed_files:
+            return []
+
+        from src.rules.utils.diff import match_patterns_in_patch
+
+        violations = []
+        for file_info in changed_files:
+            patch = file_info.get("patch")
+            if not patch:
+                continue
+
+            matched = match_patterns_in_patch(patch, restricted_patterns)
+            if matched:
+                filename = file_info.get("filename", "unknown")
+                violations.append(
+                    Violation(
+                        rule_description=self.description,
+                        severity=Severity.MEDIUM,
+                        message=f"Restricted patterns {matched} found in added lines of {filename}",
+                        how_to_fix="Remove the restricted patterns from your code changes.",
+                    )
+                )
+
+        return violations
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        """Legacy validation interface."""
+        restricted_patterns = parameters.get("diff_restricted_patterns")
+        if not restricted_patterns or not isinstance(restricted_patterns, list):
+            return True
+
+        changed_files = event.get("changed_files", [])
+        from src.rules.utils.diff import match_patterns_in_patch
+
+        for file_info in changed_files:
+            patch = file_info.get("patch")
+            if patch and match_patterns_in_patch(patch, restricted_patterns):
+                return False
+
+        return True
+
+
+class SecurityPatternCondition(BaseCondition):
+    """Detects security-sensitive patterns (like API keys) in code changes."""
+
+    name = "security_pattern"
+    description = "Detects hardcoded secrets, API keys, or sensitive data in PR diffs."
+    parameter_patterns = ["security_patterns"]
+    event_types = ["pull_request"]
+    examples = [{"security_patterns": ["api_key", "secret", "password", "token"]}]
+
+    async def evaluate(self, context: Any) -> list[Violation]:
+        """Evaluate security-pattern condition."""
+        parameters = context.get("parameters", {})
+        event = context.get("event", {})
+
+        security_patterns = parameters.get("security_patterns")
+        if not security_patterns or not isinstance(security_patterns, list):
+            return []
+
+        changed_files = event.get("changed_files", [])
+        if not changed_files:
+            return []
+
+        from src.rules.utils.diff import match_patterns_in_patch
+
+        violations = []
+        for file_info in changed_files:
+            patch = file_info.get("patch")
+            if not patch:
+                continue
+
+            # In a real scenario, this would use a more robust secrets scanner.
+            # Here we just use the diff matcher with the provided regex/string patterns.
+            matched = match_patterns_in_patch(patch, security_patterns)
+            if matched:
+                filename = file_info.get("filename", "unknown")
+                violations.append(
+                    Violation(
+                        rule_description=self.description,
+                        severity=Severity.CRITICAL,
+                        message=f"Security-sensitive patterns {matched} detected in {filename}",
+                        how_to_fix="Remove hardcoded secrets or sensitive patterns from the code.",
+                    )
+                )
+
+        return violations
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        """Legacy validation interface."""
+        security_patterns = parameters.get("security_patterns")
+        if not security_patterns or not isinstance(security_patterns, list):
+            return True
+
+        changed_files = event.get("changed_files", [])
+        from src.rules.utils.diff import match_patterns_in_patch
+
+        for file_info in changed_files:
+            patch = file_info.get("patch")
+            if patch and match_patterns_in_patch(patch, security_patterns):
+                return False
+
+        return True

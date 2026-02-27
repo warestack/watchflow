@@ -18,9 +18,11 @@ from src.rules.conditions.filesystem import (
     MaxPrLocCondition,
 )
 from src.rules.conditions.pull_request import (
+    DiffPatternCondition,
     MinDescriptionLengthCondition,
     RequiredLabelsCondition,
     RequireLinkedIssueCondition,
+    SecurityPatternCondition,
     TitlePatternCondition,
 )
 from src.rules.conditions.temporal import (
@@ -42,6 +44,8 @@ __all__ = [
     "MinDescriptionLengthCondition",
     "RequireLinkedIssueCondition",
     "RequiredLabelsCondition",
+    "DiffPatternCondition",
+    "SecurityPatternCondition",
     # Access Control
     "AuthorTeamCondition",
     "CodeOwnersCondition",

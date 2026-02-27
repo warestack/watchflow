@@ -71,6 +71,7 @@ class PullRequestEnricher:
                         "status": f.get("status"),
                         "additions": f.get("additions"),
                         "deletions": f.get("deletions"),
+                        "patch": f.get("patch", ""),
                     }
                     for f in files
                 ]
