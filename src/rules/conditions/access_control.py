@@ -123,7 +123,7 @@ class CodeOwnersCondition(BaseCondition):
 
         changed_files = self._get_changed_files(event)
         codeowners_content = event.get("codeowners_content")
-        
+
         if not changed_files or not codeowners_content:
             logger.debug("CodeOwnersCondition: No files or no CODEOWNERS to check")
             return []
@@ -133,7 +133,9 @@ class CodeOwnersCondition(BaseCondition):
         critical_owners = parameters.get("critical_owners")
 
         critical_files = [
-            file_path for file_path in changed_files if is_critical_file(file_path, codeowners_content=codeowners_content, critical_owners=critical_owners)
+            file_path
+            for file_path in changed_files
+            if is_critical_file(file_path, codeowners_content=codeowners_content, critical_owners=critical_owners)
         ]
 
         if critical_files:
@@ -153,7 +155,7 @@ class CodeOwnersCondition(BaseCondition):
         """Legacy validation interface for backward compatibility."""
         changed_files = self._get_changed_files(event)
         codeowners_content = event.get("codeowners_content")
-        
+
         if not changed_files or not codeowners_content:
             logger.debug("CodeOwnersCondition: No files or no CODEOWNERS to check")
             return True
@@ -165,7 +167,7 @@ class CodeOwnersCondition(BaseCondition):
         for file_path in changed_files:
             if is_critical_file(file_path, codeowners_content=codeowners_content, critical_owners=critical_owners):
                 return False
-        
+
         return True
 
     def _get_changed_files(self, event: dict[str, Any]) -> list[str]:

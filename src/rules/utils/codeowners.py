@@ -7,9 +7,6 @@ requirements and determine critical file patterns.
 
 import logging
 import re
-from typing import Any
-
-from src.core.utils.caching import AsyncCache
 
 logger = logging.getLogger(__name__)
 
@@ -196,7 +193,9 @@ def get_file_owners(file_path: str, codeowners_content: str | None = None) -> li
     return parser.get_owners_for_file(file_path)
 
 
-def is_critical_file(file_path: str, codeowners_content: str | None = None, critical_owners: list[str] | None = None) -> bool:
+def is_critical_file(
+    file_path: str, codeowners_content: str | None = None, critical_owners: list[str] | None = None
+) -> bool:
     """
     Check if a file is considered critical based on CODEOWNERS content.
 
@@ -221,4 +220,3 @@ def is_critical_file(file_path: str, codeowners_content: str | None = None, crit
     # Check if file has any of the critical owners
     owners = parser.get_owners_for_file(file_path)
     return any(owner in critical_owners for owner in owners)
-
