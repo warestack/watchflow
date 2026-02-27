@@ -46,6 +46,15 @@ def test_build_collapsible_violations_text_fallback_severity():
     assert "Weird error" in comment
 
 
+def test_build_collapsible_violations_text_info_severity():
+    """Test that INFO severity violations are correctly formatted."""
+    v = Violation(rule_description="Info Rule", severity=Severity.INFO, message="Just an info message")
+    comment = format_violations_comment([v])
+
+    assert "<summary><b>⚪ Info Severity (1)</b></summary>" in comment
+    assert "Just an info message" in comment
+
+
 def test_format_check_run_output_success():
     output = format_check_run_output([])
     assert output["title"] == "All rules passed"

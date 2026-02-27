@@ -36,7 +36,7 @@ def _build_collapsible_violations_text(violations: list[Violation]) -> str:
         return ""
 
     text = ""
-    severity_order = ["critical", "high", "medium", "low"]
+    severity_order = ["critical", "high", "medium", "low", "info"]
     severity_groups: dict[str, list[Violation]] = {s: [] for s in severity_order}
 
     for violation in violations:
@@ -44,8 +44,6 @@ def _build_collapsible_violations_text(violations: list[Violation]) -> str:
         if sev in severity_groups:
             severity_groups[sev].append(violation)
         else:
-            if "low" not in severity_groups:
-                severity_groups["low"] = []
             severity_groups["low"].append(violation)
 
     for severity in severity_order:
@@ -130,7 +128,7 @@ def format_check_run_output(
         }
 
     # Group violations by severity
-    severity_order = ["critical", "high", "medium", "low"]
+    severity_order = ["critical", "high", "medium", "low", "info"]
     severity_groups: dict[str, list[Violation]] = {s: [] for s in severity_order}
 
     for violation in violations:
