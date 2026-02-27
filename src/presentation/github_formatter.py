@@ -45,7 +45,7 @@ def _build_collapsible_violations_text(violations: list[Violation]) -> str:
         if severity_groups[severity]:
             emoji = SEVERITY_STR_EMOJI.get(severity, "⚪")
             count = len(severity_groups[severity])
-            
+
             text += "<details>\n"
             text += f"<summary><b>{emoji} {severity.title()} Severity ({count})</b></summary>\n\n"
 
@@ -55,10 +55,11 @@ def _build_collapsible_violations_text(violations: list[Violation]) -> str:
                 if violation.how_to_fix:
                     text += f"**How to fix:** {violation.how_to_fix}\n"
                 text += "\n"
-            
+
             text += "</details>\n\n"
-            
+
     return text
+
 
 def format_check_run_output(
     violations: list[Violation],
