@@ -16,20 +16,43 @@ def test_format_violations_comment_groups_by_severity():
 
     comment = format_violations_comment(violations)
 
-    assert "## 🚨 Watchflow Rule Violations Detected" in comment
-    assert "### 🔴 Critical Severity" in comment
-    assert "### 🟠 High Severity" in comment
+    assert "### 🛡️ Watchflow Governance Checks" in comment
+    assert "**Status:** ❌ 3 Violations Found" in comment
+    assert "<summary><b>🔴 Critical Severity (1)</b></summary>" in comment
+    assert "<summary><b>🟠 High Severity (2)</b></summary>" in comment
     assert "### Rule 2" in comment
     assert "### Rule 1" in comment
     assert "### Rule 3" in comment
     assert "Fix 1" in comment
     assert "Fix 2" in comment
+    assert "💡 *Reply with `@watchflow ack [reason]`" in comment
 
 
 def test_format_violations_comment_empty():
     comment = format_violations_comment([])
-    assert "## 🚨 Watchflow Rule Violations Detected" in comment
-    assert "---" in comment
+    assert comment == ""
+
+
+def test_build_collapsible_violations_text_fallback_severity():
+    """Test that a violation with an unknown severity falls back to 'low' severity bucket."""
+    # Create a violation and use object.__setattr__ to bypass Pydantic validation for testing
+    v = Violation(rule_description="Weird Rule", severity=Severity.LOW, message="Weird error")
+    object.__setattr__(v, "severity", "super_critical_unknown")
+
+    comment = format_violations_comment([v])
+
+    # It should fall back to low severity
+    assert "<summary><b>🟢 Low Severity (1)</b></summary>" in comment
+    assert "Weird error" in comment
+
+
+def test_build_collapsible_violations_text_info_severity():
+    """Test that INFO severity violations are correctly formatted."""
+    v = Violation(rule_description="Info Rule", severity=Severity.INFO, message="Just an info message")
+    comment = format_violations_comment([v])
+
+    assert "<summary><b>⚪ Info Severity (1)</b></summary>" in comment
+    assert "Just an info message" in comment
 
 
 def test_format_check_run_output_success():
@@ -46,7 +69,7 @@ def test_format_check_run_output_with_violations():
 
     assert "1 rule violations found" in output["title"]
     assert "🚨 1 violations found: 1 high" in output["summary"]
-    assert "## 🟠 High Severity" in output["text"]
+    assert "<summary><b>🟠 High Severity (1)</b></summary>" in output["text"]
     assert "### Missing Issue" in output["text"]
 
 
