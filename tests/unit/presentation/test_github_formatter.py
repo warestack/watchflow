@@ -16,20 +16,21 @@ def test_format_violations_comment_groups_by_severity():
 
     comment = format_violations_comment(violations)
 
-    assert "## 🚨 Watchflow Rule Violations Detected" in comment
-    assert "### 🔴 Critical Severity" in comment
-    assert "### 🟠 High Severity" in comment
-    assert "### Rule 2" in comment
-    assert "### Rule 1" in comment
-    assert "### Rule 3" in comment
+    assert "### 🛡️ Watchflow Governance Checks" in comment
+    assert "**Status:** ❌ 3 Violations Found" in comment
+    assert "<summary><b>🔴 Critical Severity (1)</b></summary>" in comment
+    assert "<summary><b>🟠 High Severity (2)</b></summary>" in comment
+    assert "**Rule 2**" in comment
+    assert "**Rule 1**" in comment
+    assert "**Rule 3**" in comment
     assert "Fix 1" in comment
     assert "Fix 2" in comment
+    assert "💡 *Reply with `@watchflow ack [reason]`" in comment
 
 
 def test_format_violations_comment_empty():
     comment = format_violations_comment([])
-    assert "## 🚨 Watchflow Rule Violations Detected" in comment
-    assert "---" in comment
+    assert comment == ""
 
 
 def test_format_check_run_output_success():
@@ -46,7 +47,7 @@ def test_format_check_run_output_with_violations():
 
     assert "1 rule violations found" in output["title"]
     assert "🚨 1 violations found: 1 high" in output["summary"]
-    assert "## 🟠 High Severity" in output["text"]
+    assert "<summary><b>🟠 High Severity (1)</b></summary>" in output["text"]
     assert "### Missing Issue" in output["text"]
 
 
