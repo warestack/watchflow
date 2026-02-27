@@ -206,8 +206,12 @@ def format_violations_comment(violations: list[Violation]) -> str:
     comment = f"### 🛡️ Watchflow Governance Checks\n**Status:** ❌ {len(violations)} Violations Found\n\n"
     comment += _build_collapsible_violations_text(violations)
     comment += "---\n"
-    comment += "💡 *Reply with `@watchflow ack [reason]` to override these rules, or `@watchflow help` for commands.*\n\n"
-    comment += "Thanks for using [Watchflow](https://watchflow.dev)! It's completely free for OSS and private repositories. "
+    comment += (
+        "💡 *Reply with `@watchflow ack [reason]` to override these rules, or `@watchflow help` for commands.*\n\n"
+    )
+    comment += (
+        "Thanks for using [Watchflow](https://watchflow.dev)! It's completely free for OSS and private repositories. "
+    )
     comment += "You can also [self-host it easily](https://github.com/warestack/watchflow)."
 
     return comment
