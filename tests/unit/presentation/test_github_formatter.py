@@ -20,9 +20,9 @@ def test_format_violations_comment_groups_by_severity():
     assert "**Status:** ❌ 3 Violations Found" in comment
     assert "<summary><b>🔴 Critical Severity (1)</b></summary>" in comment
     assert "<summary><b>🟠 High Severity (2)</b></summary>" in comment
-    assert "**Rule 2**" in comment
-    assert "**Rule 1**" in comment
-    assert "**Rule 3**" in comment
+    assert "### Rule 2" in comment
+    assert "### Rule 1" in comment
+    assert "### Rule 3" in comment
     assert "Fix 1" in comment
     assert "Fix 2" in comment
     assert "💡 *Reply with `@watchflow ack [reason]`" in comment

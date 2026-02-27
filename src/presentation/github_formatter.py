@@ -23,6 +23,43 @@ SEVERITY_STR_EMOJI = {
 }
 
 
+def _build_collapsible_violations_text(violations: list[Violation]) -> str:
+    """Builds a collapsible Markdown string grouped by severity for a list of violations."""
+    if not violations:
+        return ""
+
+    text = ""
+    severity_order = ["critical", "high", "medium", "low"]
+    severity_groups: dict[str, list[Violation]] = {s: [] for s in severity_order}
+
+    for violation in violations:
+        sev = violation.severity.value if hasattr(violation.severity, "value") else str(violation.severity)
+        if sev in severity_groups:
+            severity_groups[sev].append(violation)
+        else:
+            if "low" not in severity_groups:
+                severity_groups["low"] = []
+            severity_groups["low"].append(violation)
+
+    for severity in severity_order:
+        if severity_groups[severity]:
+            emoji = SEVERITY_STR_EMOJI.get(severity, "⚪")
+            count = len(severity_groups[severity])
+            
+            text += "<details>\n"
+            text += f"<summary><b>{emoji} {severity.title()} Severity ({count})</b></summary>\n\n"
+
+            for violation in severity_groups[severity]:
+                text += f"### {violation.rule_description or 'Unknown Rule'}\n"
+                text += f"{violation.message}\n"
+                if violation.how_to_fix:
+                    text += f"**How to fix:** {violation.how_to_fix}\n"
+                text += "\n"
+            
+            text += "</details>\n\n"
+            
+    return text
+
 def format_check_run_output(
     violations: list[Violation],
     error: str | None = None,
@@ -99,24 +136,7 @@ def format_check_run_output(
 
     # Build detailed text
     text = "# Watchflow Rule Violations\n\n"
-
-    for severity in severity_order:
-        if severity_groups[severity]:
-            emoji = SEVERITY_STR_EMOJI.get(severity, "⚪")
-            count = len(severity_groups[severity])
-
-            text += "<details>\n"
-            text += f"<summary><b>{emoji} {severity.title()} Severity ({count})</b></summary>\n\n"
-
-            for violation in severity_groups[severity]:
-                text += f"### {violation.rule_description or 'Unknown Rule'}\n"
-                text += f"{violation.message}\n"
-                if violation.how_to_fix:
-                    text += f"**How to fix:** {violation.how_to_fix}\n"
-                text += "\n"
-
-            text += "</details>\n\n"
-
+    text += _build_collapsible_violations_text(violations)
     text += "---\n"
     text += "💡 *To configure rules, edit the `.watchflow/rules.yaml` file in this repository.*"
 
@@ -160,34 +180,7 @@ def format_violations_comment(violations: list[Violation]) -> str:
         return ""
 
     comment = f"### 🛡️ Watchflow Governance Checks\n**Status:** ❌ {len(violations)} Violations Found\n\n"
-
-    # Group violations by severity
-    severity_order = ["critical", "high", "medium", "low"]
-    severity_groups: dict[str, list[Violation]] = {s: [] for s in severity_order}
-
-    for violation in violations:
-        sev = violation.severity.value if hasattr(violation.severity, "value") else str(violation.severity)
-        if sev in severity_groups:
-            severity_groups[sev].append(violation)
-
-    # Add violations by severity (most severe first)
-    for severity in severity_order:
-        if severity_groups[severity]:
-            emoji = SEVERITY_STR_EMOJI.get(severity, "⚪")
-            count = len(severity_groups[severity])
-
-            comment += "<details>\n"
-            comment += f"<summary><b>{emoji} {severity.title()} Severity ({count})</b></summary>\n\n"
-
-            for violation in severity_groups[severity]:
-                comment += f"**{violation.rule_description or 'Unknown Rule'}**\n"
-                comment += f"{violation.message}\n"
-                if violation.how_to_fix:
-                    comment += f"**How to fix:** {violation.how_to_fix}\n"
-                comment += "\n"
-
-            comment += "</details>\n\n"
-
+    comment += _build_collapsible_violations_text(violations)
     comment += "---\n"
     comment += "💡 *Reply with `@watchflow ack [reason]` to override these rules, or `@watchflow help` for commands.*"
 
@@ -271,7 +264,7 @@ All rule violations have been properly acknowledged and overridden. The pull req
 {format_acknowledgment_summary(acknowledgable_violations, acknowledgments)}
 
 **Violations Requiring Fixes:**
-{format_violations_for_check_run(violations)}
+{_build_collapsible_violations_text(violations)}
 
 Please address the remaining violations or acknowledge them with a valid reason.
 """
