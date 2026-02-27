@@ -297,7 +297,7 @@ class MinApprovalsCondition(BaseCondition):
             if review.get("state") == "APPROVED":
                 approved_count += 1
 
-        return approved_count >= min_approvals
+        return bool(approved_count >= int(min_approvals))
 
 
 # Regex to detect issue references in PR body/title: #123, closes #123, fixes #123, etc.

@@ -97,6 +97,8 @@ class EventType(str, Enum):
     PUSH = "push"
     ISSUE_COMMENT = "issue_comment"
     PULL_REQUEST = "pull_request"
+    PULL_REQUEST_REVIEW = "pull_request_review"
+    PULL_REQUEST_REVIEW_THREAD = "pull_request_review_thread"
     CHECK_RUN = "check_run"
     DEPLOYMENT = "deployment"
     DEPLOYMENT_STATUS = "deployment_status"

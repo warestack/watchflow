@@ -35,8 +35,8 @@ class TestRuleIDEnum:
             assert len(rule_id.value) > 0
 
     def test_rule_id_count(self):
-        """Verify we have exactly 14 standardized rule IDs."""
-        assert len(RuleID) == 14
+        """Verify we have exactly 16 standardized rule IDs."""
+        assert len(RuleID) == 16
 
     def test_all_rule_ids_have_descriptions(self):
         """Every RuleID should have a corresponding description."""
