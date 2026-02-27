@@ -16,6 +16,7 @@ from src.rules.conditions.filesystem import (
     FilePatternCondition,
     MaxFileSizeCondition,
     MaxPrLocCondition,
+    TestCoverageCondition,
 )
 from src.rules.conditions.pull_request import (
     DiffPatternCondition,
@@ -40,6 +41,7 @@ __all__ = [
     "FilePatternCondition",
     "MaxFileSizeCondition",
     "MaxPrLocCondition",
+    "TestCoverageCondition",
     # Pull Request
     "TitlePatternCondition",
     "MinDescriptionLengthCondition",

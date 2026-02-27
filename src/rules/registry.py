@@ -21,6 +21,7 @@ from src.rules.conditions.filesystem import (
     FilePatternCondition,
     MaxFileSizeCondition,
     MaxPrLocCondition,
+    TestCoverageCondition,
 )
 from src.rules.conditions.pull_request import (
     DiffPatternCondition,
@@ -57,6 +58,7 @@ RULE_ID_TO_CONDITION: dict[RuleID, type[BaseCondition]] = {
     RuleID.DIFF_PATTERN: DiffPatternCondition,
     RuleID.SECURITY_PATTERN: SecurityPatternCondition,
     RuleID.UNRESOLVED_COMMENTS: UnresolvedCommentsCondition,
+    RuleID.TEST_COVERAGE: TestCoverageCondition,
 }
 
 # Reverse map: condition class -> RuleID (for populating rule_id on violations)
@@ -84,6 +86,7 @@ AVAILABLE_CONDITIONS: list[type[BaseCondition]] = [
     DiffPatternCondition,
     SecurityPatternCondition,
     UnresolvedCommentsCondition,
+    TestCoverageCondition,
 ]
 
 
