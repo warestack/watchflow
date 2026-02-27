@@ -38,6 +38,7 @@ class RuleID(StrEnum):
     SECURITY_PATTERN = "security-pattern"
     UNRESOLVED_COMMENTS = "unresolved-comments"
     TEST_COVERAGE = "test-coverage"
+    COMMENT_RESPONSE_TIME = "comment-response-time"
 
 
 # Mapping from violation text patterns to RuleID
@@ -57,6 +58,7 @@ VIOLATION_TEXT_TO_RULE_MAPPING: dict[str, RuleID] = {
     "Security-sensitive patterns": RuleID.SECURITY_PATTERN,
     "unresolved review comment thread": RuleID.UNRESOLVED_COMMENTS,
     "without corresponding test changes": RuleID.TEST_COVERAGE,
+    "exceeded the": RuleID.COMMENT_RESPONSE_TIME,
 }
 
 # Mapping from RuleID to human-readable descriptions
@@ -76,6 +78,7 @@ RULE_ID_TO_DESCRIPTION: dict[RuleID, str] = {
     RuleID.SECURITY_PATTERN: "Code changes must not contain security-sensitive patterns.",
     RuleID.UNRESOLVED_COMMENTS: "All review comments must be resolved before merging.",
     RuleID.TEST_COVERAGE: "Source code modifications must include corresponding test changes.",
+    RuleID.COMMENT_RESPONSE_TIME: "Review comments must be addressed within the SLA timeframe.",
 }
 
 # Comment markers that indicate an acknowledgment comment

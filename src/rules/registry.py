@@ -35,6 +35,7 @@ from src.rules.conditions.pull_request import (
 )
 from src.rules.conditions.temporal import (
     AllowedHoursCondition,
+    CommentResponseTimeCondition,
     DaysCondition,
     WeekendCondition,
 )
@@ -59,6 +60,7 @@ RULE_ID_TO_CONDITION: dict[RuleID, type[BaseCondition]] = {
     RuleID.SECURITY_PATTERN: SecurityPatternCondition,
     RuleID.UNRESOLVED_COMMENTS: UnresolvedCommentsCondition,
     RuleID.TEST_COVERAGE: TestCoverageCondition,
+    RuleID.COMMENT_RESPONSE_TIME: CommentResponseTimeCondition,
 }
 
 # Reverse map: condition class -> RuleID (for populating rule_id on violations)
@@ -80,6 +82,7 @@ AVAILABLE_CONDITIONS: list[type[BaseCondition]] = [
     RequireCodeOwnerReviewersCondition,
     FilePatternCondition,
     AllowedHoursCondition,
+    CommentResponseTimeCondition,
     DaysCondition,
     WeekendCondition,
     WorkflowDurationCondition,

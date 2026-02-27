@@ -29,6 +29,7 @@ from src.rules.conditions.pull_request import (
 )
 from src.rules.conditions.temporal import (
     AllowedHoursCondition,
+    CommentResponseTimeCondition,
     DaysCondition,
     WeekendCondition,
 )
@@ -58,6 +59,7 @@ __all__ = [
     "RequireCodeOwnerReviewersCondition",
     # Temporal
     "AllowedHoursCondition",
+    "CommentResponseTimeCondition",
     "DaysCondition",
     "WeekendCondition",
     # Workflow

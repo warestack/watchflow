@@ -244,3 +244,88 @@ class DaysCondition(BaseCondition):
         except Exception as e:
             logger.error("DaysCondition: Error parsing merged_at timestamp", merged_at=merged_at, error=str(e))
             return True
+
+
+class CommentResponseTimeCondition(BaseCondition):
+    """Validates that PR comments have been addressed within a specified SLA."""
+
+    name = "comment_response_time"
+    description = "Enforces an SLA (in hours) for responding to review comments."
+    parameter_patterns = ["max_comment_response_time_hours"]
+    event_types = ["pull_request"]
+    examples = [{"max_comment_response_time_hours": 24}]
+
+    async def evaluate(self, context: Any) -> list[Violation]:
+        """Evaluate comment response time SLA."""
+        parameters = context.get("parameters", {})
+        event = context.get("event", {})
+
+        max_hours = parameters.get("max_comment_response_time_hours")
+        if not max_hours:
+            return []
+
+        review_threads = event.get("review_threads", [])
+        if not review_threads:
+            return []
+
+        # Use event timestamp as the "current" time for evaluation
+        # to ensure deterministic behavior based on when the event fired
+        event_time_str = event.get("timestamp")
+        if event_time_str:
+            try:
+                now = datetime.fromisoformat(event_time_str.replace("Z", "+00:00"))
+            except ValueError:
+                now = datetime.now(timezone.utc)
+        else:
+            now = datetime.now(timezone.utc)
+
+        max_delta = timedelta(hours=float(max_hours))
+        sla_violations = 0
+
+        for thread in review_threads:
+            # We only care about unresolved threads for SLA checking
+            if isinstance(thread, dict):
+                is_resolved = thread.get("is_resolved", False)
+                comments = thread.get("comments", [])
+            else:
+                is_resolved = getattr(thread, "is_resolved", False)
+                comments = getattr(thread, "comments", [])
+
+            if is_resolved or not comments:
+                continue
+
+            # The first comment in the thread starts the SLA clock
+            first_comment = comments[0]
+            
+            if isinstance(first_comment, dict):
+                created_at_str = first_comment.get("created_at") or first_comment.get("createdAt")
+            else:
+                created_at_str = getattr(first_comment, "created_at", None) or getattr(first_comment, "createdAt", None)
+                
+            if not created_at_str:
+                continue
+
+            try:
+                created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+                # If the current time minus the comment creation time exceeds the SLA
+                if now - created_at > max_delta:
+                    sla_violations += 1
+            except ValueError:
+                continue
+
+        if sla_violations > 0:
+            return [
+                Violation(
+                    rule_description=self.description,
+                    severity=Severity.MEDIUM,
+                    message=f"{sla_violations} review thread(s) have exceeded the {max_hours}-hour response SLA.",
+                    how_to_fix="Respond to or resolve all stale review comments.",
+                )
+            ]
+
+        return []
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        """Legacy validation interface."""
+        violations = await self.evaluate({"parameters": parameters, "event": event})
+        return len(violations) == 0
