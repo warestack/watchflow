@@ -104,7 +104,7 @@ def format_check_run_output(
         if severity_groups[severity]:
             emoji = SEVERITY_STR_EMOJI.get(severity, "⚪")
             count = len(severity_groups[severity])
-            
+
             text += "<details>\n"
             text += f"<summary><b>{emoji} {severity.title()} Severity ({count})</b></summary>\n\n"
 
@@ -114,7 +114,7 @@ def format_check_run_output(
                 if violation.how_to_fix:
                     text += f"**How to fix:** {violation.how_to_fix}\n"
                 text += "\n"
-            
+
             text += "</details>\n\n"
 
     text += "---\n"
@@ -175,7 +175,7 @@ def format_violations_comment(violations: list[Violation]) -> str:
         if severity_groups[severity]:
             emoji = SEVERITY_STR_EMOJI.get(severity, "⚪")
             count = len(severity_groups[severity])
-            
+
             comment += "<details>\n"
             comment += f"<summary><b>{emoji} {severity.title()} Severity ({count})</b></summary>\n\n"
 
@@ -185,7 +185,7 @@ def format_violations_comment(violations: list[Violation]) -> str:
                 if violation.how_to_fix:
                     comment += f"**How to fix:** {violation.how_to_fix}\n"
                 comment += "\n"
-            
+
             comment += "</details>\n\n"
 
     comment += "---\n"
