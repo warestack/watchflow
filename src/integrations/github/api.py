@@ -538,15 +538,15 @@ class GitHubClient:
             """
             variables = {"owner": owner, "repo": repo_name, "pr_number": pr_number}
             response_model = await client.execute_query_typed(query, variables)
-            
+
             if response_model.errors:
                 logger.error("GraphQL query failed", errors=response_model.errors)
                 return []
-                
+
             repo_node = response_model.data.repository
             if not repo_node or not repo_node.pull_request or not repo_node.pull_request.review_threads:
                 return []
-                
+
             threads = [thread.model_dump() for thread in repo_node.pull_request.review_threads.nodes]
             logger.info(f"Retrieved {len(threads)} review threads for PR #{pr_number} in {repo}")
             return threads

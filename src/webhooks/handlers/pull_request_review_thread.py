@@ -7,7 +7,10 @@ from src.event_processors.pull_request.processor import handle_pull_request
 
 logger = structlog.get_logger()
 
-async def handle_pull_request_review_thread(event_type: str, payload: dict[str, Any], event: WebhookEvent) -> dict[str, Any]:
+
+async def handle_pull_request_review_thread(
+    event_type: str, payload: dict[str, Any], event: WebhookEvent
+) -> dict[str, Any]:
     """
     Handle pull_request_review_thread events.
     When a thread is resolved or unresolved, we want to re-evaluate the PR rules because:

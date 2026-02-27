@@ -4,7 +4,7 @@ This module contains conditions that validate time-based aspects
 such as weekend restrictions, allowed hours, and day-of-week restrictions.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -275,9 +275,9 @@ class CommentResponseTimeCondition(BaseCondition):
             try:
                 now = datetime.fromisoformat(event_time_str.replace("Z", "+00:00"))
             except ValueError:
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
         else:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
         max_delta = timedelta(hours=float(max_hours))
         sla_violations = 0
@@ -296,12 +296,12 @@ class CommentResponseTimeCondition(BaseCondition):
 
             # The first comment in the thread starts the SLA clock
             first_comment = comments[0]
-            
+
             if isinstance(first_comment, dict):
                 created_at_str = first_comment.get("created_at") or first_comment.get("createdAt")
             else:
                 created_at_str = getattr(first_comment, "created_at", None) or getattr(first_comment, "createdAt", None)
-                
+
             if not created_at_str:
                 continue
 

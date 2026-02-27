@@ -7,6 +7,7 @@ from src.event_processors.pull_request.processor import handle_pull_request
 
 logger = structlog.get_logger()
 
+
 async def handle_pull_request_review(event_type: str, payload: dict[str, Any], event: WebhookEvent) -> dict[str, Any]:
     """
     Handle pull_request_review events.

@@ -303,7 +303,7 @@ class TestCoverageCondition(BaseCondition):
         # Find test and non-test source files
         source_files = []
         test_files = []
-        
+
         # Default test pattern looks for tests/ directory or files ending in test.py/test.ts etc
         test_pattern = parameters.get("test_file_pattern", r"(^tests?/|test\.[a-zA-Z]+$|_test\.[a-zA-Z]+$)")
         try:
@@ -316,11 +316,16 @@ class TestCoverageCondition(BaseCondition):
             filename = f.get("filename", "")
             if not filename:
                 continue
-                
+
             # Ignore documentation and config files
-            if filename.endswith(".md") or filename.endswith(".txt") or filename.endswith(".yaml") or filename.endswith(".json"):
+            if (
+                filename.endswith(".md")
+                or filename.endswith(".txt")
+                or filename.endswith(".yaml")
+                or filename.endswith(".json")
+            ):
                 continue
-                
+
             if compiled_pattern.search(filename):
                 test_files.append(filename)
             else:
@@ -346,7 +351,7 @@ class TestCoverageCondition(BaseCondition):
 
         changed_files = event.get("changed_files", []) or event.get("files", [])
         test_pattern = parameters.get("test_file_pattern", r"(^tests?/|test\.[a-zA-Z]+$|_test\.[a-zA-Z]+$)")
-        
+
         try:
             compiled_pattern = re.compile(test_pattern)
         except re.error:
@@ -359,7 +364,7 @@ class TestCoverageCondition(BaseCondition):
             filename = f.get("filename", "")
             if not filename or filename.endswith(".md") or filename.endswith(".yaml"):
                 continue
-                
+
             if compiled_pattern.search(filename):
                 test_modified = True
             else:
