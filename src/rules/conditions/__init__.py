@@ -24,6 +24,7 @@ from src.rules.conditions.pull_request import (
     RequireLinkedIssueCondition,
     SecurityPatternCondition,
     TitlePatternCondition,
+    UnresolvedCommentsCondition,
 )
 from src.rules.conditions.temporal import (
     AllowedHoursCondition,
@@ -46,6 +47,7 @@ __all__ = [
     "RequiredLabelsCondition",
     "DiffPatternCondition",
     "SecurityPatternCondition",
+    "UnresolvedCommentsCondition",
     # Access Control
     "AuthorTeamCondition",
     "CodeOwnersCondition",

@@ -498,6 +498,55 @@ class GitHubClient:
             logger.error(f"Error getting reviews for PR #{pr_number} in {repo}: {e}")
             return []
 
+    async def get_pull_request_review_threads(self, repo: str, pr_number: int, installation_id: int) -> list[dict[str, Any]]:
+        """Get review threads for a pull request using the GraphQL API."""
+        try:
+            token = await self.get_installation_access_token(installation_id)
+            if not token:
+                logger.error(f"Failed to get installation token for {installation_id}")
+                return []
+
+            from src.integrations.github.graphql import GitHubGraphQLClient
+            client = GitHubGraphQLClient(token)
+
+            owner, repo_name = repo.split("/", 1)
+            query = """
+            query PRReviewThreads($owner: String!, $repo: String!, $pr_number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $pr_number) {
+                        reviewThreads(first: 50) {
+                            nodes {
+                                isResolved
+                                isOutdated
+                                comments(first: 10) {
+                                    nodes {
+                                        body
+                                        createdAt
+                                        author {
+                                            login
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            """
+            variables = {"owner": owner, "repo": repo_name, "pr_number": pr_number}
+            data = await client.execute_query(query, variables)
+            
+            if "errors" in data:
+                logger.error("GraphQL query failed", errors=data["errors"])
+                return []
+                
+            threads = data.get("data", {}).get("repository", {}).get("pullRequest", {}).get("reviewThreads", {}).get("nodes", [])
+            logger.info(f"Retrieved {len(threads)} review threads for PR #{pr_number} in {repo}")
+            return threads
+        except Exception as e:
+            logger.error(f"Error getting review threads for PR #{pr_number} in {repo}: {e}")
+            return []
+
     async def get_pull_request_files(self, repo: str, pr_number: int, installation_id: int) -> list[dict[str, Any]]:
         """Get files changed in a pull request."""
         try:
@@ -1314,7 +1363,7 @@ class GitHubClient:
             # Check if it's a rate limit error - check both message and status code
             is_rate_limit = "rate limit" in error_str or "403" in error_str
             # Also check if it's an aiohttp ClientResponseError with status 403
-            if hasattr(e, "status") and e.status == 403:
+            if getattr(e, "status", None) == 403:
                 is_rate_limit = True
             has_auth = user_token is not None or installation_id is not None
 

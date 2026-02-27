@@ -23,11 +23,14 @@ from src.rules.conditions.filesystem import (
     MaxPrLocCondition,
 )
 from src.rules.conditions.pull_request import (
+    DiffPatternCondition,
     MinApprovalsCondition,
     MinDescriptionLengthCondition,
     RequiredLabelsCondition,
     RequireLinkedIssueCondition,
+    SecurityPatternCondition,
     TitlePatternCondition,
+    UnresolvedCommentsCondition,
 )
 from src.rules.conditions.temporal import (
     AllowedHoursCondition,
@@ -51,6 +54,9 @@ RULE_ID_TO_CONDITION: dict[RuleID, type[BaseCondition]] = {
     RuleID.MIN_PR_APPROVALS: MinApprovalsCondition,
     RuleID.PATH_HAS_CODE_OWNER: PathHasCodeOwnerCondition,
     RuleID.REQUIRE_CODE_OWNER_REVIEWERS: RequireCodeOwnerReviewersCondition,
+    RuleID.DIFF_PATTERN: DiffPatternCondition,
+    RuleID.SECURITY_PATTERN: SecurityPatternCondition,
+    RuleID.UNRESOLVED_COMMENTS: UnresolvedCommentsCondition,
 }
 
 # Reverse map: condition class -> RuleID (for populating rule_id on violations)
@@ -75,6 +81,9 @@ AVAILABLE_CONDITIONS: list[type[BaseCondition]] = [
     DaysCondition,
     WeekendCondition,
     WorkflowDurationCondition,
+    DiffPatternCondition,
+    SecurityPatternCondition,
+    UnresolvedCommentsCondition,
 ]
 
 

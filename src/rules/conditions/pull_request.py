@@ -489,3 +489,72 @@ class SecurityPatternCondition(BaseCondition):
                 return False
 
         return True
+
+
+class UnresolvedCommentsCondition(BaseCondition):
+    """Validates that a pull request has no unresolved review comments."""
+
+    name = "unresolved_comments"
+    description = "Blocks PR merge if unresolved review comments exist."
+    parameter_patterns = ["block_on_unresolved_comments", "require_resolution"]
+    event_types = ["pull_request"]
+    examples = [{"block_on_unresolved_comments": True}]
+
+    async def evaluate(self, context: Any) -> list[Violation]:
+        """Evaluate unresolved comments condition."""
+        parameters = context.get("parameters", {})
+        event = context.get("event", {})
+
+        block = parameters.get("block_on_unresolved_comments") or parameters.get("require_resolution")
+        if not block:
+            return []
+
+        review_threads = event.get("review_threads", [])
+        if not review_threads:
+            return []
+
+        unresolved_count = 0
+        for thread in review_threads:
+            # Depending on how the dict is parsed/stored in the event data
+            if hasattr(thread, "is_resolved"):
+                is_resolved = thread.is_resolved
+                is_outdated = getattr(thread, "is_outdated", False)
+            else:
+                is_resolved = thread.get("is_resolved", False)
+                is_outdated = thread.get("is_outdated", False)
+                
+            # If a thread is unresolved and not outdated
+            if not is_resolved and not is_outdated:
+                unresolved_count += 1
+
+        if unresolved_count > 0:
+            return [
+                Violation(
+                    rule_description=self.description,
+                    severity=Severity.HIGH,
+                    message=f"PR has {unresolved_count} unresolved review comment thread(s)",
+                    how_to_fix="Resolve all review comments before merging.",
+                )
+            ]
+
+        return []
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        """Legacy validation interface."""
+        block = parameters.get("block_on_unresolved_comments") or parameters.get("require_resolution")
+        if not block:
+            return True
+
+        review_threads = event.get("review_threads", [])
+        for thread in review_threads:
+            if hasattr(thread, "is_resolved"):
+                is_resolved = thread.is_resolved
+                is_outdated = getattr(thread, "is_outdated", False)
+            else:
+                is_resolved = thread.get("is_resolved", False)
+                is_outdated = thread.get("is_outdated", False)
+                
+            if not is_resolved and not is_outdated:
+                return False
+
+        return True

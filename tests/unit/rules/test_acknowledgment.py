@@ -35,8 +35,8 @@ class TestRuleIDEnum:
             assert len(rule_id.value) > 0
 
     def test_rule_id_count(self):
-        """Verify we have exactly 11 standardized rule IDs."""
-        assert len(RuleID) == 11
+        """Verify we have exactly 14 standardized rule IDs."""
+        assert len(RuleID) == 14
 
     def test_all_rule_ids_have_descriptions(self):
         """Every RuleID should have a corresponding description."""
@@ -157,6 +157,9 @@ class TestMapViolationTextToRuleId:
                 "Code owners for modified paths must be added as reviewers: alice",
                 RuleID.REQUIRE_CODE_OWNER_REVIEWERS,
             ),
+            ("Restricted patterns ['console'] found in added lines of src/app.js", RuleID.DIFF_PATTERN),
+            ("Security-sensitive patterns ['api_key'] detected in src/auth.py", RuleID.SECURITY_PATTERN),
+            ("PR has 1 unresolved review comment thread(s)", RuleID.UNRESOLVED_COMMENTS),
         ],
     )
     def test_maps_violation_text_correctly(self, text: str, expected_rule_id: RuleID):

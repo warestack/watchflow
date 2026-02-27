@@ -21,10 +21,21 @@ class Comment(BaseModel):
     body: str
 
 
+class ThreadComment(BaseModel):
+    author: str
+    body: str
+    created_at: str
+
+class ReviewThread(BaseModel):
+    is_resolved: bool
+    is_outdated: bool
+    comments: list[ThreadComment]
+
 class PRContext(BaseModel):
     commits: list[Commit]
     reviews: list[Review]
     comments: list[Comment]
+    review_threads: list[ReviewThread] = []
 
 
 class GitHubGraphQLClient:
@@ -65,6 +76,21 @@ class GitHubGraphQLClient:
                                 login
                             }
                             body
+                        }
+                    }
+                    reviewThreads(first: 50) {
+                        nodes {
+                            isResolved
+                            isOutdated
+                            comments(first: 10) {
+                                nodes {
+                                    body
+                                    author {
+                                        login
+                                    }
+                                    createdAt
+                                }
+                            }
                         }
                     }
                 }
@@ -111,7 +137,27 @@ class GitHubGraphQLClient:
                     for node in pr_data["comments"]["nodes"]
                 ]
 
-                return PRContext(commits=commits, reviews=reviews, comments=comments)
+                review_threads = []
+                for thread_node in pr_data.get("reviewThreads", {}).get("nodes", []):
+                    thread_comments = [
+                        ThreadComment(
+                            author=c_node["author"]["login"] if c_node.get("author") else "unknown",
+                            body=c_node["body"],
+                            created_at=c_node["createdAt"],
+                        )
+                        for c_node in thread_node.get("comments", {}).get("nodes", [])
+                    ]
+                    review_threads.append(
+                        ReviewThread(
+                            is_resolved=thread_node.get("isResolved", False),
+                            is_outdated=thread_node.get("isOutdated", False),
+                            comments=thread_comments,
+                        )
+                    )
+
+                return PRContext(
+                    commits=commits, reviews=reviews, comments=comments, review_threads=review_threads
+                )
 
         except httpx.HTTPStatusError as e:
             logger.error("HTTP error fetching PR context", exc_info=e)
