@@ -522,7 +522,7 @@ class UnresolvedCommentsCondition(BaseCondition):
             else:
                 is_resolved = thread.get("is_resolved", False)
                 is_outdated = thread.get("is_outdated", False)
-                
+
             # If a thread is unresolved and not outdated
             if not is_resolved and not is_outdated:
                 unresolved_count += 1
@@ -553,7 +553,7 @@ class UnresolvedCommentsCondition(BaseCondition):
             else:
                 is_resolved = thread.get("is_resolved", False)
                 is_outdated = thread.get("is_outdated", False)
-                
+
             if not is_resolved and not is_outdated:
                 return False
 

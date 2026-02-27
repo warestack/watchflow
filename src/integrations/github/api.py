@@ -498,7 +498,9 @@ class GitHubClient:
             logger.error(f"Error getting reviews for PR #{pr_number} in {repo}: {e}")
             return []
 
-    async def get_pull_request_review_threads(self, repo: str, pr_number: int, installation_id: int) -> list[dict[str, Any]]:
+    async def get_pull_request_review_threads(
+        self, repo: str, pr_number: int, installation_id: int
+    ) -> list[dict[str, Any]]:
         """Get review threads for a pull request using the GraphQL API."""
         try:
             token = await self.get_installation_access_token(installation_id)
@@ -507,6 +509,7 @@ class GitHubClient:
                 return []
 
             from src.integrations.github.graphql import GitHubGraphQLClient
+
             client = GitHubGraphQLClient(token)
 
             owner, repo_name = repo.split("/", 1)
@@ -534,13 +537,17 @@ class GitHubClient:
             }
             """
             variables = {"owner": owner, "repo": repo_name, "pr_number": pr_number}
-            data = await client.execute_query(query, variables)
+            response_model = await client.execute_query_typed(query, variables)
             
-            if "errors" in data:
-                logger.error("GraphQL query failed", errors=data["errors"])
+            if response_model.errors:
+                logger.error("GraphQL query failed", errors=response_model.errors)
                 return []
                 
-            threads = data.get("data", {}).get("repository", {}).get("pullRequest", {}).get("reviewThreads", {}).get("nodes", [])
+            repo_node = response_model.data.repository
+            if not repo_node or not repo_node.pull_request or not repo_node.pull_request.review_threads:
+                return []
+                
+            threads = [thread.model_dump() for thread in repo_node.pull_request.review_threads.nodes]
             logger.info(f"Retrieved {len(threads)} review threads for PR #{pr_number} in {repo}")
             return threads
         except Exception as e:

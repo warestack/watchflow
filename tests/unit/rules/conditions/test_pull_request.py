@@ -389,7 +389,7 @@ class TestDiffPatternCondition:
         patch = "@@ -1,3 +1,4 @@\n def func():\n-    pass\n+    console.log('debug')\n+    return True"
         event = {"changed_files": [{"filename": "src/app.js", "patch": patch}]}
         context = {"parameters": {"diff_restricted_patterns": ["console\\.log"]}, "event": event}
-        
+
         violations = await condition.evaluate(context)
         assert len(violations) == 1
         assert "console" in violations[0].message
@@ -401,7 +401,7 @@ class TestDiffPatternCondition:
         patch = "@@ -1,2 +1,3 @@\n def func():\n+    return True"
         event = {"changed_files": [{"filename": "src/app.js", "patch": patch}]}
         context = {"parameters": {"diff_restricted_patterns": ["console\\.log"]}, "event": event}
-        
+
         violations = await condition.evaluate(context)
         assert len(violations) == 0
 
@@ -423,7 +423,7 @@ class TestSecurityPatternCondition:
         patch = "@@ -1 +1,2 @@\n+api_key = '123456'"
         event = {"changed_files": [{"filename": "src/auth.py", "patch": patch}]}
         context = {"parameters": {"security_patterns": ["api_key"]}, "event": event}
-        
+
         violations = await condition.evaluate(context)
         assert len(violations) == 1
         assert violations[0].severity.value == "critical"
@@ -443,7 +443,7 @@ class TestUnresolvedCommentsCondition:
             ]
         }
         context = {"parameters": {"block_on_unresolved_comments": True}, "event": event}
-        
+
         violations = await condition.evaluate(context)
         assert len(violations) == 1
         assert "1 unresolved review comment thread" in violations[0].message
@@ -458,7 +458,7 @@ class TestUnresolvedCommentsCondition:
             ]
         }
         context = {"parameters": {"block_on_unresolved_comments": True}, "event": event}
-        
+
         violations = await condition.evaluate(context)
         assert len(violations) == 0
 

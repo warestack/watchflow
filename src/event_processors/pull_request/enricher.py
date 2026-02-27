@@ -29,7 +29,9 @@ class PullRequestEnricher:
 
             # Fetch review threads using GraphQL
             if hasattr(self.github_client, "get_pull_request_review_threads"):
-                threads = await self.github_client.get_pull_request_review_threads(repo_full_name, pr_number, installation_id)
+                threads = await self.github_client.get_pull_request_review_threads(
+                    repo_full_name, pr_number, installation_id
+                )
                 api_data["review_threads"] = threads or []
             else:
                 api_data["review_threads"] = []
