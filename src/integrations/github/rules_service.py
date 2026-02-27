@@ -38,7 +38,7 @@ async def _validate_rules_yaml(repo: str, installation_id: int) -> dict[str, Any
                     "**How to set up rules:**\n"
                     "1. Create a file at `.watchflow/rules.yaml` in your repository root\n"
                     "2. Add your rules in the following format:\n"
-                    "   ```yaml\n   rules:\n     - id: pr-approval-required\n       name: PR Approval Required\n       description: All pull requests must have at least 2 approvals\n       enabled: true\n       severity: high\n       event_types: [pull_request]\n       parameters:\n         min_approvals: 2\n   ```\n\n"
+                    "   ```yaml\n   rules:\n     - description: All pull requests must have at least 2 approvals\n       enabled: true\n       severity: high\n       event_types: [pull_request]\n       parameters:\n         min_approvals: 2\n   ```\n\n"
                     "**Note:** Rules are currently read from the main branch only.\n\n"
                     "📖 [Read the documentation for more examples](https://github.com/warestack/watchflow/blob/main/docs/getting-started/configuration.md)\n\n"
                     "After adding the file, push your changes to re-run validation."
@@ -64,7 +64,7 @@ async def _validate_rules_yaml(repo: str, installation_id: int) -> dict[str, Any
                 "message": (
                     "❌ **Invalid `.watchflow/rules.yaml`: missing top-level `rules:` key**\n\n"
                     "Your file must start with a `rules:` key, like:\n"
-                    "```yaml\nrules:\n  - id: ...\n```\n"
+                    "```yaml\nrules:\n  - description: ...\n```\n"
                     f"[See configuration docs.]({DOCS_URL})"
                 ),
             }
@@ -74,7 +74,7 @@ async def _validate_rules_yaml(repo: str, installation_id: int) -> dict[str, Any
                 "message": (
                     "❌ **Invalid `.watchflow/rules.yaml`: `rules` must be a list**\n\n"
                     "Example:\n"
-                    "```yaml\nrules:\n  - id: my-rule\n    description: ...\n```\n"
+                    "```yaml\nrules:\n  - description: my-rule\n```\n"
                     f"[See configuration docs.]({DOCS_URL})"
                 ),
             }
@@ -94,7 +94,7 @@ async def _validate_rules_yaml(repo: str, installation_id: int) -> dict[str, Any
                 return {
                     "success": False,
                     "message": (
-                        f"❌ **Rule #{i + 1} (`{rule_data.get('id', 'N/A')}`) failed validation**\n\n"
+                        f"❌ **Rule #{i + 1} (`{rule_data.get('description', 'N/A')}`) failed validation**\n\n"
                         f"Error: `{e}`\n\n"
                         "Please check your rule definition and fix the error above.\n\n"
                         f"[See rule schema docs.]({DOCS_URL})"

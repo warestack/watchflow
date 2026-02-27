@@ -59,6 +59,12 @@ class GitHubRuleLoader(RuleLoader):
                 try:
                     if not isinstance(rule_data, dict):
                         continue
+
+                    # Skip disabled rules
+                    if str(rule_data.get("enabled", True)).lower() == "false":
+                        logger.info(f"Skipping disabled rule: {rule_data.get('description', 'unknown')}")
+                        continue
+
                     rule = GitHubRuleLoader._parse_rule(rule_data)
                     if rule:
                         rules.append(rule)
