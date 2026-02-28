@@ -54,3 +54,39 @@ To level up Watchflow for large engineering teams and highly regulated industrie
 **Purpose:** If `src/` files change, require an addition to `CHANGELOG.md` or a `.changeset/` file.
 **Why:** Maintains release notes for compliance audits automatically.
 **Parameters:** `require_changelog_update: true`
+
+## 5. Potential GitHub Ecosystem Integrations
+
+To make Watchflow a true "single pane of glass" for governance, we can build custom condition handlers that hook directly into GitHub's native ecosystem.
+
+### `CodeQLAnalysisCondition`
+**Purpose:** Block merges if CodeQL (or other static analysis tools) has detected critical vulnerabilities in the PR diff.
+**How to build:** Call the GitHub `code-scanning/alerts` API for the current `head_sha`.
+**Why:** Instead of developers having to check multiple tabs, Watchflow summarizes the CodeQL alerts and makes them enforceable via YAML.
+**Parameters:** `block_on_critical_codeql: true`
+
+### `DependabotAlertsCondition`
+**Purpose:** Ensure developers do not merge PRs that introduce new dependencies with known CVEs.
+**How to build:** Hook into the `dependabot/alerts` REST API for the repository, filtering by the PR's branch.
+**Why:** Shifting security left.
+**Parameters:** `max_dependabot_severity: "high"`
+
+## 6. Open-Source Ecosystem Integrations
+
+We can leverage popular open-source Python SDKs directly within our rule engine to parse specific file types during the event evaluation.
+
+### Open Policy Agent (OPA) / Rego Validation
+**Purpose:** If a PR modifies `.rego` files or Kubernetes manifests, validate them against the OPA engine.
+**How to build:** Embed the `opa` CLI or use the `PyOPA` library to evaluate the diff.
+**Why:** Infrastructure-as-Code (IaC) teams need a way to ensure PRs don't introduce misconfigurations.
+
+### Pydantic Schema Breakage Detection
+**Purpose:** Detect backward-incompatible changes to REST API models.
+**How to build:** If `models.py` changes, parse the old and new AST (Abstract Syntax Tree) to see if a required field was deleted or changed types.
+**Why:** Breaking API contracts is a massive incident vector in enterprise microservices.
+
+### Ruff / Black / ESLint Override Detection
+**Purpose:** Flag PRs that introduce new `# noqa`, `# type: ignore`, or `// eslint-disable` comments.
+**How to build:** Use our existing diff/patch parser to explicitly hunt for suppression comments in the added lines.
+**Why:** Keeps technical debt from quietly slipping into the codebase.
+**Parameters:** `allow_linter_suppressions: false`
