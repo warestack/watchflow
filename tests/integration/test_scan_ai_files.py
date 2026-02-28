@@ -28,7 +28,7 @@ class TestScanAIFilesEndpoint:
         mock_repo = {"default_branch": "main", "full_name": "owner/repo"}
 
         async def mock_get_repository(*args, **kwargs):
-            return mock_repo
+            return (mock_repo, None)
 
         async def mock_get_tree(*args, **kwargs):
             return mock_tree

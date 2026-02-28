@@ -129,27 +129,51 @@ class GitHubClient:
 
     async def get_repository(
         self, repo_full_name: str, installation_id: int | None = None, user_token: str | None = None
-    ) -> dict[str, Any] | None:
-        """Fetch repository metadata (default branch, language, etc.). Supports public access."""
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        """
+        Fetch repository metadata. Returns (repo_data, None) on success;
+        (None, {"status": int, "message": str}) on failure for meaningful API responses.
+        """
         headers = await self._get_auth_headers(
-            installation_id=installation_id, user_token=user_token, allow_anonymous=True
+            installation_id=installation_id, user_token=user_token
         )
         if not headers:
-            return None
+            return (
+                None,
+                {"status": 401, "message": "Authentication required. Provide github_token or installation_id in the request."},
+            )
         url = f"{config.github.api_base_url}/repos/{repo_full_name}"
         session = await self._get_session()
         async with session.get(url, headers=headers) as response:
             if response.status == 200:
                 data = await response.json()
-                return cast("dict[str, Any]", data)
-            return None
+                return cast("dict[str, Any]", data), None
+            try:
+                body = await response.json()
+                gh_message = body.get("message", "") if isinstance(body, dict) else ""
+            except Exception:
+                gh_message = ""
+            if response.status == 404:
+                msg = gh_message or "Repository not found or access denied. Check repo name and token permissions."
+                return None, {"status": 404, "message": msg}
+            if response.status == 403:
+                msg = "GitHub API rate limit exceeded. Try again later or provide github_token for higher limits."
+                if gh_message and "rate limit" in gh_message.lower():
+                    msg = gh_message
+                return None, {"status": 403, "message": msg}
+            if response.status == 401:
+                return (
+                    None,
+                    {"status": 401, "message": gh_message or "Invalid or expired token. Check github_token or installation_id."},
+                )
+            return None, {"status": response.status, "message": gh_message or f"GitHub API returned {response.status}."}
 
     async def list_directory_any_auth(
         self, repo_full_name: str, path: str, installation_id: int | None = None, user_token: str | None = None
     ) -> list[dict[str, Any]]:
-        """List directory contents using either installation or user token."""
+        """List directory contents using installation or user token (auth required)."""
         headers = await self._get_auth_headers(
-            installation_id=installation_id, user_token=user_token, allow_anonymous=True
+            installation_id=installation_id, user_token=user_token
         )
         if not headers:
             return []
@@ -173,8 +197,11 @@ class GitHubClient:
     user_token: str | None = None,
     recursive: bool = True,
     ) -> list[dict[str, Any]]:
-        """Get the tree of a repository."""
-        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
+        """Get the tree of a repository. Requires authentication (github_token or installation_id)."""
+        headers = await self._get_auth_headers(
+            installation_id=installation_id,
+            user_token=user_token,
+        )
         if not headers:
             return []
         ref = ref or "main"
@@ -195,30 +222,46 @@ class GitHubClient:
 
         
     async def _resolve_tree_sha(self, repo_full_name: str, ref: str, headers: dict[str, str]) -> str | None:
-        """Resolve the SHA of a tree."""
-        url = f"{config.github.api_base_url}/repos/{repo_full_name}/git/ref/heads/{ref}"
+        """Resolve the SHA of the tree for the given ref (commit SHA from ref -> tree SHA from commit)."""
         session = await self._get_session()
-        async with session.get(url, headers=headers) as response:
+        ref_url = f"{config.github.api_base_url}/repos/{repo_full_name}/git/ref/heads/{ref}"
+        async with session.get(ref_url, headers=headers) as response:
             if response.status != 200:
                 return None
-
-
+            data = await response.json()
+        commit_sha = data.get("object", {}).get("sha") if isinstance(data, dict) else None
+        if not commit_sha:
+            return None
+        commit_url = f"{config.github.api_base_url}/repos/{repo_full_name}/git/commits/{commit_sha}"
+        async with session.get(commit_url, headers=headers) as response:
+            if response.status != 200:
+                return None
+            commit_data = await response.json()
+        tree_sha = commit_data.get("tree", {}).get("sha") if isinstance(commit_data, dict) else None
+        return tree_sha
 
     async def get_file_content(
-        self, repo_full_name: str, file_path: str, installation_id: int | None, user_token: str | None = None
+        self,
+        repo_full_name: str,
+        file_path: str,
+        installation_id: int | None,
+        user_token: str | None = None,
+        ref: str | None = None,
     ) -> str | None:
         """
-        Fetches the content of a file from a repository. Supports anonymous access for public analysis.
+        Fetches the content of a file from a repository. Requires authentication (github_token or installation_id).
+        When ref is provided (branch name, tag, or commit SHA), returns content at that ref; otherwise uses default branch.
         """
         headers = await self._get_auth_headers(
             installation_id=installation_id,
             user_token=user_token,
             accept="application/vnd.github.raw",
-            allow_anonymous=True,
         )
         if not headers:
             return None
         url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{file_path}"
+        if ref:
+            url = f"{url}?ref={ref}"
 
         session = await self._get_session()
         async with session.get(url, headers=headers) as response:
@@ -1070,7 +1113,6 @@ class GitHubClient:
             headers = await self._get_auth_headers(
                 installation_id=installation_id,
                 user_token=user_token,
-                allow_anonymous=True,  # Support public repos
             )
             if not headers:
                 logger.error("pr_fetch_auth_failed", repo=repo_full_name, error_type="auth_error")
@@ -1179,10 +1221,9 @@ class GitHubClient:
         url = f"{config.github.api_base_url}/graphql"
         payload = {"query": query, "variables": variables}
 
-        # Get appropriate headers (can be anonymous for public data or authenticated)
-        # Priority: user_token > installation_id > anonymous (if allowed)
+        # Get appropriate headers (auth required: user_token or installation_id)
         headers = await self._get_auth_headers(
-            user_token=user_token, installation_id=installation_id, allow_anonymous=True
+            user_token=user_token, installation_id=installation_id
         )
         if not headers:
             # Fallback or error? GraphQL usually demands auth.

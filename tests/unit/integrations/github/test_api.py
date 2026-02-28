@@ -126,9 +126,10 @@ async def test_get_repository_success(github_client, mock_aiohttp_session):
     mock_aiohttp_session.post.return_value = mock_token_response
     mock_aiohttp_session.get.return_value = mock_repo_response
 
-    repo = await github_client.get_repository("owner/repo", installation_id=123)
+    repo_data, repo_error = await github_client.get_repository("owner/repo", installation_id=123)
 
-    assert repo == {"full_name": "owner/repo"}
+    assert repo_data == {"full_name": "owner/repo"}
+    assert repo_error is None
 
 
 @pytest.mark.asyncio
@@ -139,9 +140,11 @@ async def test_get_repository_failure(github_client, mock_aiohttp_session):
     mock_aiohttp_session.post.return_value = mock_token_response
     mock_aiohttp_session.get.return_value = mock_repo_response
 
-    repo = await github_client.get_repository("owner/repo", installation_id=123)
+    repo_data, repo_error = await github_client.get_repository("owner/repo", installation_id=123)
 
-    assert repo is None
+    assert repo_data is None
+    assert repo_error is not None
+    assert repo_error["status"] == 404
 
 
 @pytest.mark.asyncio

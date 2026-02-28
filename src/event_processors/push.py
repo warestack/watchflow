@@ -3,10 +3,13 @@ import time
 from typing import Any
 
 from src.agents import get_agent
+from src.api.recommendations import get_suggested_rules_from_repo
+from src.rules.ai_rules_scan import is_relevant_push
 from src.core.models import Severity, Violation
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.integrations.github.check_runs import CheckRunManager
 from src.tasks.task_queue import Task
+
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +64,33 @@ class PushProcessor(BaseEventProcessor):
                 processing_time_ms=int((time.time() - start_time) * 1000),
                 error="No installation ID found",
             )
+
+        # Agentic: scan repo only when relevant (default branch or touched rule files)
+        # Use the branch that was pushed so we scan that branch's file content, not main.
+        if is_relevant_push(task.payload):
+            try:
+                github_token = await self.github_client.get_installation_access_token(task.installation_id)
+                push_ref = payload.get("ref")  # e.g. refs/heads/feature-x
+                rules_yaml, rules_count, ambiguous, rule_sources = await get_suggested_rules_from_repo(
+                    task.repo_full_name, task.installation_id, github_token, ref=push_ref
+                )
+                logger.info("=" * 80)
+                logger.info("📋 Suggested rules (agentic scan + translation)")
+                logger.info(f"   Repo: {task.repo_full_name} | Ref: {push_ref or 'default'} | Translated rules: {rules_count}")
+                if rule_sources:
+                    from_mapping = sum(1 for s in rule_sources if s == "mapping")
+                    from_agent = sum(1 for s in rule_sources if s == "agent")
+                    logger.info("   From deterministic mapping: %s | From AI agent: %s", from_mapping, from_agent)
+                    logger.info("   Per-rule source: %s", rule_sources)
+                if rules_count > 0:
+                    logger.info("   YAML:\n%s", rules_yaml)
+                if ambiguous:
+                    logger.info("   Ambiguous (not translated): %s", [a.get("statement", "") for a in ambiguous])
+                logger.info("=" * 80)
+            except Exception as e:
+                logger.warning("Suggested rules scan failed: %s", e)
+        else:
+            logger.info("Push not relevant for agentic scan (skip): ref=%s", task.payload.get("ref"))
 
         rules_optional = await self.rule_provider.get_rules(task.repo_full_name, task.installation_id)
         rules = rules_optional if rules_optional is not None else []

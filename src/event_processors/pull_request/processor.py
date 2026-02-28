@@ -3,6 +3,8 @@ import time
 from typing import Any
 
 from src.agents import get_agent
+from src.api.recommendations import get_suggested_rules_from_repo
+from src.rules.ai_rules_scan import is_relevant_pr
 from src.core.models import Violation
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.event_processors.pull_request.enricher import PullRequestEnricher
@@ -59,6 +61,32 @@ class PullRequestProcessor(BaseEventProcessor):
             if not github_token_optional:
                 raise ValueError("Failed to get installation access token")
             github_token = github_token_optional
+
+            # Agentic: scan repo only when relevant (PR targets default branch)
+            # Use the PR head ref so we scan the branch being proposed, not main.
+            if is_relevant_pr(task.payload):
+                try:
+                    pr_head_ref = pr_data.get("head", {}).get("ref")  # branch name, e.g. feature-x
+                    rules_yaml, rules_count, ambiguous, rule_sources = await get_suggested_rules_from_repo(
+                        repo_full_name, installation_id, github_token, ref=pr_head_ref
+                    )
+                    logger.info("=" * 80)
+                    logger.info("📋 Suggested rules (agentic scan + translation)")
+                    logger.info(f"   Repo: {repo_full_name} | PR #{pr_number} | Ref: {pr_head_ref or 'default'} | Translated rules: {rules_count}")
+                    if rule_sources:
+                        from_mapping = sum(1 for s in rule_sources if s == "mapping")
+                        from_agent = sum(1 for s in rule_sources if s == "agent")
+                        logger.info("   From deterministic mapping: %s | From AI agent: %s", from_mapping, from_agent)
+                        logger.info("   Per-rule source: %s", rule_sources)
+                    if rules_count > 0:
+                        logger.info("   YAML:\n%s", rules_yaml)
+                    if ambiguous:
+                        logger.info("   Ambiguous (not translated): %s", [a.get("statement", "") for a in ambiguous])
+                    logger.info("=" * 80)
+                except Exception as e:
+                    logger.warning("Suggested rules scan failed: %s", e)
+            else:
+                logger.info("PR not relevant for agentic scan (skip): base ref=%s", task.payload.get("pull_request", {}).get("base", {}).get("ref"))
 
             # 1. Enrich event data
             event_data = await self.enricher.enrich_event_data(task, github_token)
