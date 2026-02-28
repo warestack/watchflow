@@ -1,11 +1,12 @@
-import logging
 import time
 from typing import Any
+
+import structlog
 
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.tasks.task_queue import Task
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class DeploymentProcessor(BaseEventProcessor):
@@ -29,16 +30,26 @@ class DeploymentProcessor(BaseEventProcessor):
         deployment_id = deployment.get("id")
 
         logger.info("=" * 80)
-        logger.info(f"🚀 Processing DEPLOYMENT event for {task.repo_full_name}")
-        logger.info(f"   Environment: {environment}")
-        logger.info(f"   Creator: {creator}")
-        logger.info(f"   Ref: {ref}")
-        logger.info(f"   Deployment ID: {deployment_id}")
+        logger.info(
+            "deployment_processing_started",
+            operation="process_deployment",
+            subject_ids={"repo_full_name": task.repo_full_name, "deployment_id": deployment_id},
+            decision="accepted",
+            environment=environment,
+            creator=creator,
+            ref=ref,
+        )
         logger.info("=" * 80)
 
         # Just log the deployment creation - no rule evaluation here
         # Rule evaluation will be handled by deployment_protection_rule events
-        logger.info(f"📋 Deployment {deployment_id} created for {environment}")
+        logger.info(
+            "deployment_created",
+            operation="process_deployment",
+            subject_ids={"repo_full_name": task.repo_full_name, "deployment_id": deployment_id},
+            decision="created",
+            environment=environment,
+        )
         logger.info("=" * 80)
         logger.info(f"🏁 DEPLOYMENT processing completed in {int((time.time() - start_time) * 1000)}ms")
         logger.info("=" * 80)

@@ -1,5 +1,6 @@
-import logging
 from typing import Any
+
+import structlog
 
 from src.core.models import Acknowledgment
 from src.rules.acknowledgment import (
@@ -7,7 +8,7 @@ from src.rules.acknowledgment import (
     parse_acknowledgment_comment,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class PullRequestEnricher:
@@ -32,7 +33,7 @@ class PullRequestEnricher:
             api_data["files"] = files or []
 
         except Exception as e:
-            logger.error(f"Error fetching API data for PR #{pr_number}: {e}")
+            logger.error("error_fetching_api_data_for_pr", pr_number=pr_number, e=e)
 
         return api_data
 
@@ -109,7 +110,7 @@ class PullRequestEnricher:
 
             return acknowledgments
         except Exception as e:
-            logger.error(f"Error fetching acknowledgments: {e}")
+            logger.error("error_fetching_acknowledgments", e=e)
             return {}
 
     def prepare_webhook_data(self, task: Any) -> dict[str, Any]:

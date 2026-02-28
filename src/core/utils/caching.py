@@ -5,15 +5,15 @@ Provides async-friendly caching with TTL support and decorators
 for caching function results.
 """
 
-import logging
 from collections.abc import Callable
 from datetime import datetime
 from functools import wraps
 from typing import Any
 
+import structlog
 from cachetools import TTLCache  # type: ignore
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class AsyncCache:
@@ -62,7 +62,7 @@ class AsyncCache:
             logger.debug(f"Cache entry '{key}' expired (age: {age:.2f}s, ttl: {self.ttl}s)")
             return None
 
-        logger.debug(f"Cache hit for '{key}'")
+        logger.debug("cache_hit_for", key=key)
         return cached_data.get("value")
 
     def set(self, key: str, value: Any) -> None:
@@ -79,20 +79,20 @@ class AsyncCache:
                 self._cache.keys(),
                 key=lambda k: self._cache[k].get("timestamp", 0),
             )
-            logger.debug(f"Cache full, evicting oldest entry '{oldest_key}'")
+            logger.debug("cache_full_evicting_oldest_entry", oldest_key=oldest_key)
             del self._cache[oldest_key]
 
         self._cache[key] = {
             "value": value,
             "timestamp": datetime.now().timestamp(),
         }
-        logger.debug(f"Cached entry '{key}'")
+        logger.debug("cached_entry", key=key)
 
     def clear(self) -> None:
         """Clear all cached values."""
         count = len(self._cache)
         self._cache.clear()
-        logger.debug(f"Cleared {count} cache entries")
+        logger.debug("cleared_cache_entries", count=count)
 
     def invalidate(self, key: str) -> None:
         """
@@ -103,7 +103,7 @@ class AsyncCache:
         """
         if key in self._cache:
             del self._cache[key]
-            logger.debug(f"Invalidated cache entry '{key}'")
+            logger.debug("invalidated_cache_entry", key=key)
 
     def size(self) -> int:
         """
@@ -175,11 +175,11 @@ def cached_async(
             cached_value = cache.get(cache_key)
 
             if cached_value is not None:
-                logger.debug(f"Cache hit for {func.__name__} with key '{cache_key}'")
+                logger.debug("cache_hit_for_with_key", __name__=func.__name__, cache_key=cache_key)
                 return cached_value
 
             # Cache miss - execute function
-            logger.debug(f"Cache miss for {func.__name__} with key '{cache_key}'")
+            logger.debug("cache_miss_for_with_key", __name__=func.__name__, cache_key=cache_key)
             result = await func(*args, **kwargs)
 
             # Store in cache

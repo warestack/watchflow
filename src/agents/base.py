@@ -2,15 +2,15 @@
 Base agent classes and utilities for agents.
 """
 
-import logging
 from abc import ABC, abstractmethod
 from typing import Any, TypeVar, cast
 
+import structlog
 from pydantic import BaseModel, Field
 
 from src.core.utils.timeout import execute_with_timeout
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 T = TypeVar("T")
 
@@ -44,7 +44,12 @@ class BaseAgent(ABC):
 
         self.llm = get_chat_model(agent=agent_name)
         self.graph = self._build_graph()
-        logger.info(f"🔧 {self.__class__.__name__} initialized with max_retries={max_retries}, agent_name={agent_name}")
+        logger.info(
+            "initialized_with_maxretries_agentname",
+            __name__=self.__class__.__name__,
+            max_retries=max_retries,
+            agent_name=agent_name,
+        )
 
     @abstractmethod
     def _build_graph(self) -> Any:

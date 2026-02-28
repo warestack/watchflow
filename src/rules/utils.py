@@ -1,12 +1,12 @@
-import logging
 from typing import Any
 
+import structlog
 import yaml
 
 from src.integrations.github import github_client
 from src.rules.models import Rule
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 DOCS_URL = "https://github.com/warestack/watchflow/blob/main/docs/getting-started/configuration.md"
 
@@ -21,7 +21,7 @@ async def validate_rules_yaml_from_repo(repo_full_name: str, installation_id: in
             comment=validation_result["message"],
             installation_id=installation_id,
         )
-        logger.info(f"Posted validation result to PR #{pr_number} in {repo_full_name}")
+        logger.info("posted_validation_result_to_pr_in", pr_number=pr_number, repo_full_name=repo_full_name)
 
 
 async def _validate_rules_yaml(repo: str, installation_id: int) -> dict[str, Any]:

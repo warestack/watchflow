@@ -1,7 +1,7 @@
-import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
+import structlog
 from pydantic import BaseModel, Field
 
 from src.core.models import Violation, WebhookEvent
@@ -10,7 +10,7 @@ from src.rules.interface import RuleLoader
 from src.rules.loaders.github_loader import GitHubRuleLoader
 from src.tasks.task_queue import Task
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class ProcessingResult(BaseModel):

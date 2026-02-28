@@ -1,6 +1,7 @@
-import logging
 import time
 from typing import Any
+
+import structlog
 
 from src.agents import get_agent
 from src.core.utils.retry import retry_async
@@ -9,7 +10,7 @@ from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.tasks.scheduler.deployment_scheduler import get_deployment_scheduler
 from src.tasks.task_queue import Task
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 AGENT_TIMEOUT_SECONDS = 30.0
 
@@ -75,7 +76,7 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
             rules = await self.rule_provider.get_rules(repo_full_name, installation_id)
 
             if not rules:
-                logger.info("No rules found for repository")
+                logger.info("no_rules_found_for_repository")
                 if can_call_callback:
                     approved = await self._approve_deployment(
                         deployment_callback_url, environment, "No rules configured", installation_id
@@ -109,7 +110,7 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                     deployment_rules.append(r)
 
             if not deployment_rules:
-                logger.info("No deployment rules found")
+                logger.info("no_deployment_rules_found")
                 if can_call_callback:
                     approved = await self._approve_deployment(
                         deployment_callback_url,
@@ -182,7 +183,7 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                             processing_time_ms=int((time.time() - start_time) * 1000),
                             error="Approval API failed after retries",
                         )
-                logger.info("All rules passed, deployment approved")
+                logger.info("all_rules_passed_deployment_approved")
             else:
                 time_based_violations = self._check_time_based_violations(violations)
                 if time_based_violations and can_call_callback:
@@ -200,7 +201,7 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
                             "callback_url": deployment_callback_url,
                         }
                     )
-                    logger.info("Time-based violations detected, added to scheduler for re-evaluation")
+                    logger.info("timebased_violations_detected_added_to_scheduler")
 
                 if can_call_callback:
                     rejected = await self._reject_deployment(

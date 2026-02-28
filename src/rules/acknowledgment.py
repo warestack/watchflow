@@ -8,13 +8,14 @@ across event processors. It provides:
 - Violation text to rule ID mapping
 """
 
-import logging
 import re
 from enum import StrEnum
 
+import structlog
+
 from src.core.models import Acknowledgment
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class RuleID(StrEnum):
@@ -109,7 +110,7 @@ def extract_acknowledgment_reason(comment_body: str) -> str:
     Returns:
         The extracted reason string, or empty string if no match.
     """
-    logger.info(f"🔍 Extracting acknowledgment reason from: '{comment_body}'")
+    logger.info("extracting_acknowledgment_reason_from", comment_body=comment_body)
 
     for i, pattern in enumerate(ACKNOWLEDGMENT_PATTERNS):
         match = re.search(pattern, comment_body, re.IGNORECASE | re.DOTALL)
@@ -118,13 +119,13 @@ def extract_acknowledgment_reason(comment_body: str) -> str:
             # Patterns 3-7 have reason as group 1
             reason = match.group(2).strip() if i < 3 else match.group(1).strip()
 
-            logger.info(f"✅ Pattern {i + 1} matched! Reason: '{reason}'")
+            logger.info("pattern_matched_reason", reason=reason)
             if reason:
                 return reason
         else:
-            logger.debug(f"❌ Pattern {i + 1} did not match")
+            logger.debug("pattern_did_not_match")
 
-    logger.info("❌ No patterns matched for acknowledgment reason")
+    logger.info("no_patterns_matched_for_acknowledgment_reason")
     return ""
 
 

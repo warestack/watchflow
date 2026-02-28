@@ -4,9 +4,9 @@ GitHub-based rule loader.
 Loads rules from GitHub repository files, implementing the RuleLoader interface.
 """
 
-import logging
 from typing import Any
 
+import structlog
 import yaml
 
 from src.core.config import config
@@ -16,7 +16,7 @@ from src.rules.interface import RuleLoader
 from src.rules.models import Rule, RuleAction, RuleSeverity
 from src.rules.registry import CONDITION_CLASS_TO_RULE_ID, ConditionRegistry
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class RulesFileNotFoundError(Exception):
@@ -42,17 +42,17 @@ class GitHubRuleLoader(RuleLoader):
             logger.info(f"Fetching rules for repository: {repository} (installation: {installation_id})")
             content = await self.github_client.get_file_content(repository, rules_file_path, installation_id)
             if not content:
-                logger.warning(f"No rules.yaml file found in {repository}")
+                logger.warning("no_rulesyaml_file_found_in", repository=repository)
                 raise RulesFileNotFoundError(f"Rules file not found: {rules_file_path}")
 
             rules_data = yaml.safe_load(content)
             if not isinstance(rules_data, dict) or "rules" not in rules_data:
-                logger.warning(f"No rules found in {repository}/{rules_file_path}")
+                logger.warning("no_rules_found_in", repository=repository, rules_file_path=rules_file_path)
                 return []
 
             rules = []
             if not isinstance(rules_data["rules"], list):
-                logger.warning(f"Rules key is not a list in {repository}/{rules_file_path}")
+                logger.warning("rules_key_is_not_a_list", repository=repository, rules_file_path=rules_file_path)
                 return []
 
             for rule_data in rules_data["rules"]:
@@ -70,7 +70,7 @@ class GitHubRuleLoader(RuleLoader):
                         rules.append(rule)
                 except Exception as e:
                     rule_description = rule_data.get("description", "unknown")
-                    logger.error(f"Error parsing rule {rule_description}: {e}")
+                    logger.error("error_parsing_rule", rule_description=rule_description, e=e)
                     continue
 
             logger.info(f"Successfully loaded {len(rules)} rules from {repository}")
@@ -79,7 +79,7 @@ class GitHubRuleLoader(RuleLoader):
             # Re-raise this specific exception
             raise
         except Exception as e:
-            logger.error(f"Error fetching rules for {repository}: {e}")
+            logger.error("error_fetching_rules_for", repository=repository, e=e)
             raise
 
     @staticmethod
@@ -95,7 +95,7 @@ class GitHubRuleLoader(RuleLoader):
                     event_type = EventType(event_type_str)
                     event_types.append(event_type)
                 except ValueError:
-                    logger.warning(f"Unknown event type: {event_type_str}")
+                    logger.warning("unknown_event_type", event_type_str=event_type_str)
 
         # Get parameters (strip internal "validator" key; engine infers validator from parameter names)
         parameters = dict(rule_data.get("parameters", {}))

@@ -1,11 +1,12 @@
-import logging
 from typing import Any
+
+import structlog
 
 from src.core.models import Violation
 from src.integrations.github.api import GitHubClient
 from src.presentation import github_formatter
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class CheckRunManager:
@@ -39,7 +40,7 @@ class CheckRunManager:
         """
         try:
             if not sha:
-                logger.warning(f"Cannot create check run for {repo}: SHA is missing")
+                logger.warning("cannot_create_check_run_for_sha", repo=repo)
                 return
 
             status = "completed"
@@ -58,10 +59,10 @@ class CheckRunManager:
                 output=output,
                 installation_id=installation_id,
             )
-            logger.info(f"Created check run for {repo}@{sha} with conclusion: {conclusion}")
+            logger.info("created_check_run_for_with_conclusion", repo=repo, sha=sha, conclusion=conclusion)
 
         except Exception as e:
-            logger.error(f"Error creating check run: {e}")
+            logger.error("error_creating_check_run", e=e)
 
     async def create_acknowledgment_check_run(
         self,
@@ -85,7 +86,7 @@ class CheckRunManager:
         """
         try:
             if not sha:
-                logger.warning(f"Cannot create check run for {repo}: SHA is missing")
+                logger.warning("cannot_create_check_run_for_sha", repo=repo)
                 return
 
             # Convert raw dict acknowledgments to Acknowledgment objects if needed
@@ -115,7 +116,7 @@ class CheckRunManager:
                 },
                 installation_id=installation_id,
             )
-            logger.info(f"Created acknowledgment check run for {repo}@{sha}")
+            logger.info("created_acknowledgment_check_run_for", repo=repo, sha=sha)
 
         except Exception as e:
-            logger.error(f"Error creating check run with acknowledgment: {e}")
+            logger.error("error_creating_check_run_with_acknowledgment", e=e)

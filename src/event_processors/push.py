@@ -1,6 +1,7 @@
-import logging
 import time
 from typing import Any
+
+import structlog
 
 from src.agents import get_agent
 from src.core.models import Severity, Violation
@@ -9,7 +10,7 @@ from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.integrations.github.check_runs import CheckRunManager
 from src.tasks.task_queue import Task
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class PushProcessor(BaseEventProcessor):
@@ -33,13 +34,13 @@ class PushProcessor(BaseEventProcessor):
         commits = payload.get("commits", [])
 
         logger.info("=" * 80)
-        logger.info(f"🚀 Processing PUSH event for {task.repo_full_name}")
-        logger.info(f"   Ref: {ref}")
+        logger.info("processing_push_event_for", repo_full_name=task.repo_full_name)
+        logger.info("ref", ref=ref)
         logger.info(f"   Commits: {len(commits)}")
         logger.info("=" * 80)
 
         if payload.get("deleted") or not payload.get("after") or payload.get("after") == NULL_SHA:
-            logger.info("push_skipped_deleted_or_empty")
+            logger.info("pushskippeddeletedorempty")
             return ProcessingResult(
                 success=True,
                 violations=[],
@@ -63,7 +64,7 @@ class PushProcessor(BaseEventProcessor):
         }
 
         if not task.installation_id:
-            logger.error("No installation ID found in task")
+            logger.error("no_installation_id_found_in_task")
             return ProcessingResult(
                 success=False,
                 violations=[],
@@ -76,7 +77,7 @@ class PushProcessor(BaseEventProcessor):
         rules = rules_optional if rules_optional is not None else []
 
         if not rules:
-            logger.info("No rules found for this repository")
+            logger.info("no_rules_found_for_this_repository")
             return ProcessingResult(
                 success=True, violations=[], api_calls_made=1, processing_time_ms=int((time.time() - start_time) * 1000)
             )
@@ -109,7 +110,7 @@ class PushProcessor(BaseEventProcessor):
                 )
                 violations.append(violation)
             except Exception as e:
-                logger.error(f"Error converting violation: {e}")
+                logger.error("error_converting_violation", e=e)
 
         processing_time = int((time.time() - start_time) * 1000)
 
@@ -117,11 +118,11 @@ class PushProcessor(BaseEventProcessor):
 
         sha = payload.get("after")
         if not sha or sha == "0000000000000000000000000000000000000000":
-            logger.warning("No valid commit SHA found, skipping check run")
+            logger.warning("no_valid_commit_sha_found_skipping")
         else:
             # Ensure installation_id is not None before passing to check_run_manager
             if task.installation_id is None:
-                logger.warning("Missing installation_id for push event, cannot create check run")
+                logger.warning("missing_installationid_for_push_event_cannot")
             else:
                 if violations:
                     await self.check_run_manager.create_check_run(
@@ -144,10 +145,10 @@ class PushProcessor(BaseEventProcessor):
 
         logger.info("=" * 80)
 
-        logger.info(f"🏁 PUSH processing completed in {processing_time}ms")
+        logger.info("push_processing_completed_in_ms", processing_time=processing_time)
         logger.info(f"   Rules evaluated: {len(formatted_rules)}")
         logger.info(f"   Violations found: {len(violations)}")
-        logger.info(f"   API calls made: {api_calls}")
+        logger.info("api_calls_made", api_calls=api_calls)
         logger.info("=" * 80)
 
         return ProcessingResult(

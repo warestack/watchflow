@@ -4,10 +4,10 @@ Rule Engine Agent with hybrid validation strategy.
 Focuses on rule descriptions and parameters, using fast validators with LLM reasoning as fallback.
 """
 
-import logging
 import time
 from typing import Any
 
+import structlog
 from langgraph.graph import END, START, StateGraph
 
 from src.agents.base import AgentResult, BaseAgent
@@ -29,7 +29,7 @@ from src.agents.engine_agent.nodes import (
 )
 from src.rules.registry import AVAILABLE_CONDITIONS
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class RuleEngineAgent(BaseAgent):
@@ -48,9 +48,9 @@ class RuleEngineAgent(BaseAgent):
         super().__init__(max_retries=max_retries, agent_name="engine_agent")
         self.timeout = timeout
 
-        logger.info("🔧 Rule Engine agent initializing...")
+        logger.info("rule_engine_agent_initializing")
         logger.info(f"🔧 Available validators: {len(AVAILABLE_CONDITIONS)}")
-        logger.info("🔧 Validation strategy: Hybrid (validators + LLM fallback)")
+        logger.info("validation_strategy_hybrid_validators_llm_fallback")
 
     def _build_graph(self) -> Any:
         """Build the LangGraph workflow for hybrid rule evaluation."""
@@ -118,13 +118,13 @@ class RuleEngineAgent(BaseAgent):
                 llm_usage=0,
             )
 
-            logger.info("🔧 Rule Engine initial state prepared")
+            logger.info("rule_engine_initial_state_prepared")
 
             # Run the hybrid graph with timeout
             result = await self._execute_with_timeout(self.graph.ainvoke(initial_state), timeout=self.timeout)
 
             execution_time = time.time() - start_time
-            logger.info(f"🔧 Rule Engine evaluation completed in {execution_time:.2f}s")
+            logger.info("rule_engine_evaluation_completed", latency_ms=int(execution_time * 1000))
 
             # Extract violations from result
             violations = []
@@ -133,7 +133,7 @@ class RuleEngineAgent(BaseAgent):
             elif hasattr(result, "violations"):
                 violations = result.violations
 
-            logger.info(f"🔧 Rule Engine extracted {len(violations)} violations")
+            logger.info("rule_engine_extracted_violations", num_violations=len(violations))
 
             # Convert violations to RuleViolation objects
             rule_violations = []
@@ -164,9 +164,9 @@ class RuleEngineAgent(BaseAgent):
                 llm_usage=result.llm_usage if hasattr(result, "llm_usage") else 0,
             )
 
-            logger.info("🔧 Rule Engine evaluation completed successfully")
-            logger.info(f"🔧 Validator usage: {evaluation_result.validator_usage}")
-            logger.info(f"🔧 LLM usage: {evaluation_result.llm_usage} calls")
+            logger.info("rule_engine_evaluation_completed_successfully")
+            logger.info("validator_usage", validator_usage=evaluation_result.validator_usage)
+            logger.info("llm_usage_calls", llm_usage=evaluation_result.llm_usage)
 
             return AgentResult(
                 success=len(violations) == 0,
@@ -181,7 +181,7 @@ class RuleEngineAgent(BaseAgent):
             )
         except Exception as e:
             execution_time = time.time() - start_time
-            logger.error(f"🔧 Error in Rule Engine evaluation: {e}")
+            logger.error("error_in_rule_engine_evaluation", e=e)
             return AgentResult(
                 success=False,
                 message=f"Rule Engine evaluation failed: {str(e)}",
@@ -271,5 +271,5 @@ class RuleEngineAgent(BaseAgent):
 
     async def evaluate_pull_request(self, rules: list[Any], event_data: dict[str, Any]) -> dict[str, Any]:
         """Legacy method for backwards compatibility."""
-        logger.warning("evaluate_pull_request is deprecated. Use evaluate() with event_type='pull_request'")
+        logger.warning("evaluatepullrequest_is_deprecated_use_evaluate_with")
         return await self.evaluate("pull_request", rules, event_data, "")

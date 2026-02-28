@@ -5,13 +5,14 @@ Provides utilities for tracking and recording performance metrics
 for operations, API calls, and agent executions.
 """
 
-import logging
 import time
 from contextlib import asynccontextmanager
 from functools import wraps
 from typing import Any
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.get_logger()
 
 
 @asynccontextmanager

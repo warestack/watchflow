@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from enum import Enum, StrEnum
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, SecretStr, field_validator
@@ -88,7 +88,7 @@ class RuleConfig(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict, description="Rule parameters for validators")
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     """
     Supported GitHub Event Types.
     Reference: project_detail_med.md [cite: 32]

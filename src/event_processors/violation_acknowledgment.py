@@ -1,6 +1,7 @@
-import logging
 import time
 from typing import TYPE_CHECKING, Any
+
+import structlog
 
 from src.agents import get_agent
 from src.core.models import Acknowledgment, EventType, Violation
@@ -12,7 +13,7 @@ from src.tasks.task_queue import Task
 if TYPE_CHECKING:
     from src.agents.acknowledgment_agent.agent import AcknowledgmentAgent
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 # Add at the top
 acknowledged_prs: set[str] = set()
@@ -57,8 +58,8 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             sha = ""
 
             logger.info("=" * 80)
-            logger.info(f"🔍 Processing VIOLATION ACKNOWLEDGMENT for {repo}#{pr_number}")
-            logger.info(f"    Commenter: {commenter}")
+            logger.info("processing_violation_acknowledgment_for", repo=repo, pr_number=pr_number)
+            logger.info("commenter", commenter=commenter)
             logger.info(f"    Comment: {comment_body[:100]}...")
             logger.info("=" * 80)
 
@@ -66,7 +67,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             acknowledgment_reason = self._extract_acknowledgment_reason(comment_body)
 
             if not acknowledgment_reason:
-                logger.info("❌ No valid acknowledgment reason found in comment")
+                logger.info("no_valid_acknowledgment_reason_found_in")
 
                 # Post a helpful comment explaining what went wrong
                 help_comment = (
@@ -96,7 +97,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             api_calls += 1
 
             if not github_token:
-                logger.error(f"❌ Failed to get installation token for {installation_id}")
+                logger.error("failed_to_get_installation_token_for", installation_id=installation_id)
                 return ProcessingResult(
                     success=False,
                     violations=[],
@@ -108,7 +109,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             # Get current PR data and violations
             pr_data_optional = await self.github_client.get_pull_request(repo, pr_number, installation_id)
             if not pr_data_optional:
-                logger.error(f"❌ Failed to get PR data for {repo}#{pr_number}")
+                logger.error("failed_to_get_pr_data_for", repo=repo, pr_number=pr_number)
                 return ProcessingResult(
                     success=False,
                     violations=[],
@@ -171,11 +172,11 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
 
             logger.info(f"Found {len(all_violations)} total violations")
             for violation in all_violations:
-                logger.info(f"    • {violation.message}")
+                logger.info("event", message=violation.message)
 
             # Check if the analysis failed due to timeout or other issues
             if not analysis_result.data or "evaluation_result" not in analysis_result.data:
-                logger.warning(f"⚠️ Rule analysis failed: {analysis_result.message}")
+                logger.warning("rule_analysis_failed", message=analysis_result.message)
                 await self._post_comment(
                     repo,
                     pr_number,
@@ -194,7 +195,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
                 )
 
             if not all_violations:
-                logger.info("✅ No violations found - acknowledgment not needed")
+                logger.info("no_violations_found_acknowledgment_not_needed")
                 await self._post_comment(
                     repo, pr_number, installation_id, "✅ No rule violations detected. Acknowledgment not needed."
                 )
@@ -277,7 +278,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
 
             processing_time = int((time.time() - start_time) * 1000)
             logger.info("=" * 80)
-            logger.info(f"🏁 VIOLATION ACKNOWLEDGMENT processing completed in {processing_time}ms")
+            logger.info("violation_acknowledgment_processing_completed_in_ms", processing_time=processing_time)
             logger.info(f"    Status: {'accepted' if evaluation_result['valid'] else 'rejected'}")
             logger.info("=" * 80)
 
@@ -340,7 +341,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
         Use intelligent LLM-based evaluation to determine which violations can be acknowledged vs. require fixes.
         """
         try:
-            logger.info("🧠 Using intelligent acknowledgment agent for evaluation")
+            logger.info("using_intelligent_acknowledgment_agent_for_evaluation")
 
             # Use the rules parameter that was passed in (already formatted)
             # Don't fetch rules again - use the ones passed from the calling method
@@ -355,7 +356,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             )
 
             if not agent_result.success:
-                logger.error(f"🧠 Acknowledgment agent failed: {agent_result.message}")
+                logger.error("acknowledgment_agent_failed", message=agent_result.message)
                 return {
                     "valid": False,
                     "acknowledgable_violations": [],
@@ -374,12 +375,13 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             confidence = evaluation_data.get("confidence", 0.5)
             recommendations = evaluation_data.get("recommendations", [])
 
-            logger.info("🧠 Intelligent evaluation completed:")
-            logger.info(f"    Valid: {is_valid}")
-            logger.info(f"    Reasoning: {reasoning}")
-            logger.info(f"    Acknowledged violations: {len(acknowledgable_violations)}")
-            logger.info(f"    Require fixes: {len(require_fixes)}")
-            logger.info(f"    Confidence: {confidence}")
+            logger.info(
+                "intelligent_evaluation_completed",
+                is_valid=is_valid,
+                confidence=confidence,
+                acknowledged_count=len(acknowledgable_violations),
+                require_fixes_count=len(require_fixes),
+            )
 
             return {
                 "valid": is_valid,
@@ -396,7 +398,7 @@ class ViolationAcknowledgmentProcessor(BaseEventProcessor):
             }
 
         except Exception as e:
-            logger.error(f"🧠 Error in intelligent acknowledgment evaluation: {e}")
+            logger.error("error_in_intelligent_acknowledgment_evaluation", e=e)
             return {
                 "valid": False,
                 "acknowledgable_violations": [],

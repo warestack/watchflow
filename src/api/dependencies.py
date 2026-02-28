@@ -1,11 +1,10 @@
-import logging
-
+import structlog
 from fastapi import Depends, HTTPException, Request, status
 
 from src.core.models import User
 from src.integrations.github.service import GitHubService
 
-logger = logging.getLogger(__name__)  # Logger: keep at module level for reuse.
+logger = structlog.get_logger()  # Logger: keep at module level for reuse.
 
 # --- Service Dependencies ---  # DI: swap for mock in tests.
 
@@ -47,11 +46,14 @@ async def get_current_user_optional(request: Request) -> User | None:
         # In real usage, we would validate the token here or pass it to endpoints to use against GitHub API
         # For now, we return a User object wrapping the token so it can be used by services
         # We use a dummy ID for the anonymous/token-holder user logic
-        logger.debug("Creating user wrapper for provided token")
+        logger.debug("creating_user_wrapper_for_provided_token")
         return User(id=0, username="token_user", email="token@user.com", github_token=SecretStr(token))
-    except Exception as e:
-        logger.warning(f"Failed to parse auth header: {e}")
+    except ValueError as e:
+        logger.warning("failed_to_parse_auth_header", error=str(e))
         return None
+    except Exception:
+        logger.exception("unexpected_auth_header_parse_failure")
+        raise
 
 
 async def get_current_user(user: User | None = Depends(get_current_user_optional)) -> User:

@@ -2,9 +2,9 @@
 Intelligent Acknowledgment Agent for evaluating violation acknowledgment requests.
 """
 
-import logging
 from typing import Any
 
+import structlog
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph
 
@@ -13,7 +13,7 @@ from src.agents.acknowledgment_agent.prompts import create_evaluation_prompt, ge
 from src.agents.base import AgentResult, BaseAgent
 from src.integrations.providers import get_chat_model
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class AcknowledgmentAgent(BaseAgent):
@@ -31,7 +31,7 @@ class AcknowledgmentAgent(BaseAgent):
         # Call super class __init__ first
         super().__init__(max_retries=max_retries, agent_name="acknowledgment_agent")
         self.timeout = timeout
-        logger.info(f"🧠 Acknowledgment agent initialized with timeout: {timeout}s")
+        logger.info("acknowledgment_agent_initialized_with_timeout_s", timeout=timeout)
 
     def _build_graph(self) -> Any:
         """
@@ -63,7 +63,7 @@ class AcknowledgmentAgent(BaseAgent):
             )
             return result
         except Exception as e:
-            logger.error(f"🧠 Error in evaluation node: {e}")
+            logger.error("error_in_evaluation_node", e=e)
             return AgentResult(success=False, message=f"Evaluation failed: {str(e)}", data={"error": str(e)})
 
     @staticmethod
@@ -86,9 +86,9 @@ class AcknowledgmentAgent(BaseAgent):
         Intelligently evaluate an acknowledgment request based on rule descriptions and context.
         """
         try:
-            logger.info(f"🧠 Evaluating acknowledgment request from {commenter}")
-            logger.info(f"🧠 Reason: {acknowledgment_reason}")
-            logger.info(f"🧠 Violations to evaluate: {len(violations)}")
+            logger.info("evaluating_acknowledgment_request_from", commenter=commenter)
+            logger.info("acknowledgment_reason", reason=acknowledgment_reason)
+            logger.info("violations_to_evaluate", count=len(violations))
 
             # Validate inputs
             if not acknowledgment_reason or not violations:
@@ -102,7 +102,7 @@ class AcknowledgmentAgent(BaseAgent):
             evaluation_prompt = create_evaluation_prompt(acknowledgment_reason, violations, pr_data, commenter, rules)
 
             # Get LLM evaluation with structured output
-            logger.info("🧠 Requesting LLM evaluation with structured output...")
+            logger.info("requesting_llm_evaluation_with_structured_output")
 
             # Use the same pattern as other agents: direct get_chat_model call
             llm = get_chat_model(agent="acknowledgment_agent")
@@ -112,12 +112,12 @@ class AcknowledgmentAgent(BaseAgent):
             structured_result = await self._execute_with_timeout(structured_llm.ainvoke(messages), timeout=self.timeout)
 
             if not structured_result:
-                logger.error("🧠 Empty LLM response received")
+                logger.error("empty_llm_response_received")
                 return AgentResult(
                     success=False, message="Empty response from LLM", data={"error": "LLM returned empty response"}
                 )
 
-            logger.info("🧠 Successfully received structured LLM evaluation result")
+            logger.info("successfully_received_structured_llm_evaluation_result")
 
             # Map LLM decisions back to original violations using rule_description
             acknowledgable_violations = []
@@ -138,11 +138,9 @@ class AcknowledgmentAgent(BaseAgent):
                     # Fallback: try to find by rule_description
                     original_violation = self._find_violation_by_rule_description(rule_description, violations)
                     if original_violation:
-                        logger.info(f"🧠 Found violation by rule description: '{rule_description}'")
+                        logger.info("found_violation_by_rule_description", rule_description=rule_description)
                     else:
-                        logger.warning(
-                            f"🧠 LLM returned rule_description '{rule_description}' not found in original violations"
-                        )
+                        logger.warning("llm_returned_ruledescription_not_found_in", rule_description=rule_description)
 
                 if original_violation:
                     violation_copy = original_violation.copy()
@@ -168,11 +166,9 @@ class AcknowledgmentAgent(BaseAgent):
                     # Fallback: try to find by rule_description
                     original_violation = self._find_violation_by_rule_description(rule_description, violations)
                     if original_violation:
-                        logger.info(f"🧠 Found violation by rule description: '{rule_description}'")
+                        logger.info("found_violation_by_rule_description", rule_description=rule_description)
                     else:
-                        logger.warning(
-                            f"🧠 LLM returned rule_description '{rule_description}' not found in original violations"
-                        )
+                        logger.warning("llm_returned_ruledescription_not_found_in", rule_description=rule_description)
 
                 if original_violation:
                     violation_copy = original_violation.copy()
@@ -180,12 +176,12 @@ class AcknowledgmentAgent(BaseAgent):
                     violation_copy.update({"fix_reason": llm_violation.reason, "priority": llm_violation.priority})
                     require_fixes.append(violation_copy)
 
-            logger.info("🧠 Intelligent evaluation completed:")
-            logger.info(f"    Valid: {structured_result.is_valid}")
-            logger.info(f"    Reasoning: {structured_result.reasoning}")
+            logger.info("intelligent_evaluation_completed")
+            logger.info("valid", is_valid=structured_result.is_valid)
+            logger.info("reasoning", reasoning=structured_result.reasoning)
             logger.info(f"    Acknowledged violations: {len(acknowledgable_violations)}")
             logger.info(f"    Require fixes: {len(require_fixes)}")
-            logger.info(f"    Confidence: {structured_result.confidence}")
+            logger.info("confidence", confidence=structured_result.confidence)
 
             return AgentResult(
                 success=True,
@@ -201,7 +197,7 @@ class AcknowledgmentAgent(BaseAgent):
             )
 
         except Exception as e:
-            logger.error(f"🧠 Error in acknowledgment evaluation: {e}")
+            logger.error("error_in_acknowledgment_evaluation", e=e)
             import traceback
 
             logger.error(f"🧠 Traceback: {traceback.format_exc()}")
@@ -228,7 +224,7 @@ class AcknowledgmentAgent(BaseAgent):
                 rules=rules,
             )
 
-        logger.warning("🧠 execute() method called on AcknowledgmentAgent with missing arguments")
+        logger.warning("execute_method_called_on_acknowledgmentagent_with")
         return AgentResult(
             success=False, message="AcknowledgmentAgent requires specific arguments for execute()", data={}
         )

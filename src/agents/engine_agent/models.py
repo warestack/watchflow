@@ -4,7 +4,7 @@ Data models for the Rule Engine Agent.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -24,7 +24,7 @@ class EngineRequest(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-class ValidationStrategy(str, Enum):
+class ValidationStrategy(StrEnum):
     """Validation strategies for rule evaluation."""
 
     VALIDATOR = "validator"  # Use fast validator
