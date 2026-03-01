@@ -310,7 +310,14 @@ class TestCoverageCondition(BaseCondition):
             compiled_pattern = re.compile(test_pattern)
         except re.error:
             logger.error(f"Invalid test_file_pattern regex: {test_pattern}")
-            return []
+            return [
+                Violation(
+                    rule_description=self.description,
+                    severity=Severity.MEDIUM,
+                    message=f"Invalid test_file_pattern regex: '{test_pattern}'",
+                    how_to_fix="Fix the regular expression in the 'test_file_pattern' parameter.",
+                )
+            ]
 
         for f in changed_files:
             filename = f.get("filename", "")
@@ -355,14 +362,14 @@ class TestCoverageCondition(BaseCondition):
         try:
             compiled_pattern = re.compile(test_pattern)
         except re.error:
-            return True
+            return False
 
         source_modified = False
         test_modified = False
 
         for f in changed_files:
             filename = f.get("filename", "")
-            if not filename or filename.endswith(".md") or filename.endswith(".yaml"):
+            if not filename or filename.endswith((".md", ".txt", ".yaml", ".json")):
                 continue
 
             if compiled_pattern.search(filename):

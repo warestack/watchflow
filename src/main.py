@@ -25,8 +25,8 @@ from src.webhooks.handlers.deployment_review import DeploymentReviewEventHandler
 from src.webhooks.handlers.deployment_status import DeploymentStatusEventHandler
 from src.webhooks.handlers.issue_comment import IssueCommentEventHandler
 from src.webhooks.handlers.pull_request import PullRequestEventHandler
-from src.webhooks.handlers.pull_request_review import handle_pull_request_review
-from src.webhooks.handlers.pull_request_review_thread import handle_pull_request_review_thread
+from src.webhooks.handlers.pull_request_review import PullRequestReviewEventHandler
+from src.webhooks.handlers.pull_request_review_thread import PullRequestReviewThreadEventHandler
 from src.webhooks.handlers.push import PushEventHandler
 from src.webhooks.router import router as webhook_router
 
@@ -75,9 +75,12 @@ async def lifespan(_app: FastAPI) -> Any:
     deployment_review_handler = DeploymentReviewEventHandler()
     deployment_protection_rule_handler = DeploymentProtectionRuleEventHandler()
 
+    pull_request_review_handler = PullRequestReviewEventHandler()
+    pull_request_review_thread_handler = PullRequestReviewThreadEventHandler()
+
     dispatcher.register_handler(EventType.PULL_REQUEST, pull_request_handler.handle)
-    dispatcher.register_handler(EventType.PULL_REQUEST_REVIEW, handle_pull_request_review)
-    dispatcher.register_handler(EventType.PULL_REQUEST_REVIEW_THREAD, handle_pull_request_review_thread)
+    dispatcher.register_handler(EventType.PULL_REQUEST_REVIEW, pull_request_review_handler.handle)
+    dispatcher.register_handler(EventType.PULL_REQUEST_REVIEW_THREAD, pull_request_review_thread_handler.handle)
     dispatcher.register_handler(EventType.PUSH, push_handler.handle)
     dispatcher.register_handler(EventType.CHECK_RUN, check_run_handler.handle)
     dispatcher.register_handler(EventType.ISSUE_COMMENT, issue_comment_handler.handle)

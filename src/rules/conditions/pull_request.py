@@ -367,7 +367,76 @@ class RequireLinkedIssueCondition(BaseCondition):
         return bool(_ISSUE_REF_PATTERN.search(combined))
 
 
-class DiffPatternCondition(BaseCondition):
+class _PatchPatternCondition(BaseCondition):
+    """Base class for conditions that match regex patterns against PR diff patches.
+
+    Subclasses configure the parameter key, violation severity, and message format.
+    """
+
+    _pattern_param_key: str = ""
+    _violation_severity: Severity = Severity.MEDIUM
+
+    def _make_message(self, matched: list[str], filename: str) -> str:
+        """Return the violation message. Override for custom wording."""
+        return f"Patterns {matched} found in added lines of {filename}"
+
+    def _make_how_to_fix(self) -> str:
+        """Return the how_to_fix text. Override for custom wording."""
+        return "Remove the matched patterns from your code changes."
+
+    async def evaluate(self, context: Any) -> list[Violation]:
+        """Evaluate patch-pattern condition."""
+        parameters = context.get("parameters", {})
+        event = context.get("event", {})
+
+        patterns = parameters.get(self._pattern_param_key)
+        if not patterns or not isinstance(patterns, list):
+            return []
+
+        changed_files = event.get("changed_files", [])
+        if not changed_files:
+            return []
+
+        from src.rules.utils.diff import match_patterns_in_patch
+
+        violations = []
+        for file_info in changed_files:
+            patch = file_info.get("patch")
+            if not patch:
+                continue
+
+            matched = match_patterns_in_patch(patch, patterns)
+            if matched:
+                filename = file_info.get("filename", "unknown")
+                violations.append(
+                    Violation(
+                        rule_description=self.description,
+                        severity=self._violation_severity,
+                        message=self._make_message(matched, filename),
+                        how_to_fix=self._make_how_to_fix(),
+                    )
+                )
+
+        return violations
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        """Legacy validation interface."""
+        patterns = parameters.get(self._pattern_param_key)
+        if not patterns or not isinstance(patterns, list):
+            return True
+
+        changed_files = event.get("changed_files", [])
+        from src.rules.utils.diff import match_patterns_in_patch
+
+        for file_info in changed_files:
+            patch = file_info.get("patch")
+            if patch and match_patterns_in_patch(patch, patterns):
+                return False
+
+        return True
+
+
+class DiffPatternCondition(_PatchPatternCondition):
     """Validates that a PR diff does not contain specified restricted patterns."""
 
     name = "diff_pattern"
@@ -376,59 +445,17 @@ class DiffPatternCondition(BaseCondition):
     event_types = ["pull_request"]
     examples = [{"diff_restricted_patterns": ["console\\.log", "TODO:"]}]
 
-    async def evaluate(self, context: Any) -> list[Violation]:
-        """Evaluate diff-pattern condition."""
-        parameters = context.get("parameters", {})
-        event = context.get("event", {})
+    _pattern_param_key = "diff_restricted_patterns"
+    _violation_severity = Severity.MEDIUM
 
-        restricted_patterns = parameters.get("diff_restricted_patterns")
-        if not restricted_patterns or not isinstance(restricted_patterns, list):
-            return []
+    def _make_message(self, matched: list[str], filename: str) -> str:
+        return f"Restricted patterns {matched} found in added lines of {filename}"
 
-        changed_files = event.get("changed_files", [])
-        if not changed_files:
-            return []
-
-        from src.rules.utils.diff import match_patterns_in_patch
-
-        violations = []
-        for file_info in changed_files:
-            patch = file_info.get("patch")
-            if not patch:
-                continue
-
-            matched = match_patterns_in_patch(patch, restricted_patterns)
-            if matched:
-                filename = file_info.get("filename", "unknown")
-                violations.append(
-                    Violation(
-                        rule_description=self.description,
-                        severity=Severity.MEDIUM,
-                        message=f"Restricted patterns {matched} found in added lines of {filename}",
-                        how_to_fix="Remove the restricted patterns from your code changes.",
-                    )
-                )
-
-        return violations
-
-    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
-        """Legacy validation interface."""
-        restricted_patterns = parameters.get("diff_restricted_patterns")
-        if not restricted_patterns or not isinstance(restricted_patterns, list):
-            return True
-
-        changed_files = event.get("changed_files", [])
-        from src.rules.utils.diff import match_patterns_in_patch
-
-        for file_info in changed_files:
-            patch = file_info.get("patch")
-            if patch and match_patterns_in_patch(patch, restricted_patterns):
-                return False
-
-        return True
+    def _make_how_to_fix(self) -> str:
+        return "Remove the restricted patterns from your code changes."
 
 
-class SecurityPatternCondition(BaseCondition):
+class SecurityPatternCondition(_PatchPatternCondition):
     """Detects security-sensitive patterns (like API keys) in code changes."""
 
     name = "security_pattern"
@@ -437,58 +464,14 @@ class SecurityPatternCondition(BaseCondition):
     event_types = ["pull_request"]
     examples = [{"security_patterns": ["api_key", "secret", "password", "token"]}]
 
-    async def evaluate(self, context: Any) -> list[Violation]:
-        """Evaluate security-pattern condition."""
-        parameters = context.get("parameters", {})
-        event = context.get("event", {})
+    _pattern_param_key = "security_patterns"
+    _violation_severity = Severity.CRITICAL
 
-        security_patterns = parameters.get("security_patterns")
-        if not security_patterns or not isinstance(security_patterns, list):
-            return []
+    def _make_message(self, matched: list[str], filename: str) -> str:
+        return f"Security-sensitive patterns {matched} detected in {filename}"
 
-        changed_files = event.get("changed_files", [])
-        if not changed_files:
-            return []
-
-        from src.rules.utils.diff import match_patterns_in_patch
-
-        violations = []
-        for file_info in changed_files:
-            patch = file_info.get("patch")
-            if not patch:
-                continue
-
-            # In a real scenario, this would use a more robust secrets scanner.
-            # Here we just use the diff matcher with the provided regex/string patterns.
-            matched = match_patterns_in_patch(patch, security_patterns)
-            if matched:
-                filename = file_info.get("filename", "unknown")
-                violations.append(
-                    Violation(
-                        rule_description=self.description,
-                        severity=Severity.CRITICAL,
-                        message=f"Security-sensitive patterns {matched} detected in {filename}",
-                        how_to_fix="Remove hardcoded secrets or sensitive patterns from the code.",
-                    )
-                )
-
-        return violations
-
-    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
-        """Legacy validation interface."""
-        security_patterns = parameters.get("security_patterns")
-        if not security_patterns or not isinstance(security_patterns, list):
-            return True
-
-        changed_files = event.get("changed_files", [])
-        from src.rules.utils.diff import match_patterns_in_patch
-
-        for file_info in changed_files:
-            patch = file_info.get("patch")
-            if patch and match_patterns_in_patch(patch, security_patterns):
-                return False
-
-        return True
+    def _make_how_to_fix(self) -> str:
+        return "Remove hardcoded secrets or sensitive patterns from the code."
 
 
 class UnresolvedCommentsCondition(BaseCondition):

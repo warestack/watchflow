@@ -261,7 +261,7 @@ class CommentResponseTimeCondition(BaseCondition):
         event = context.get("event", {})
 
         max_hours = parameters.get("max_comment_response_time_hours")
-        if not max_hours:
+        if max_hours is None:
             return []
 
         review_threads = event.get("review_threads", [])

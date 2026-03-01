@@ -8,6 +8,7 @@ from src.rules.conditions.base import BaseCondition
 
 logger = logging.getLogger(__name__)
 
+
 class SignedCommitsCondition(BaseCondition):
     """Validates that all commits in a PR are cryptographically signed."""
 
@@ -34,9 +35,15 @@ class SignedCommitsCondition(BaseCondition):
         unsigned_shas = []
         for commit in commits:
             # We will need to update the GraphQL query to fetch verificationStatus
-            is_verified = commit.get("is_verified", False) if isinstance(commit, dict) else getattr(commit, "is_verified", False)
+            is_verified = (
+                commit.get("is_verified", False) if isinstance(commit, dict) else getattr(commit, "is_verified", False)
+            )
             if not is_verified:
-                sha = str(commit.get("oid", "unknown")) if isinstance(commit, dict) else str(getattr(commit, "oid", "unknown"))
+                sha = (
+                    str(commit.get("oid", "unknown"))
+                    if isinstance(commit, dict)
+                    else str(getattr(commit, "oid", "unknown"))
+                )
                 unsigned_shas.append(sha[:7])
 
         if unsigned_shas:
@@ -50,10 +57,6 @@ class SignedCommitsCondition(BaseCondition):
             ]
 
         return []
-
-    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
-        violations = await self.evaluate({"parameters": parameters, "event": event})
-        return len(violations) == 0
 
 
 class ChangelogRequiredCondition(BaseCondition):
@@ -83,7 +86,7 @@ class ChangelogRequiredCondition(BaseCondition):
             filename = f.get("filename", "")
             if not filename:
                 continue
-                
+
             # Check if it's a changelog file
             if "CHANGELOG" in filename.upper() or filename.startswith(".changeset/"):
                 changelog_changed = True
@@ -101,7 +104,3 @@ class ChangelogRequiredCondition(BaseCondition):
             ]
 
         return []
-
-    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
-        violations = await self.evaluate({"parameters": parameters, "event": event})
-        return len(violations) == 0

@@ -8,6 +8,7 @@ from src.rules.conditions.base import BaseCondition
 
 logger = logging.getLogger(__name__)
 
+
 class NoSelfApprovalCondition(BaseCondition):
     """Validates that a PR author cannot approve their own PR."""
 
@@ -34,7 +35,7 @@ class NoSelfApprovalCondition(BaseCondition):
         for review in reviews:
             review_state = review.get("state") if isinstance(review, dict) else getattr(review, "state", None)
             reviewer = review.get("author") if isinstance(review, dict) else getattr(review, "author", None)
-            
+
             if review_state == "APPROVED" and reviewer == author:
                 self_approved = True
                 break
@@ -50,10 +51,6 @@ class NoSelfApprovalCondition(BaseCondition):
             ]
 
         return []
-
-    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
-        violations = await self.evaluate({"parameters": parameters, "event": event})
-        return len(violations) == 0
 
 
 class CrossTeamApprovalCondition(BaseCondition):
@@ -74,19 +71,19 @@ class CrossTeamApprovalCondition(BaseCondition):
             return []
 
         reviews = event.get("reviews", [])
-        
+
         # In a real implementation, we would map reviewers to their GitHub Teams
         # For now, we simulate this by checking if the required teams are in the requested_teams list
         # and if we have enough total approvals. A robust implementation would need a GraphQL call
         # to fetch user team memberships.
-        
+
         pr_details = event.get("pull_request_details", {})
         requested_teams = pr_details.get("requested_teams", [])
         requested_team_slugs = [t.get("slug") for t in requested_teams if t.get("slug")]
-        
+
         missing_teams = []
         for req_team in required_teams:
-            clean_team = req_team.replace("@", "").split("/")[-1] # Clean org/team to just team
+            clean_team = req_team.replace("@", "").split("/")[-1]  # Clean org/team to just team
             if clean_team in requested_team_slugs:
                 # Team was requested, now check if anyone approved (simplified check)
                 has_approval = any(
@@ -110,7 +107,3 @@ class CrossTeamApprovalCondition(BaseCondition):
             ]
 
         return []
-
-    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
-        violations = await self.evaluate({"parameters": parameters, "event": event})
-        return len(violations) == 0
