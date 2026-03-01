@@ -190,11 +190,12 @@ def format_rules_not_configured_comment(
     )
 
 
-def format_violations_comment(violations: list[Violation]) -> str:
+def format_violations_comment(violations: list[Violation], content_hash: str | None = None) -> str:
     """Format violations as a GitHub comment.
 
     Args:
         violations: List of rule violations to include in the comment.
+        content_hash: Optional hash to include as a hidden marker for deduplication.
 
     Returns:
         A Markdown formatted string suitable for a Pull Request timeline comment.
@@ -203,7 +204,11 @@ def format_violations_comment(violations: list[Violation]) -> str:
     if not violations:
         return ""
 
-    comment = f"### 🛡️ Watchflow Governance Checks\n**Status:** ❌ {len(violations)} Violations Found\n\n"
+    # Add hidden HTML marker for deduplication (not visible in rendered markdown)
+    marker = f"<!-- watchflow-violations-hash:{content_hash} -->\n" if content_hash else ""
+    
+    comment = marker
+    comment += f"### 🛡️ Watchflow Governance Checks\n**Status:** ❌ {len(violations)} Violations Found\n\n"
     comment += _build_collapsible_violations_text(violations)
     comment += "---\n"
     comment += (
