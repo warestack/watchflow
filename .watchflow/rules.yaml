@@ -41,3 +41,10 @@ rules:
     event_types: ["pull_request"]
     parameters:
       block_on_unresolved_comments: true
+
+  - description: "PR description must accurately reflect the actual code changes in the diff."
+    enabled: true
+    severity: "medium"
+    event_types: ["pull_request"]
+    parameters:
+      require_description_diff_alignment: true

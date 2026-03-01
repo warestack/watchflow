@@ -104,3 +104,27 @@ def test_format_violations_for_check_run():
 
 def test_format_violations_for_check_run_empty():
     assert format_violations_for_check_run([]) == "None"
+
+
+def test_format_violations_comment_includes_hash_marker():
+    """Test that comment includes hidden HTML marker when content_hash is provided."""
+    violations = [
+        Violation(rule_description="Rule 1", severity=Severity.HIGH, message="Error 1"),
+    ]
+
+    comment = format_violations_comment(violations, content_hash="abc123def456")
+
+    assert "<!-- watchflow-violations-hash:abc123def456 -->" in comment
+    assert "### 🛡️ Watchflow Governance Checks" in comment
+
+
+def test_format_violations_comment_no_hash_marker_when_not_provided():
+    """Test that comment does not include marker when content_hash is None."""
+    violations = [
+        Violation(rule_description="Rule 1", severity=Severity.HIGH, message="Error 1"),
+    ]
+
+    comment = format_violations_comment(violations, content_hash=None)
+
+    assert "<!-- watchflow-violations-hash:" not in comment
+    assert "### 🛡️ Watchflow Governance Checks" in comment

@@ -238,6 +238,17 @@ parameters:
 
 PRs that modify source code must include a corresponding `CHANGELOG.md` or `.changeset/` update. Docs, tests, and `.github/` paths are excluded.
 
+### LLM-assisted conditions
+
+**Description-diff alignment**
+
+```yaml
+parameters:
+  require_description_diff_alignment: true
+```
+
+Uses the configured AI provider to check whether the PR description semantically reflects the actual code changes. Flags mismatches like "description says fix login but diff only touches billing code." Adds ~1-3s latency per evaluation. If the LLM is unavailable (provider not configured, rate limit), the condition gracefully skips without blocking the PR.
+
 ---
 
 ## Example rules
