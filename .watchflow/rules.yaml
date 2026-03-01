@@ -27,3 +27,17 @@ rules:
     parameters:
       title_pattern: "^feat|^fix|^docs|^style|^refactor|^test|^chore|^perf|^ci|^build|^revert"
       min_description_length: 50
+
+  - description: "Source code changes must include a CHANGELOG or .changeset update."
+    enabled: true
+    severity: "medium"
+    event_types: ["pull_request"]
+    parameters:
+      require_changelog_update: true
+
+  - description: "All review comment threads must be resolved before merge."
+    enabled: true
+    severity: "high"
+    event_types: ["pull_request"]
+    parameters:
+      block_on_unresolved_comments: true

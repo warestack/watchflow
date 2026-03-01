@@ -2,6 +2,13 @@
 
 [![Works with GitHub](https://img.shields.io/badge/Works%20with-GitHub-1f1f23?style=for-the-badge&logo=github)](https://github.com/warestack/watchflow)
 
+![GitHub stars](https://img.shields.io/github/stars/warestack/watchflow?style=social)
+![GitHub forks](https://img.shields.io/github/forks/warestack/watchflow?style=social)
+![GitHub issues](https://img.shields.io/github/issues/warestack/watchflow)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Tests](https://github.com/warestack/watchflow/actions/workflows/tests.yaml/badge.svg)](https://github.com/warestack/watchflow/actions/workflows/tests.yaml)
+[![Pre-commit hooks](https://github.com/warestack/watchflow/actions/workflows/pre-commit-hooks.yaml/badge.svg)](https://github.com/warestack/watchflow/actions/workflows/pre-commit-hooks.yaml)
+
 GitHub governance that runs where you already work. No new dashboards, no “AI-powered” fluff—just rules in YAML, evaluated on every PR and push, with check runs and comments that maintainers actually read.
 
 Watchflow is the governance layer for your repo: it enforces the policies you define (CODEOWNERS, approvals, linked issues, PR size, title patterns, branch protection, diff scanning, review thread SLAs, signed commits, and more) so you don’t have to chase reviewers or guess what’s allowed. Built for teams that still care about traceability and review quality.
