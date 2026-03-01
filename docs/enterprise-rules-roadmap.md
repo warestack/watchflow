@@ -1,92 +1,89 @@
 # Enterprise & Regulated Industry Guardrails
 
-To level up Watchflow for large engineering teams and highly regulated industries (FinTech, HealthTech, Enterprise SaaS), we should expand our rule engine to support strict compliance, auditability, and advanced access control.
+Watchflow's rule engine supports strict compliance, auditability, and advanced access control for large engineering teams and highly regulated industries (FinTech, HealthTech, Enterprise SaaS). This page tracks what's shipped and what's planned.
 
-## 1. Compliance & Security Verification Rules
+## Implemented
 
-### `SignedCommitsCondition`
-**Purpose:** Ensure all commits in a PR are signed (GPG/SSH/S/MIME).
-**Why:** Required by SOC2, FedRAMP, and most enterprise security teams to prevent impersonation.
-**Parameters:** `require_signed_commits: true`
+The following enterprise conditions are fully registered in the condition registry, wired into the evaluation pipeline, and support acknowledgment workflows. See [Configuration](getting-started/configuration.md) for YAML parameter reference.
 
-### `SecretScanningCondition` (Enhanced)
-**Purpose:** Integrate with GitHub Advanced Security or detect specific sensitive file extensions.
-**Why:** Catching hardcoded secrets before they merge is a massive pain point. We built regex parsing, but we can add native hooks to check if GitHub's native secret scanner triggered alerts on the branch.
-**Parameters:** `block_on_secret_alerts: true`
+### Compliance & security verification
 
-### `BannedDependenciesCondition`
-**Purpose:** Parse `package.json`, `requirements.txt`, or `go.mod` diffs to block banned licenses (e.g., AGPL) or deprecated libraries.
-**Why:** Open-source license compliance and CVE prevention.
-**Parameters:** `banned_licenses: ["AGPL", "GPL"]`, `banned_packages: ["requests<2.0.0"]`
+| Condition | Parameter | Description |
+|-----------|-----------|-------------|
+| `SignedCommitsCondition` | `require_signed_commits: true` | Ensure all commits are signed (GPG/SSH/S/MIME). Required by SOC2, FedRAMP. |
+| `SecurityPatternCondition` | `security_patterns: [...]` | Detect hardcoded secrets, API keys, or sensitive data in PR diffs. |
+| `ChangelogRequiredCondition` | `require_changelog_update: true` | Require CHANGELOG or `.changeset` update when source files change. |
 
-## 2. Advanced Access Control (Separation of Duties)
+### Advanced access control (separation of duties)
 
-### `CrossTeamApprovalCondition`
-**Purpose:** Require approvals from at least two different GitHub Teams.
-**Why:** Regulated environments require "Separation of Duties" (e.g., a dev from `backend-team` and a dev from `qa-team` must both approve).
-**Parameters:** `required_team_approvals: ["@org/backend", "@org/qa"]`
+| Condition | Parameter | Description |
+|-----------|-----------|-------------|
+| `NoSelfApprovalCondition` | `block_self_approval: true` | Block PR authors from approving their own PRs. SOX/SOC2 requirement. |
+| `CrossTeamApprovalCondition` | `required_team_approvals: [...]` | Require approvals from specified GitHub teams. Simplified check; full team-membership resolution via GraphQL is tracked below. |
 
-### `NoSelfApprovalCondition`
-**Purpose:** Explicitly block PR authors from approving their own PRs (or using a secondary admin account to do so).
-**Why:** Strict SOX/SOC2 requirement.
-**Parameters:** `block_self_approval: true`
+### Code quality & review workflow
 
-## 3. Operations & Reliability
+| Condition | Parameter | Description |
+|-----------|-----------|-------------|
+| `DiffPatternCondition` | `diff_restricted_patterns: [...]` | Flag restricted regex patterns in added lines of PR diffs. |
+| `UnresolvedCommentsCondition` | `block_on_unresolved_comments: true` | Block merge when unresolved review threads exist. |
+| `TestCoverageCondition` | `require_tests: true` | Source changes must include corresponding test file changes. |
+| `CommentResponseTimeCondition` | `max_comment_response_time_hours: N` | Enforce SLA for responding to review comments. |
 
-### `MigrationSafetyCondition`
+---
+
+## Planned
+
+### Operations & reliability
+
+#### `MigrationSafetyCondition`
 **Purpose:** If a PR modifies database schemas/migrations (e.g., `alembic/`, `prisma/migrations/`), enforce that it does *not* contain destructive operations like `DROP TABLE` or `DROP COLUMN`.
-**Why:** Prevents junior devs from accidentally wiping production data.
+**Why:** Prevents accidental production data loss.
 **Parameters:** `safe_migrations_only: true`
 
-### `FeatureFlagRequiredCondition`
+#### `FeatureFlagRequiredCondition`
 **Purpose:** If a PR exceeds a certain size or modifies core routing, ensure a feature flag is added.
 **Why:** Enables safe rollbacks and trunk-based development.
 **Parameters:** `require_feature_flags_for_large_prs: true`
 
-## 4. Documentation & Traceability
+### External integrations
 
-### `JiraTicketStatusCondition`
-**Purpose:** Instead of just checking if a Jira ticket *exists* in the title, make an API call to Jira to ensure the ticket is in the "In Progress" or "In Review" state.
-**Why:** Prevents devs from linking to closed, backlog, or fake tickets just to bypass the basic `RequireLinkedIssue` rule.
+#### `SecretScanningCondition` (Enhanced)
+**Purpose:** Integrate with GitHub Advanced Security's native secret scanner alerts, beyond regex matching.
+**Parameters:** `block_on_secret_alerts: true`
+
+#### `BannedDependenciesCondition`
+**Purpose:** Parse dependency diffs to block banned licenses (e.g., AGPL) or deprecated libraries.
+**Parameters:** `banned_licenses: ["AGPL", "GPL"]`, `banned_packages: ["requests<2.0.0"]`
+
+#### `JiraTicketStatusCondition`
+**Purpose:** Verify Jira ticket state via API (must be "In Progress" or "In Review").
 **Parameters:** `require_active_jira_ticket: true`
 
-### `ChangelogRequiredCondition`
-**Purpose:** If `src/` files change, require an addition to `CHANGELOG.md` or a `.changeset/` file.
-**Why:** Maintains release notes for compliance audits automatically.
-**Parameters:** `require_changelog_update: true`
+#### `CrossTeamApprovalCondition` -- full team membership
+**Purpose:** Resolve reviewer-to-team membership via GraphQL instead of relying on `requested_teams`.
+**Tracking:** Depends on GitHub's Team Members API access via GitHub App installation tokens.
 
-## 5. Potential GitHub Ecosystem Integrations
+### GitHub ecosystem integrations
 
-To make Watchflow a true "single pane of glass" for governance, we can build custom condition handlers that hook directly into GitHub's native ecosystem.
-
-### `CodeQLAnalysisCondition`
-**Purpose:** Block merges if CodeQL (or other static analysis tools) has detected critical vulnerabilities in the PR diff.
-**How to build:** Call the GitHub `code-scanning/alerts` API for the current `head_sha`.
-**Why:** Instead of developers having to check multiple tabs, Watchflow summarizes the CodeQL alerts and makes them enforceable via YAML.
+#### `CodeQLAnalysisCondition`
+**Purpose:** Block merges if CodeQL has detected critical vulnerabilities in the PR diff.
+**How:** Call `code-scanning/alerts` API for the current `head_sha`.
 **Parameters:** `block_on_critical_codeql: true`
 
-### `DependabotAlertsCondition`
-**Purpose:** Ensure developers do not merge PRs that introduce new dependencies with known CVEs.
-**How to build:** Hook into the `dependabot/alerts` REST API for the repository, filtering by the PR's branch.
-**Why:** Shifting security left.
+#### `DependabotAlertsCondition`
+**Purpose:** Ensure PRs don't introduce dependencies with known CVEs.
+**How:** Hook into the `dependabot/alerts` REST API.
 **Parameters:** `max_dependabot_severity: "high"`
 
-## 6. Open-Source Ecosystem Integrations
+### Open-source ecosystem integrations
 
-We can leverage popular open-source Python SDKs directly within our rule engine to parse specific file types during the event evaluation.
+#### OPA / Rego Validation
+**Purpose:** Validate Kubernetes manifests or `.rego` files against OPA engine on PR.
 
-### Open Policy Agent (OPA) / Rego Validation
-**Purpose:** If a PR modifies `.rego` files or Kubernetes manifests, validate them against the OPA engine.
-**How to build:** Embed the `opa` CLI or use the `PyOPA` library to evaluate the diff.
-**Why:** Infrastructure-as-Code (IaC) teams need a way to ensure PRs don't introduce misconfigurations.
+#### Pydantic Schema Breakage Detection
+**Purpose:** Detect backward-incompatible changes to REST API models by diffing ASTs.
 
-### Pydantic Schema Breakage Detection
-**Purpose:** Detect backward-incompatible changes to REST API models.
-**How to build:** If `models.py` changes, parse the old and new AST (Abstract Syntax Tree) to see if a required field was deleted or changed types.
-**Why:** Breaking API contracts is a massive incident vector in enterprise microservices.
-
-### Ruff / Black / ESLint Override Detection
-**Purpose:** Flag PRs that introduce new `# noqa`, `# type: ignore`, or `// eslint-disable` comments.
-**How to build:** Use our existing diff/patch parser to explicitly hunt for suppression comments in the added lines.
-**Why:** Keeps technical debt from quietly slipping into the codebase.
+#### Linter Suppression Detection
+**Purpose:** Flag PRs that introduce `# noqa`, `# type: ignore`, or `// eslint-disable`.
 **Parameters:** `allow_linter_suppressions: false`

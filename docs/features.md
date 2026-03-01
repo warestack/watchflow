@@ -20,6 +20,10 @@ Rules are **description + event_types + parameters**. The engine matches **param
 | `critical_owners: []` | CodeOwnersCondition | Changes to critical paths require code-owner review. |
 | `require_path_has_code_owner: true` | PathHasCodeOwnerCondition | Every changed path must have an owner in CODEOWNERS. |
 | `protected_branches: ["main"]` | ProtectedBranchesCondition | Block direct merge/target to these branches. |
+| `diff_restricted_patterns: [...]` | DiffPatternCondition | Flag restricted regex patterns found in PR diff added lines. |
+| `security_patterns: [...]` | SecurityPatternCondition | Detect hardcoded secrets or sensitive data in diffs (critical severity). |
+| `block_on_unresolved_comments: true` | UnresolvedCommentsCondition | Block merge when unresolved review comment threads exist. |
+| `max_comment_response_time_hours: N` | CommentResponseTimeCondition | Flag unresolved threads that exceed the SLA (in hours). |
 
 ### Push
 
@@ -33,6 +37,7 @@ Rules are **description + event_types + parameters**. The engine matches **param
 |-----------|-----------|-------------|
 | `max_file_size_mb: N` | MaxFileSizeCondition | No single file > N MB. |
 | `pattern` + `condition_type: "files_match_pattern"` | FilePatternCondition | Changed files must (or must not) match pattern. |
+| `require_tests: true` | TestCoverageCondition | Source changes must include corresponding test file changes (configurable via `test_file_pattern`). |
 
 ### Time and deployment
 
@@ -42,11 +47,15 @@ Rules are **description + event_types + parameters**. The engine matches **param
 | `days` | DaysCondition | Restrict by day. |
 | Weekend / deployment | WeekendCondition, WorkflowDurationCondition | Deployment and workflow rules. |
 
-### Team
+### Access control and compliance
 
 | Parameter | Condition | Description |
 |-----------|-----------|-------------|
 | `team: "<name>"` | AuthorTeamCondition | Event author must be in the given team. |
+| `block_self_approval: true` | NoSelfApprovalCondition | PR authors cannot approve their own code (critical severity). |
+| `required_team_approvals: [...]` | CrossTeamApprovalCondition | Require approvals from members of specified GitHub teams. |
+| `require_signed_commits: true` | SignedCommitsCondition | All commits must be cryptographically signed (GPG/SSH/S/MIME). |
+| `require_changelog_update: true` | ChangelogRequiredCondition | Source changes must include a CHANGELOG or `.changeset` update. |
 
 ---
 
