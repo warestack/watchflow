@@ -6,6 +6,7 @@ opt-in and clearly documented as having LLM latency in the evaluation path.
 """
 
 import logging
+import time
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -16,14 +17,35 @@ from src.rules.conditions.base import BaseCondition
 logger = logging.getLogger(__name__)
 
 
-class AlignmentVerdict(BaseModel):
-    """Structured LLM response for description-diff alignment evaluation."""
+def _truncate_text(text: str, max_length: int = 2000) -> str:
+    """Truncate text to prevent excessively large prompts and potential injection.
 
-    is_aligned: bool = Field(description="Whether the PR description accurately reflects the code changes")
-    reason: str = Field(description="Brief explanation of the alignment or mismatch")
-    how_to_fix: str | None = Field(
-        description="Actionable suggestion for improving the description (only if misaligned)", default=None
+    Args:
+        text: The text to truncate
+        max_length: Maximum length in characters (default: 2000)
+
+    Returns:
+        Truncated text with ellipsis if needed
+    """
+    if len(text) <= max_length:
+        return text
+    return text[:max_length] + "... [truncated]"
+
+
+class AlignmentVerdict(BaseModel):
+    """Structured LLM response for description-diff alignment evaluation.
+
+    This follows the standard agent output schema for consistency across
+    LLM-assisted conditions.
+    """
+
+    decision: str = Field(description="Whether the description is 'aligned' or 'misaligned'")
+    confidence: float = Field(description="Confidence score between 0.0 and 1.0", ge=0.0, le=1.0)
+    reasoning: str = Field(description="Brief explanation of the alignment or mismatch")
+    recommendations: list[str] | None = Field(
+        description="Actionable suggestions for improving the description (only if misaligned)", default=None
     )
+    strategy_used: str = Field(description="The strategy used to evaluate the description")
 
 
 _SYSTEM_PROMPT = """\
@@ -78,7 +100,7 @@ class DescriptionDiffAlignmentCondition(BaseCondition):
     examples = [{"require_description_diff_alignment": True}]
 
     async def evaluate(self, context: Any) -> list[Violation]:
-        """Evaluate description-diff alignment using an LLM."""
+        """Evaluate description-diff alignment using an LLM with retries and graceful degradation."""
         parameters = context.get("parameters", {})
         event = context.get("event", {})
 
@@ -95,6 +117,11 @@ class DescriptionDiffAlignmentCondition(BaseCondition):
         if not changed_files:
             return []
 
+        # Truncate inputs to prevent prompt injection and token overflow
+        title_sanitized = _truncate_text(title, 200)
+        description_sanitized = _truncate_text(description_body, 2000)
+        diff_sanitized = _truncate_text(diff_summary, 2000)
+
         file_list = "\n".join(
             f"- {f.get('filename', '?')} ({f.get('status', '?')}, "
             f"+{f.get('additions', 0)}/-{f.get('deletions', 0)})"
@@ -102,45 +129,101 @@ class DescriptionDiffAlignmentCondition(BaseCondition):
         )
 
         human_prompt = _HUMAN_PROMPT_TEMPLATE.format(
-            title=title or "(no title)",
-            description=description_body or "(empty)",
-            diff_summary=diff_summary or "(no diff summary available)",
+            title=title_sanitized or "(no title)",
+            description=description_sanitized or "(empty)",
+            diff_summary=diff_sanitized or "(no diff summary available)",
             file_list=file_list,
         )
 
-        try:
-            from langchain_core.messages import HumanMessage, SystemMessage
+        # Retry loop with exponential backoff
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                from langchain_core.messages import HumanMessage, SystemMessage
 
-            from src.integrations.providers import get_chat_model
+                from src.integrations.providers import get_chat_model
 
-            llm = get_chat_model(
-                temperature=0.0,
-                max_tokens=512,
-            )
-            structured_llm = llm.with_structured_output(AlignmentVerdict, method="function_calling")
+                llm = get_chat_model(
+                    temperature=0.0,
+                    max_tokens=512,
+                )
 
-            messages = [
-                SystemMessage(content=_SYSTEM_PROMPT),
-                HumanMessage(content=human_prompt),
-            ]
+                # Check if provider supports structured output
+                supports_structured = hasattr(llm, "with_structured_output") and callable(
+                    getattr(llm, "with_structured_output")
+                )
 
-            verdict: AlignmentVerdict = await structured_llm.ainvoke(messages)
+                if not supports_structured:
+                    logger.warning("Provider does not support structured output; skipping alignment check.")
+                    return []
 
-            if not verdict.is_aligned:
-                return [
-                    Violation(
-                        rule_description=self.description,
-                        severity=Severity.MEDIUM,
-                        message=f"PR description does not align with code changes: {verdict.reason}",
-                        how_to_fix=verdict.how_to_fix
-                        or "Update the PR description to accurately summarize the intent and scope of the code changes.",
-                    )
+                structured_llm = llm.with_structured_output(AlignmentVerdict, method="function_calling")
+
+                messages = [
+                    SystemMessage(content=_SYSTEM_PROMPT),
+                    HumanMessage(content=human_prompt),
                 ]
 
-        except Exception:
-            logger.warning(
-                "LLM call failed for description-diff alignment check; skipping.",
-                exc_info=True,
-            )
+                start_time = time.time()
+                verdict: AlignmentVerdict = await structured_llm.ainvoke(messages)
+                latency_ms = int((time.time() - start_time) * 1000)
+
+                logger.info(
+                    "LLM alignment check completed",
+                    extra={
+                        "attempt": attempt,
+                        "latency_ms": latency_ms,
+                        "decision": getattr(verdict, "decision", "unknown"),
+                        "confidence": getattr(verdict, "confidence", 0.0),
+                    },
+                )
+
+                # Validate response type
+                if not isinstance(verdict, AlignmentVerdict):
+                    logger.warning("LLM returned unexpected type; skipping.")
+                    return []
+
+                # Human-in-the-loop fallback for low confidence
+                if verdict.confidence < 0.5:
+                    logger.info(f"Low confidence ({verdict.confidence:.2f}); flagging for human review.")
+                    return [
+                        Violation(
+                            rule_description=self.description,
+                            severity=Severity.MEDIUM,
+                            message=f"LLM confidence is low ({verdict.confidence:.1%}), requiring human review. Reasoning: {verdict.reasoning}",
+                            how_to_fix="Manually review the PR description to ensure it aligns with the code changes.",
+                        )
+                    ]
+
+                # Check alignment decision
+                if verdict.decision == "misaligned":
+                    recommendation = verdict.recommendations[0] if verdict.recommendations else None
+                    return [
+                        Violation(
+                            rule_description=self.description,
+                            severity=Severity.MEDIUM,
+                            message=f"PR description does not align with code changes: {verdict.reasoning}",
+                            how_to_fix=recommendation
+                            or "Update the PR description to accurately summarize the intent and scope of the code changes.",
+                        )
+                    ]
+
+                # Success: aligned
+                return []
+
+            except Exception as e:
+                wait_time = 2**attempt  # Exponential backoff: 2s, 4s, 8s
+                logger.warning(
+                    f"LLM call failed (attempt {attempt}/{max_attempts})",
+                    extra={"error": str(e), "retry_in_seconds": wait_time if attempt < max_attempts else None},
+                    exc_info=True,
+                )
+
+                if attempt < max_attempts:
+                    time.sleep(wait_time)
+                else:
+                    # All attempts failed - gracefully degrade
+                    logger.error("All LLM retry attempts exhausted; skipping alignment check.")
+                    return []
 
         return []
