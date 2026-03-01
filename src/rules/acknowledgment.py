@@ -39,6 +39,10 @@ class RuleID(StrEnum):
     UNRESOLVED_COMMENTS = "unresolved-comments"
     TEST_COVERAGE = "test-coverage"
     COMMENT_RESPONSE_TIME = "comment-response-time"
+    SIGNED_COMMITS = "signed-commits"
+    CHANGELOG_REQUIRED = "changelog-required"
+    NO_SELF_APPROVAL = "no-self-approval"
+    CROSS_TEAM_APPROVAL = "cross-team-approval"
 
 
 # Mapping from violation text patterns to RuleID
@@ -58,7 +62,11 @@ VIOLATION_TEXT_TO_RULE_MAPPING: dict[str, RuleID] = {
     "Security-sensitive patterns": RuleID.SECURITY_PATTERN,
     "unresolved review comment thread": RuleID.UNRESOLVED_COMMENTS,
     "without corresponding test changes": RuleID.TEST_COVERAGE,
-    "exceeded the": RuleID.COMMENT_RESPONSE_TIME,
+    "response SLA": RuleID.COMMENT_RESPONSE_TIME,
+    "unsigned commit": RuleID.SIGNED_COMMITS,
+    "without a corresponding CHANGELOG": RuleID.CHANGELOG_REQUIRED,
+    "approved by its own author": RuleID.NO_SELF_APPROVAL,
+    "approvals from required teams": RuleID.CROSS_TEAM_APPROVAL,
 }
 
 # Mapping from RuleID to human-readable descriptions
@@ -79,6 +87,10 @@ RULE_ID_TO_DESCRIPTION: dict[RuleID, str] = {
     RuleID.UNRESOLVED_COMMENTS: "All review comments must be resolved before merging.",
     RuleID.TEST_COVERAGE: "Source code modifications must include corresponding test changes.",
     RuleID.COMMENT_RESPONSE_TIME: "Review comments must be addressed within the SLA timeframe.",
+    RuleID.SIGNED_COMMITS: "All commits in a pull request must be cryptographically signed.",
+    RuleID.CHANGELOG_REQUIRED: "Source code changes must include a CHANGELOG or .changeset update.",
+    RuleID.NO_SELF_APPROVAL: "PR authors cannot approve their own pull requests.",
+    RuleID.CROSS_TEAM_APPROVAL: "Pull requests require approvals from specified GitHub teams.",
 }
 
 # Comment markers that indicate an acknowledgment comment

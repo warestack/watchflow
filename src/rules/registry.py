@@ -16,7 +16,15 @@ from src.rules.conditions.access_control import (
     ProtectedBranchesCondition,
     RequireCodeOwnerReviewersCondition,
 )
+from src.rules.conditions.access_control_advanced import (
+    CrossTeamApprovalCondition,
+    NoSelfApprovalCondition,
+)
 from src.rules.conditions.base import BaseCondition
+from src.rules.conditions.compliance import (
+    ChangelogRequiredCondition,
+    SignedCommitsCondition,
+)
 from src.rules.conditions.filesystem import (
     FilePatternCondition,
     MaxFileSizeCondition,
@@ -61,6 +69,10 @@ RULE_ID_TO_CONDITION: dict[RuleID, type[BaseCondition]] = {
     RuleID.UNRESOLVED_COMMENTS: UnresolvedCommentsCondition,
     RuleID.TEST_COVERAGE: TestCoverageCondition,
     RuleID.COMMENT_RESPONSE_TIME: CommentResponseTimeCondition,
+    RuleID.SIGNED_COMMITS: SignedCommitsCondition,
+    RuleID.CHANGELOG_REQUIRED: ChangelogRequiredCondition,
+    RuleID.NO_SELF_APPROVAL: NoSelfApprovalCondition,
+    RuleID.CROSS_TEAM_APPROVAL: CrossTeamApprovalCondition,
 }
 
 # Reverse map: condition class -> RuleID (for populating rule_id on violations)
@@ -90,6 +102,10 @@ AVAILABLE_CONDITIONS: list[type[BaseCondition]] = [
     SecurityPatternCondition,
     UnresolvedCommentsCondition,
     TestCoverageCondition,
+    NoSelfApprovalCondition,
+    CrossTeamApprovalCondition,
+    SignedCommitsCondition,
+    ChangelogRequiredCondition,
 ]
 
 

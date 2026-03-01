@@ -11,7 +11,15 @@ from src.rules.conditions.access_control import (
     ProtectedBranchesCondition,
     RequireCodeOwnerReviewersCondition,
 )
+from src.rules.conditions.access_control_advanced import (
+    CrossTeamApprovalCondition,
+    NoSelfApprovalCondition,
+)
 from src.rules.conditions.base import BaseCondition
+from src.rules.conditions.compliance import (
+    ChangelogRequiredCondition,
+    SignedCommitsCondition,
+)
 from src.rules.conditions.filesystem import (
     FilePatternCondition,
     MaxFileSizeCondition,
@@ -57,6 +65,12 @@ __all__ = [
     "PathHasCodeOwnerCondition",
     "ProtectedBranchesCondition",
     "RequireCodeOwnerReviewersCondition",
+    # Access Control - Advanced
+    "NoSelfApprovalCondition",
+    "CrossTeamApprovalCondition",
+    # Compliance
+    "SignedCommitsCondition",
+    "ChangelogRequiredCondition",
     # Temporal
     "AllowedHoursCondition",
     "CommentResponseTimeCondition",
