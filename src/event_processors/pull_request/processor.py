@@ -211,7 +211,7 @@ class PullRequestProcessor(BaseEventProcessor):
 
     async def _post_violations_to_github(self, task: Task, violations: list[Violation]) -> None:
         """Post violations as comments on the pull request.
-        
+
         Implements comment-level deduplication by checking existing PR comments
         and skipping if an identical Watchflow violations comment already exists.
         """
@@ -222,7 +222,7 @@ class PullRequestProcessor(BaseEventProcessor):
 
             # Compute content hash for deduplication
             violations_signature = self._compute_violations_hash(violations)
-            
+
             # Check if identical comment already exists
             if await self._has_duplicate_comment(
                 task.repo_full_name, pr_number, violations_signature, task.installation_id
@@ -256,7 +256,7 @@ class PullRequestProcessor(BaseEventProcessor):
 
     def _compute_violations_hash(self, violations: list[Violation]) -> str:
         """Compute a stable hash of violations for deduplication.
-        
+
         Uses rule_description + message + severity to create a fingerprint.
         This allows detecting identical violation sets regardless of delivery_id.
         """
@@ -265,12 +265,12 @@ class PullRequestProcessor(BaseEventProcessor):
             violations,
             key=lambda v: (v.rule_description or "", v.message, v.severity.value if v.severity else ""),
         )
-        
+
         # Build signature from key fields
         signature_parts = []
         for v in sorted_violations:
             signature_parts.append(f"{v.rule_description}|{v.message}|{v.severity.value if v.severity else ''}")
-        
+
         signature_string = "::".join(signature_parts)
         return hashlib.sha256(signature_string.encode()).hexdigest()[:12]  # Use first 12 chars for readability
 
@@ -278,21 +278,21 @@ class PullRequestProcessor(BaseEventProcessor):
         self, repo: str, pr_number: int, violations_hash: str, installation_id: int
     ) -> bool:
         """Check if a comment with the same violations hash already exists.
-        
+
         Looks for the hidden HTML marker in existing comments to detect duplicates.
         """
         try:
             existing_comments = await self.github_client.get_issue_comments(repo, pr_number, installation_id)
-            
+
             # Pattern to extract hash from hidden marker: <!-- watchflow-violations-hash:ABC123 -->
             hash_pattern = re.compile(r"<!-- watchflow-violations-hash:([a-f0-9]+) -->")
-            
+
             for comment in existing_comments:
                 body = comment.get("body", "")
                 match = hash_pattern.search(body)
                 if match and match.group(1) == violations_hash:
                     return True
-            
+
             return False
         except Exception as e:
             logger.warning(f"Error checking for duplicate comments: {e}. Proceeding with post.")

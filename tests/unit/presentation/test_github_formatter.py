@@ -102,7 +102,6 @@ def test_format_violations_for_check_run():
     assert "• **Lint** - Trailing space" in result
 
 
-
 def test_format_violations_for_check_run_empty():
     assert format_violations_for_check_run([]) == "None"
 

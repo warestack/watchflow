@@ -206,7 +206,7 @@ def format_violations_comment(violations: list[Violation], content_hash: str | N
 
     # Add hidden HTML marker for deduplication (not visible in rendered markdown)
     marker = f"<!-- watchflow-violations-hash:{content_hash} -->\n" if content_hash else ""
-    
+
     comment = marker
     comment += f"### 🛡️ Watchflow Governance Checks\n**Status:** ❌ {len(violations)} Violations Found\n\n"
     comment += _build_collapsible_violations_text(violations)
