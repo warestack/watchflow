@@ -222,3 +222,97 @@ async def test_list_pull_requests_success(github_client, mock_aiohttp_session):
     prs = await github_client.list_pull_requests("owner/repo", installation_id=123)
 
     assert prs == [{"number": 1}]
+
+
+@pytest.mark.asyncio
+async def test_get_pull_request_files_paginates(github_client, mock_aiohttp_session):
+    """Files endpoint should fetch all pages when results fill a page."""
+    mock_token_response = mock_aiohttp_session.create_mock_response(201, json_data={"token": "access_token"})
+    mock_aiohttp_session.post.return_value = mock_token_response
+
+    # Page 1: full page (100 items) triggers fetching page 2
+    page1 = [{"filename": f"file_{i}.py"} for i in range(100)]
+    page2 = [{"filename": f"file_{i}.py"} for i in range(100, 135)]
+
+    mock_resp_page1 = mock_aiohttp_session.create_mock_response(200, json_data=page1)
+    mock_resp_page2 = mock_aiohttp_session.create_mock_response(200, json_data=page2)
+
+    mock_aiohttp_session.get.side_effect = [mock_resp_page1, mock_resp_page2]
+
+    files = await github_client.get_pull_request_files("owner/repo", 1, installation_id=123)
+
+    assert len(files) == 135
+    assert files[0]["filename"] == "file_0.py"
+    assert files[-1]["filename"] == "file_134.py"
+    assert mock_aiohttp_session.get.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_pull_request_files_single_page(github_client, mock_aiohttp_session):
+    """Files endpoint should not paginate when results don't fill a page."""
+    mock_token_response = mock_aiohttp_session.create_mock_response(201, json_data={"token": "access_token"})
+    mock_aiohttp_session.post.return_value = mock_token_response
+
+    page1 = [{"filename": f"file_{i}.py"} for i in range(30)]
+    mock_resp = mock_aiohttp_session.create_mock_response(200, json_data=page1)
+    mock_aiohttp_session.get.return_value = mock_resp
+
+    files = await github_client.get_pull_request_files("owner/repo", 1, installation_id=123)
+
+    assert len(files) == 30
+    assert mock_aiohttp_session.get.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_get_pull_request_files_uses_per_page_100(github_client, mock_aiohttp_session):
+    """Files endpoint should request per_page=100."""
+    mock_token_response = mock_aiohttp_session.create_mock_response(201, json_data={"token": "access_token"})
+    mock_aiohttp_session.post.return_value = mock_token_response
+
+    mock_resp = mock_aiohttp_session.create_mock_response(200, json_data=[])
+    mock_aiohttp_session.get.return_value = mock_resp
+
+    await github_client.get_pull_request_files("owner/repo", 1, installation_id=123)
+
+    call_args = mock_aiohttp_session.get.call_args
+    url = call_args[0][0]
+    assert "per_page=100" in url
+    assert "page=1" in url
+
+
+@pytest.mark.asyncio
+async def test_get_pull_request_reviews_paginates(github_client, mock_aiohttp_session):
+    """Reviews endpoint should fetch all pages when results fill a page."""
+    mock_token_response = mock_aiohttp_session.create_mock_response(201, json_data={"token": "access_token"})
+    mock_aiohttp_session.post.return_value = mock_token_response
+
+    page1 = [{"id": i, "state": "APPROVED"} for i in range(100)]
+    page2 = [{"id": i, "state": "CHANGES_REQUESTED"} for i in range(100, 110)]
+
+    mock_resp_page1 = mock_aiohttp_session.create_mock_response(200, json_data=page1)
+    mock_resp_page2 = mock_aiohttp_session.create_mock_response(200, json_data=page2)
+
+    mock_aiohttp_session.get.side_effect = [mock_resp_page1, mock_resp_page2]
+
+    reviews = await github_client.get_pull_request_reviews("owner/repo", 1, installation_id=123)
+
+    assert len(reviews) == 110
+    assert mock_aiohttp_session.get.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_pull_request_files_error_on_page2(github_client, mock_aiohttp_session):
+    """Files endpoint should return partial results if a later page errors."""
+    mock_token_response = mock_aiohttp_session.create_mock_response(201, json_data={"token": "access_token"})
+    mock_aiohttp_session.post.return_value = mock_token_response
+
+    page1 = [{"filename": f"file_{i}.py"} for i in range(100)]
+    mock_resp_page1 = mock_aiohttp_session.create_mock_response(200, json_data=page1)
+    mock_resp_page2 = mock_aiohttp_session.create_mock_response(500, text_data="Internal Server Error")
+
+    mock_aiohttp_session.get.side_effect = [mock_resp_page1, mock_resp_page2]
+
+    files = await github_client.get_pull_request_files("owner/repo", 1, installation_id=123)
+
+    # Should return the first page's results even if page 2 fails
+    assert len(files) == 100

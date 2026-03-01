@@ -471,7 +471,11 @@ class GitHubClient:
             return []
 
     async def get_pull_request_reviews(self, repo: str, pr_number: int, installation_id: int) -> list[dict[str, Any]]:
-        """Get reviews for a pull request."""
+        """Get reviews for a pull request.
+
+        Paginates through all pages to ensure the full review list is returned.
+        GitHub defaults to 30 reviews per page; max is 100.
+        """
         try:
             token = await self.get_installation_access_token(installation_id)
             if not token:
@@ -480,20 +484,34 @@ class GitHubClient:
 
             headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
 
-            url = f"{config.github.api_base_url}/repos/{repo}/pulls/{pr_number}/reviews"
+            all_reviews: list[dict[str, Any]] = []
+            page = 1
+            per_page = 100
 
             session = await self._get_session()
-            async with session.get(url, headers=headers) as response:
-                if response.status == 200:
+            while True:
+                url = (
+                    f"{config.github.api_base_url}/repos/{repo}/pulls/{pr_number}"
+                    f"/reviews?per_page={per_page}&page={page}"
+                )
+                async with session.get(url, headers=headers) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(
+                            f"Failed to get reviews for PR #{pr_number} in {repo}. "
+                            f"Status: {response.status}, Response: {error_text}"
+                        )
+                        break
                     result = await response.json()
-                    logger.info(f"Retrieved {len(result)} reviews for PR #{pr_number} in {repo}")
-                    return cast("list[dict[str, Any]]", result)
-                else:
-                    error_text = await response.text()
-                    logger.error(
-                        f"Failed to get reviews for PR #{pr_number} in {repo}. Status: {response.status}, Response: {error_text}"
-                    )
-                    return []
+                    if not result:
+                        break
+                    all_reviews.extend(result)
+                    if len(result) < per_page:
+                        break
+                    page += 1
+
+            logger.info(f"Retrieved {len(all_reviews)} reviews for PR #{pr_number} in {repo}")
+            return all_reviews
         except Exception as e:
             logger.error(f"Error getting reviews for PR #{pr_number} in {repo}: {e}")
             return []
@@ -555,7 +573,12 @@ class GitHubClient:
             return []
 
     async def get_pull_request_files(self, repo: str, pr_number: int, installation_id: int) -> list[dict[str, Any]]:
-        """Get files changed in a pull request."""
+        """Get files changed in a pull request.
+
+        Paginates through all pages to ensure the full file list is returned.
+        GitHub defaults to 30 files per page; max is 100. PRs with more than
+        3 000 files are truncated by the API regardless of pagination.
+        """
         try:
             token = await self.get_installation_access_token(installation_id)
             if not token:
@@ -564,20 +587,34 @@ class GitHubClient:
 
             headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
 
-            url = f"{config.github.api_base_url}/repos/{repo}/pulls/{pr_number}/files"
+            all_files: list[dict[str, Any]] = []
+            page = 1
+            per_page = 100
 
             session = await self._get_session()
-            async with session.get(url, headers=headers) as response:
-                if response.status == 200:
+            while True:
+                url = (
+                    f"{config.github.api_base_url}/repos/{repo}/pulls/{pr_number}"
+                    f"/files?per_page={per_page}&page={page}"
+                )
+                async with session.get(url, headers=headers) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(
+                            f"Failed to get files for PR #{pr_number} in {repo}. "
+                            f"Status: {response.status}, Response: {error_text}"
+                        )
+                        break
                     result = await response.json()
-                    logger.info(f"Retrieved {len(result)} files for PR #{pr_number} in {repo}")
-                    return cast("list[dict[str, Any]]", result)
-                else:
-                    error_text = await response.text()
-                    logger.error(
-                        f"Failed to get files for PR #{pr_number} in {repo}. Status: {response.status}, Response: {error_text}"
-                    )
-                    return []
+                    if not result:
+                        break
+                    all_files.extend(result)
+                    if len(result) < per_page:
+                        break
+                    page += 1
+
+            logger.info(f"Retrieved {len(all_files)} files for PR #{pr_number} in {repo}")
+            return all_files
         except Exception as e:
             logger.error(f"Error getting files for PR #{pr_number} in {repo}: {e}")
             return []
