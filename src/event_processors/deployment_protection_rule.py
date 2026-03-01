@@ -18,6 +18,7 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
     """Processor for deployment protection rule events using hybrid agentic rule evaluation."""
 
     def __init__(self):
+        """Initialize deployment protection rule processor with hybrid rule engine agent."""
         # Call super class __init__ first
         super().__init__()
 
@@ -25,6 +26,7 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
         self.engine_agent = get_agent("engine")
 
     def get_event_type(self) -> str:
+        """Return the event type this processor handles."""
         return "deployment_protection_rule"
 
     @staticmethod
@@ -36,6 +38,45 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
         return bool(env and isinstance(env, str) and env.strip())
 
     async def process(self, task: Task) -> ProcessingResult:
+        """Process deployment protection rule event with hybrid rule evaluation.
+
+        This method orchestrates the deployment approval/rejection workflow:
+        1. Validates callback URL and environment from webhook payload
+        2. Loads deployment rules from repository configuration
+        3. Enriches event data with commit/deployment metadata
+        4. Evaluates rules using hybrid agent (deterministic + LLM fallback)
+        5. Handles time-based scheduling for delayed deployment windows
+        6. Approves/rejects deployment via GitHub API callback
+        7. Posts check run with evaluation results
+
+        Args:
+            task: Task containing deployment_protection_rule event payload with:
+                - deployment: Deployment metadata (id, sha, ref, environment)
+                - deployment_callback_url: GitHub API endpoint for approval/rejection
+                - environment: Target deployment environment name
+                - installation_id: GitHub App installation identifier
+                - repo_full_name: Repository in owner/name format
+
+        Returns:
+            ProcessingResult with:
+                - success: True if deployment was approved/rejected successfully
+                - violations: List of rule violations that blocked deployment
+                - api_calls_made: Count of GitHub API calls (approx)
+                - processing_time_ms: Total processing time in milliseconds
+                - error: Error message if processing failed
+
+        Side Effects:
+            - Calls GitHub deployment approval/rejection API
+            - Creates check run with evaluation details
+            - Schedules delayed deployment approval via deployment scheduler
+            - Logs structured events at decision boundaries
+
+        Error Handling:
+            - Retries approval API calls with exponential backoff (3 attempts)
+            - Falls back to LLM if deterministic evaluation fails
+            - Returns success=False with error message on unrecoverable failures
+            - Gracefully degrades if rules file is missing or malformed
+        """
         start_time = time.time()
 
         try:
@@ -385,9 +426,31 @@ class DeploymentProtectionRuleProcessor(BaseEventProcessor):
         return text
 
     async def prepare_webhook_data(self, task: Task) -> dict[str, Any]:
+        """Extract data from webhook payload for rule evaluation.
+
+        Returns the raw payload as-is since deployment_protection_rule events
+        contain all necessary data (deployment, environment, callback URL).
+
+        Args:
+            task: Task with deployment_protection_rule payload
+
+        Returns:
+            Dictionary with deployment event data from webhook
+        """
         return task.payload
 
     async def prepare_api_data(self, task: Task) -> dict[str, Any]:
+        """Fetch additional data via GitHub API for rule evaluation.
+
+        For deployment_protection_rule events, all necessary data is already
+        in the webhook payload, so no additional API calls are needed.
+
+        Args:
+            task: Task with deployment_protection_rule payload
+
+        Returns:
+            Empty dictionary (no additional API data required)
+        """
         return {}
 
     def _get_rule_provider(self):

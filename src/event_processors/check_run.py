@@ -13,6 +13,7 @@ class CheckRunProcessor(BaseEventProcessor):
     """Processor for check run events using hybrid agentic rule evaluation."""
 
     def __init__(self) -> None:
+        """Initialize check run processor with hybrid rule engine agent."""
         # Call super class __init__ first
         super().__init__()
 
@@ -20,9 +21,22 @@ class CheckRunProcessor(BaseEventProcessor):
         self.engine_agent = get_agent("engine")
 
     def get_event_type(self) -> str:
+        """Return the event type this processor handles."""
         return "check_run"
 
     async def process(self, task: Task) -> ProcessingResult:
+        """Process check_run event with hybrid rule evaluation.
+
+        Handles check_run events (rerequested, completed) to re-evaluate rules
+        when checks are re-run. Ignores Watchflow's own check runs to prevent
+        infinite loops.
+
+        Args:
+            task: Task containing check_run event payload
+
+        Returns:
+            ProcessingResult with evaluation results
+        """
         start_time = time.time()
         payload = task.payload
         check_run = payload.get("check_run", {})

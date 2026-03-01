@@ -12,13 +12,26 @@ class DeploymentStatusProcessor(BaseEventProcessor):
     """Processor for deployment_status events - for logging and monitoring only."""
 
     def __init__(self) -> None:
+        """Initialize deployment status processor for logging and monitoring."""
         # Call super class __init__ first
         super().__init__()
 
     def get_event_type(self) -> str:
+        """Return the event type this processor handles."""
         return "deployment_status"
 
     async def process(self, task: Task) -> ProcessingResult:
+        """Process deployment_status event for logging and monitoring purposes.
+
+        This processor does not enforce rules - it only logs deployment status
+        transitions (waiting, success, failure, error) for observability.
+
+        Args:
+            task: Task containing deployment_status event payload
+
+        Returns:
+            ProcessingResult with success=True (always succeeds)
+        """
         start_time = time.time()
         payload = task.payload
         deployment_status = payload.get("deployment_status", {})
