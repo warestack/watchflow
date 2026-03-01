@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Description-diff alignment** -- `DescriptionDiffAlignmentCondition` uses
+  the configured AI provider (OpenAI / Bedrock / Vertex AI) to verify that
+  the PR description semantically matches the actual code changes. First
+  LLM-backed condition in Watchflow; adds ~1-3s latency. Gracefully skips
+  (no violation) if the LLM is unavailable.
+
 ## [2026-03-01] -- PR #59
 
 ### Added

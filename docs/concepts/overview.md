@@ -41,7 +41,7 @@ graph TD
 ### Condition registry
 
 - Maps parameter names to condition classes (e.g. `require_linked_issue` → `RequireLinkedIssueCondition`, `max_lines` → `MaxPrLocCondition`, `require_code_owner_reviewers` → `RequireCodeOwnerReviewersCondition`).
-- Supported conditions: linked issue, title pattern, description length, labels, approvals, PR size (lines), CODEOWNERS (path has owner, require owners as reviewers), protected branches, no force push, file size, file pattern, diff pattern scanning, security pattern detection, unresolved comments, test coverage, comment response SLA, signed commits, changelog required, self-approval prevention, cross-team approval, time/deploy rules. See [Configuration](../getting-started/configuration.md).
+- Supported conditions: linked issue, title pattern, description length, labels, approvals, PR size (lines), CODEOWNERS (path has owner, require owners as reviewers), protected branches, no force push, file size, file pattern, diff pattern scanning, security pattern detection, unresolved comments, test coverage, comment response SLA, signed commits, changelog required, self-approval prevention, cross-team approval, description-diff alignment (LLM-assisted), time/deploy rules. See [Configuration](../getting-started/configuration.md).
 
 ### PR enricher
 

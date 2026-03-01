@@ -57,6 +57,12 @@ Rules are **description + event_types + parameters**. The engine matches **param
 | `require_signed_commits: true` | SignedCommitsCondition | All commits must be cryptographically signed (GPG/SSH/S/MIME). |
 | `require_changelog_update: true` | ChangelogRequiredCondition | Source changes must include a CHANGELOG or `.changeset` update. |
 
+### LLM-assisted
+
+| Parameter | Condition | Description |
+|-----------|-----------|-------------|
+| `require_description_diff_alignment: true` | DescriptionDiffAlignmentCondition | PR description must semantically match the code diff (uses LLM; ~1-3s latency). |
+
 ---
 
 ## Repository analysis → one-click rules PR

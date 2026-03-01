@@ -31,6 +31,7 @@ from src.rules.conditions.filesystem import (
     MaxPrLocCondition,
     TestCoverageCondition,
 )
+from src.rules.conditions.llm_assisted import DescriptionDiffAlignmentCondition
 from src.rules.conditions.pull_request import (
     DiffPatternCondition,
     MinApprovalsCondition,
@@ -73,6 +74,7 @@ RULE_ID_TO_CONDITION: dict[RuleID, type[BaseCondition]] = {
     RuleID.CHANGELOG_REQUIRED: ChangelogRequiredCondition,
     RuleID.NO_SELF_APPROVAL: NoSelfApprovalCondition,
     RuleID.CROSS_TEAM_APPROVAL: CrossTeamApprovalCondition,
+    RuleID.DESCRIPTION_DIFF_ALIGNMENT: DescriptionDiffAlignmentCondition,
 }
 
 # Reverse map: condition class -> RuleID (for populating rule_id on violations)
@@ -106,6 +108,7 @@ AVAILABLE_CONDITIONS: list[type[BaseCondition]] = [
     CrossTeamApprovalCondition,
     SignedCommitsCondition,
     ChangelogRequiredCondition,
+    DescriptionDiffAlignmentCondition,
 ]
 
 

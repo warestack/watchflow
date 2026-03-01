@@ -26,6 +26,7 @@ from src.rules.conditions.filesystem import (
     MaxPrLocCondition,
     TestCoverageCondition,
 )
+from src.rules.conditions.llm_assisted import DescriptionDiffAlignmentCondition
 from src.rules.conditions.pull_request import (
     DiffPatternCondition,
     MinDescriptionLengthCondition,
@@ -71,6 +72,8 @@ __all__ = [
     # Compliance
     "SignedCommitsCondition",
     "ChangelogRequiredCondition",
+    # LLM-assisted
+    "DescriptionDiffAlignmentCondition",
     # Temporal
     "AllowedHoursCondition",
     "CommentResponseTimeCondition",

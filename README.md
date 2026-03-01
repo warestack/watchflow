@@ -65,6 +65,7 @@ Rules are **description + event_types + parameters**. The engine matches paramet
 | **Push** | `no_force_push: true` | push | Reject force pushes. |
 | **Files** | `max_file_size_mb: 1` | pull_request | No single file > N MB. |
 | **Files** | `pattern` + `condition_type: "files_match_pattern"` | pull_request | Changed files must (or must not) match glob/regex. |
+| **PR** | `require_description_diff_alignment: true` | pull_request | Description must match code changes (LLM-assisted). |
 | **Time** | `allowed_hours`, `days`, weekend | deployment / workflow | Restrict when actions can run. |
 
 Rules are read from the **default branch** (e.g. `main`). Each webhook delivery is deduplicated by `X-GitHub-Delivery` so handler and processor both run; comments and check runs stay in sync.

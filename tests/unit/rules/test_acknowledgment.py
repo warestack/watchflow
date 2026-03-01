@@ -36,7 +36,7 @@ class TestRuleIDEnum:
 
     def test_rule_id_count(self):
         """Verify we have exactly 20 standardized rule IDs."""
-        assert len(RuleID) == 20
+        assert len(RuleID) == 21
 
     def test_all_rule_ids_have_descriptions(self):
         """Every RuleID should have a corresponding description."""
@@ -169,6 +169,10 @@ class TestMapViolationTextToRuleId:
             ),
             ("Pull request was approved by its own author.", RuleID.NO_SELF_APPROVAL),
             ("Missing approvals from required teams: @org/security, @org/qa", RuleID.CROSS_TEAM_APPROVAL),
+            (
+                "PR description does not align with code changes: desc says X but diff does Y",
+                RuleID.DESCRIPTION_DIFF_ALIGNMENT,
+            ),
         ],
     )
     def test_maps_violation_text_correctly(self, text: str, expected_rule_id: RuleID):

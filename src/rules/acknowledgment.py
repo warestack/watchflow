@@ -43,6 +43,7 @@ class RuleID(StrEnum):
     CHANGELOG_REQUIRED = "changelog-required"
     NO_SELF_APPROVAL = "no-self-approval"
     CROSS_TEAM_APPROVAL = "cross-team-approval"
+    DESCRIPTION_DIFF_ALIGNMENT = "description-diff-alignment"
 
 
 # Mapping from violation text patterns to RuleID
@@ -67,6 +68,7 @@ VIOLATION_TEXT_TO_RULE_MAPPING: dict[str, RuleID] = {
     "without a corresponding CHANGELOG": RuleID.CHANGELOG_REQUIRED,
     "approved by its own author": RuleID.NO_SELF_APPROVAL,
     "approvals from required teams": RuleID.CROSS_TEAM_APPROVAL,
+    "does not align with code changes": RuleID.DESCRIPTION_DIFF_ALIGNMENT,
 }
 
 # Mapping from RuleID to human-readable descriptions
@@ -91,6 +93,7 @@ RULE_ID_TO_DESCRIPTION: dict[RuleID, str] = {
     RuleID.CHANGELOG_REQUIRED: "Source code changes must include a CHANGELOG or .changeset update.",
     RuleID.NO_SELF_APPROVAL: "PR authors cannot approve their own pull requests.",
     RuleID.CROSS_TEAM_APPROVAL: "Pull requests require approvals from specified GitHub teams.",
+    RuleID.DESCRIPTION_DIFF_ALIGNMENT: "PR description must accurately reflect the actual code changes.",
 }
 
 # Comment markers that indicate an acknowledgment comment
