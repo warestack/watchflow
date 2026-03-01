@@ -34,6 +34,15 @@ class RuleID(StrEnum):
     PROTECTED_BRANCH_PUSH = "protected-branch-push"
     PATH_HAS_CODE_OWNER = "path-has-code-owner"
     REQUIRE_CODE_OWNER_REVIEWERS = "require-code-owner-reviewers"
+    DIFF_PATTERN = "diff-pattern"
+    SECURITY_PATTERN = "security-pattern"
+    UNRESOLVED_COMMENTS = "unresolved-comments"
+    TEST_COVERAGE = "test-coverage"
+    COMMENT_RESPONSE_TIME = "comment-response-time"
+    SIGNED_COMMITS = "signed-commits"
+    CHANGELOG_REQUIRED = "changelog-required"
+    NO_SELF_APPROVAL = "no-self-approval"
+    CROSS_TEAM_APPROVAL = "cross-team-approval"
 
 
 # Mapping from violation text patterns to RuleID
@@ -49,6 +58,15 @@ VIOLATION_TEXT_TO_RULE_MAPPING: dict[str, RuleID] = {
     "targets protected branch": RuleID.PROTECTED_BRANCH_PUSH,
     "Paths without a code owner": RuleID.PATH_HAS_CODE_OWNER,
     "Code owners for modified paths": RuleID.REQUIRE_CODE_OWNER_REVIEWERS,
+    "found in added lines of": RuleID.DIFF_PATTERN,
+    "Security-sensitive patterns": RuleID.SECURITY_PATTERN,
+    "unresolved review comment thread": RuleID.UNRESOLVED_COMMENTS,
+    "without corresponding test changes": RuleID.TEST_COVERAGE,
+    "response SLA": RuleID.COMMENT_RESPONSE_TIME,
+    "unsigned commit": RuleID.SIGNED_COMMITS,
+    "without a corresponding CHANGELOG": RuleID.CHANGELOG_REQUIRED,
+    "approved by its own author": RuleID.NO_SELF_APPROVAL,
+    "approvals from required teams": RuleID.CROSS_TEAM_APPROVAL,
 }
 
 # Mapping from RuleID to human-readable descriptions
@@ -64,6 +82,15 @@ RULE_ID_TO_DESCRIPTION: dict[RuleID, str] = {
     RuleID.PROTECTED_BRANCH_PUSH: "Direct pushes to main branch are not allowed",
     RuleID.PATH_HAS_CODE_OWNER: "Every changed path must have a code owner defined in CODEOWNERS.",
     RuleID.REQUIRE_CODE_OWNER_REVIEWERS: "When a PR modifies paths with CODEOWNERS, those owners must be added as reviewers.",
+    RuleID.DIFF_PATTERN: "Code changes must not contain restricted patterns.",
+    RuleID.SECURITY_PATTERN: "Code changes must not contain security-sensitive patterns.",
+    RuleID.UNRESOLVED_COMMENTS: "All review comments must be resolved before merging.",
+    RuleID.TEST_COVERAGE: "Source code modifications must include corresponding test changes.",
+    RuleID.COMMENT_RESPONSE_TIME: "Review comments must be addressed within the SLA timeframe.",
+    RuleID.SIGNED_COMMITS: "All commits in a pull request must be cryptographically signed.",
+    RuleID.CHANGELOG_REQUIRED: "Source code changes must include a CHANGELOG or .changeset update.",
+    RuleID.NO_SELF_APPROVAL: "PR authors cannot approve their own pull requests.",
+    RuleID.CROSS_TEAM_APPROVAL: "Pull requests require approvals from specified GitHub teams.",
 }
 
 # Comment markers that indicate an acknowledgment comment

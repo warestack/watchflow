@@ -35,8 +35,8 @@ class TestRuleIDEnum:
             assert len(rule_id.value) > 0
 
     def test_rule_id_count(self):
-        """Verify we have exactly 11 standardized rule IDs."""
-        assert len(RuleID) == 11
+        """Verify we have exactly 20 standardized rule IDs."""
+        assert len(RuleID) == 20
 
     def test_all_rule_ids_have_descriptions(self):
         """Every RuleID should have a corresponding description."""
@@ -157,6 +157,18 @@ class TestMapViolationTextToRuleId:
                 "Code owners for modified paths must be added as reviewers: alice",
                 RuleID.REQUIRE_CODE_OWNER_REVIEWERS,
             ),
+            ("Restricted patterns ['console'] found in added lines of src/app.js", RuleID.DIFF_PATTERN),
+            ("Security-sensitive patterns ['api_key'] detected in src/auth.py", RuleID.SECURITY_PATTERN),
+            ("PR has 1 unresolved review comment thread(s)", RuleID.UNRESOLVED_COMMENTS),
+            ("Source files were modified without corresponding test changes.", RuleID.TEST_COVERAGE),
+            ("2 review thread(s) have exceeded the 24-hour response SLA.", RuleID.COMMENT_RESPONSE_TIME),
+            ("Found 3 unsigned commit(s): abc1234, def5678, ghi9012", RuleID.SIGNED_COMMITS),
+            (
+                "Source code was modified without a corresponding CHANGELOG update.",
+                RuleID.CHANGELOG_REQUIRED,
+            ),
+            ("Pull request was approved by its own author.", RuleID.NO_SELF_APPROVAL),
+            ("Missing approvals from required teams: @org/security, @org/qa", RuleID.CROSS_TEAM_APPROVAL),
         ],
     )
     def test_maps_violation_text_correctly(self, text: str, expected_rule_id: RuleID):

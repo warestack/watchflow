@@ -16,21 +16,34 @@ from src.rules.conditions.access_control import (
     ProtectedBranchesCondition,
     RequireCodeOwnerReviewersCondition,
 )
+from src.rules.conditions.access_control_advanced import (
+    CrossTeamApprovalCondition,
+    NoSelfApprovalCondition,
+)
 from src.rules.conditions.base import BaseCondition
+from src.rules.conditions.compliance import (
+    ChangelogRequiredCondition,
+    SignedCommitsCondition,
+)
 from src.rules.conditions.filesystem import (
     FilePatternCondition,
     MaxFileSizeCondition,
     MaxPrLocCondition,
+    TestCoverageCondition,
 )
 from src.rules.conditions.pull_request import (
+    DiffPatternCondition,
     MinApprovalsCondition,
     MinDescriptionLengthCondition,
     RequiredLabelsCondition,
     RequireLinkedIssueCondition,
+    SecurityPatternCondition,
     TitlePatternCondition,
+    UnresolvedCommentsCondition,
 )
 from src.rules.conditions.temporal import (
     AllowedHoursCondition,
+    CommentResponseTimeCondition,
     DaysCondition,
     WeekendCondition,
 )
@@ -51,6 +64,15 @@ RULE_ID_TO_CONDITION: dict[RuleID, type[BaseCondition]] = {
     RuleID.MIN_PR_APPROVALS: MinApprovalsCondition,
     RuleID.PATH_HAS_CODE_OWNER: PathHasCodeOwnerCondition,
     RuleID.REQUIRE_CODE_OWNER_REVIEWERS: RequireCodeOwnerReviewersCondition,
+    RuleID.DIFF_PATTERN: DiffPatternCondition,
+    RuleID.SECURITY_PATTERN: SecurityPatternCondition,
+    RuleID.UNRESOLVED_COMMENTS: UnresolvedCommentsCondition,
+    RuleID.TEST_COVERAGE: TestCoverageCondition,
+    RuleID.COMMENT_RESPONSE_TIME: CommentResponseTimeCondition,
+    RuleID.SIGNED_COMMITS: SignedCommitsCondition,
+    RuleID.CHANGELOG_REQUIRED: ChangelogRequiredCondition,
+    RuleID.NO_SELF_APPROVAL: NoSelfApprovalCondition,
+    RuleID.CROSS_TEAM_APPROVAL: CrossTeamApprovalCondition,
 }
 
 # Reverse map: condition class -> RuleID (for populating rule_id on violations)
@@ -72,9 +94,18 @@ AVAILABLE_CONDITIONS: list[type[BaseCondition]] = [
     RequireCodeOwnerReviewersCondition,
     FilePatternCondition,
     AllowedHoursCondition,
+    CommentResponseTimeCondition,
     DaysCondition,
     WeekendCondition,
     WorkflowDurationCondition,
+    DiffPatternCondition,
+    SecurityPatternCondition,
+    UnresolvedCommentsCondition,
+    TestCoverageCondition,
+    NoSelfApprovalCondition,
+    CrossTeamApprovalCondition,
+    SignedCommitsCondition,
+    ChangelogRequiredCondition,
 ]
 
 

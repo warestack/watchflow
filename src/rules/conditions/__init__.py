@@ -11,20 +11,33 @@ from src.rules.conditions.access_control import (
     ProtectedBranchesCondition,
     RequireCodeOwnerReviewersCondition,
 )
+from src.rules.conditions.access_control_advanced import (
+    CrossTeamApprovalCondition,
+    NoSelfApprovalCondition,
+)
 from src.rules.conditions.base import BaseCondition
+from src.rules.conditions.compliance import (
+    ChangelogRequiredCondition,
+    SignedCommitsCondition,
+)
 from src.rules.conditions.filesystem import (
     FilePatternCondition,
     MaxFileSizeCondition,
     MaxPrLocCondition,
+    TestCoverageCondition,
 )
 from src.rules.conditions.pull_request import (
+    DiffPatternCondition,
     MinDescriptionLengthCondition,
     RequiredLabelsCondition,
     RequireLinkedIssueCondition,
+    SecurityPatternCondition,
     TitlePatternCondition,
+    UnresolvedCommentsCondition,
 )
 from src.rules.conditions.temporal import (
     AllowedHoursCondition,
+    CommentResponseTimeCondition,
     DaysCondition,
     WeekendCondition,
 )
@@ -37,19 +50,30 @@ __all__ = [
     "FilePatternCondition",
     "MaxFileSizeCondition",
     "MaxPrLocCondition",
+    "TestCoverageCondition",
     # Pull Request
     "TitlePatternCondition",
     "MinDescriptionLengthCondition",
     "RequireLinkedIssueCondition",
     "RequiredLabelsCondition",
+    "DiffPatternCondition",
+    "SecurityPatternCondition",
+    "UnresolvedCommentsCondition",
     # Access Control
     "AuthorTeamCondition",
     "CodeOwnersCondition",
     "PathHasCodeOwnerCondition",
     "ProtectedBranchesCondition",
     "RequireCodeOwnerReviewersCondition",
+    # Access Control - Advanced
+    "NoSelfApprovalCondition",
+    "CrossTeamApprovalCondition",
+    # Compliance
+    "SignedCommitsCondition",
+    "ChangelogRequiredCondition",
     # Temporal
     "AllowedHoursCondition",
+    "CommentResponseTimeCondition",
     "DaysCondition",
     "WeekendCondition",
     # Workflow

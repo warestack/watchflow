@@ -2,6 +2,9 @@ from typing import Any
 
 import httpx
 import structlog
+from pydantic import ValidationError
+
+from src.integrations.github.models import GraphQLResponse
 
 logger = structlog.get_logger()
 
@@ -44,4 +47,15 @@ class GitHubGraphQLClient:
 
         except httpx.HTTPStatusError as e:
             logger.error("graphql_request_failed", status=e.response.status_code)
+            raise
+
+    async def execute_query_typed(self, query: str, variables: dict[str, Any]) -> GraphQLResponse:
+        """
+        Executes a GraphQL query and returns a strongly-typed Pydantic model.
+        """
+        data = await self.execute_query(query, variables)
+        try:
+            return GraphQLResponse.model_validate(data)
+        except ValidationError as e:
+            logger.error("graphql_validation_failed", error=str(e), data=data)
             raise

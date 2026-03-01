@@ -277,3 +277,107 @@ class MaxPrLocCondition(BaseCondition):
         changed_files = event.get("changed_files", []) or event.get("files", [])
         total = sum(int(f.get("additions", 0) or 0) + int(f.get("deletions", 0) or 0) for f in changed_files)
         return total <= max_lines
+
+
+class TestCoverageCondition(BaseCondition):
+    """Validates that a PR includes test modifications when source files change."""
+
+    name = "test_coverage"
+    description = "Checks if test files were modified when source files changed."
+    parameter_patterns = ["require_tests", "test_file_pattern"]
+    event_types = ["pull_request"]
+    examples = [{"require_tests": True, "test_file_pattern": "^tests/.*"}]
+
+    async def evaluate(self, context: Any) -> list[Violation]:
+        """Evaluate test coverage condition."""
+        parameters = context.get("parameters", {})
+        event = context.get("event", {})
+
+        if not parameters.get("require_tests"):
+            return []
+
+        changed_files = event.get("changed_files", []) or event.get("files", [])
+        if not changed_files:
+            return []
+
+        # Find test and non-test source files
+        source_files = []
+        test_files = []
+
+        # Default test pattern looks for tests/ directory or files ending in test.py/test.ts etc
+        test_pattern = parameters.get("test_file_pattern", r"(^tests?/|test\.[a-zA-Z]+$|_test\.[a-zA-Z]+$)")
+        try:
+            compiled_pattern = re.compile(test_pattern)
+        except re.error:
+            logger.error(f"Invalid test_file_pattern regex: {test_pattern}")
+            return [
+                Violation(
+                    rule_description=self.description,
+                    severity=Severity.MEDIUM,
+                    message=f"Invalid test_file_pattern regex: '{test_pattern}'",
+                    how_to_fix="Fix the regular expression in the 'test_file_pattern' parameter.",
+                )
+            ]
+
+        for f in changed_files:
+            filename = f.get("filename", "")
+            if not filename:
+                continue
+
+            # Ignore documentation and config files
+            if (
+                filename.endswith(".md")
+                or filename.endswith(".txt")
+                or filename.endswith(".yaml")
+                or filename.endswith(".json")
+            ):
+                continue
+
+            if compiled_pattern.search(filename):
+                test_files.append(filename)
+            else:
+                source_files.append(filename)
+
+        # If source files were modified but no test files were modified
+        if source_files and not test_files:
+            return [
+                Violation(
+                    rule_description=self.description,
+                    severity=Severity.HIGH,
+                    message="Source files were modified without corresponding test changes.",
+                    how_to_fix=f"Add or update tests in paths matching '{test_pattern}'.",
+                )
+            ]
+
+        return []
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        """Legacy validation interface."""
+        if not parameters.get("require_tests"):
+            return True
+
+        changed_files = event.get("changed_files", []) or event.get("files", [])
+        test_pattern = parameters.get("test_file_pattern", r"(^tests?/|test\.[a-zA-Z]+$|_test\.[a-zA-Z]+$)")
+
+        try:
+            compiled_pattern = re.compile(test_pattern)
+        except re.error:
+            return False
+
+        source_modified = False
+        test_modified = False
+
+        for f in changed_files:
+            filename = f.get("filename", "")
+            if not filename or filename.endswith((".md", ".txt", ".yaml", ".json")):
+                continue
+
+            if compiled_pattern.search(filename):
+                test_modified = True
+            else:
+                source_modified = True
+
+        if source_modified and not test_modified:
+            return False
+
+        return True

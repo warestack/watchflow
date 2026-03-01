@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
+import src.rules.utils.codeowners  # noqa: F401
 from src.rules.conditions.access_control import (
     AuthorTeamCondition,
     CodeOwnersCondition,
@@ -147,7 +148,7 @@ class TestCodeOwnersCondition:
         """Test that validate returns False when critical files are modified."""
         condition = CodeOwnersCondition()
 
-        event = {"files": [{"filename": "src/critical.py"}]}
+        event = {"files": [{"filename": "src/critical.py"}], "codeowners_content": "src/critical.py @admin"}
 
         with patch("src.rules.utils.codeowners.is_critical_file", return_value=True):
             result = await condition.validate({"critical_owners": ["admin"]}, event)
@@ -158,7 +159,7 @@ class TestCodeOwnersCondition:
         """Test that validate returns True when no critical files are modified."""
         condition = CodeOwnersCondition()
 
-        event = {"files": [{"filename": "src/normal.py"}]}
+        event = {"files": [{"filename": "src/normal.py"}], "codeowners_content": "src/critical.py @admin"}
 
         with patch("src.rules.utils.codeowners.is_critical_file", return_value=False):
             result = await condition.validate({"critical_owners": ["admin"]}, event)
@@ -169,7 +170,7 @@ class TestCodeOwnersCondition:
         """Test that evaluate returns violations for critical files."""
         condition = CodeOwnersCondition()
 
-        event = {"files": [{"filename": "src/critical.py"}]}
+        event = {"files": [{"filename": "src/critical.py"}], "codeowners_content": "src/critical.py @admin"}
         context = {"parameters": {"critical_owners": ["admin"]}, "event": event}
 
         with patch("src.rules.utils.codeowners.is_critical_file", return_value=True):
