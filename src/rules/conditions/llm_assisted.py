@@ -149,9 +149,7 @@ class DescriptionDiffAlignmentCondition(BaseCondition):
                 )
 
                 # Check if provider supports structured output
-                supports_structured = hasattr(llm, "with_structured_output") and callable(
-                    getattr(llm, "with_structured_output")
-                )
+                supports_structured = hasattr(llm, "with_structured_output") and callable(llm.with_structured_output)
 
                 if not supports_structured:
                     logger.warning("Provider does not support structured output; skipping alignment check.")
