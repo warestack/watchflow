@@ -199,14 +199,13 @@ async def test_post_violations_skips_duplicate(processor):
         return_value=[{"body": "<!-- watchflow-violations-hash:abc123def456 -->\nContent"}]
     )
 
-    # Compute the hash (we'll mock it to match)
-    with MagicMock() as mock_hash:
-        processor._compute_violations_hash = MagicMock(return_value="abc123def456")
+    # Mock the hash to match the existing comment
+    processor._compute_violations_hash = MagicMock(return_value="abc123def456")
 
-        await processor._post_violations_to_github(task, violations)
+    await processor._post_violations_to_github(task, violations)
 
-        # Should NOT have called create_pull_request_comment
-        processor.github_client.create_pull_request_comment.assert_not_called()
+    # Should NOT have called create_pull_request_comment
+    processor.github_client.create_pull_request_comment.assert_not_called()
 
 
 @pytest.mark.asyncio
