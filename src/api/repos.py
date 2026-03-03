@@ -10,7 +10,7 @@ from src.integrations.github.api import github_client
 
 logger = structlog.get_logger()
 
-router = APIRouter(prefix="/repos", tags=["Repositories"])
+router = APIRouter(prefix="/repos")
 
 
 @router.get(

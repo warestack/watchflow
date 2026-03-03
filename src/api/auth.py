@@ -9,7 +9,7 @@ from src.integrations.github.api import github_client
 logger = structlog.get_logger()
 
 # Use prefix to keep URLs clean: /auth/validate-token
-router = APIRouter(prefix="/auth", tags=["Authentication"])
+router = APIRouter(prefix="/auth")
 
 
 class ValidateTokenRequest(BaseModel):
