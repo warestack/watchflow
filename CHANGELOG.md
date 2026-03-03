@@ -14,6 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   LLM-backed condition in Watchflow; adds ~1-3s latency. Gracefully skips
   (no violation) if the LLM is unavailable.
 
+### Fixed
+
+- **Duplicate tags on Swagger docs** -- Swagger docs should now display all methods only once without repeating them in different tags.
+
 ## [2026-03-01] -- PR #59
 
 ### Added

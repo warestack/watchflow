@@ -16,7 +16,7 @@ from src.integrations.github.api import github_client
 
 logger = structlog.get_logger()
 
-router = APIRouter(prefix="/rules", tags=["Recommendations"])
+router = APIRouter(prefix="/rules")
 
 # --- Models ---  # API schema—keep in sync with frontend expectations.
 
