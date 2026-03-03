@@ -68,4 +68,4 @@ class TestScanAIFilesEndpoint:
         for c in data["candidate_files"]:
             assert "path" in c
             assert "has_keywords" in c
-            
+

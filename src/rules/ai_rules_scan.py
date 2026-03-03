@@ -114,6 +114,7 @@ def filter_tree_entries_for_ai_rules(
 
 
 GetContentFn = Callable[[str], Awaitable[str | None]]
+"""Type alias: async function that takes a file path and returns file content or None."""
 
 
 async def scan_repo_for_ai_rule_files(
@@ -301,7 +302,7 @@ def try_map_statement_to_yaml(statement: str) -> dict[str, Any] | None:
     for patterns, rule_dict in STATEMENT_TO_YAML_MAPPINGS:
         for p in patterns:
             if p in lower:
-                logger.warning(
+                logger.debug(
                     "deterministic_mapping_matched statement=%r pattern=%r",
                     statement[:100],
                     p,
@@ -353,8 +354,20 @@ async def translate_ai_rule_files_to_yaml(
             try:
                 agent = get_feasibility_agent()
                 result = await agent.execute(rule_description=st)
-                if result.success and result.data.get("is_feasible") and result.data.get("yaml_content"):
-                    yaml_content = result.data["yaml_content"].strip()
+                data = result.data or {}
+                is_feasible = data.get("is_feasible")
+                yaml_content_raw = data.get("yaml_content")
+                confidence = data.get("confidence_score", 0.0)
+                if not result.success:
+                    ambiguous.append({"statement": st, "path": path, "reason": result.message or "Agent failed"})
+                elif not is_feasible or not yaml_content_raw:
+                    ambiguous.append({"statement": st, "path": path, "reason": result.message or "Not feasible"})
+                elif confidence < 0.5:
+                    ambiguous.append(
+                        {"statement": st, "path": path, "reason": f"Low confidence (confidence_score={confidence})"}
+                    )
+                else:
+                    yaml_content = yaml_content_raw.strip()
                     parsed = yaml.safe_load(yaml_content)
                     if isinstance(parsed, dict) and "rules" in parsed and isinstance(parsed["rules"], list):
                         for r in parsed["rules"]:
@@ -363,8 +376,6 @@ async def translate_ai_rule_files_to_yaml(
                                 rule_sources.append("agent")
                     else:
                         ambiguous.append({"statement": st, "path": path, "reason": "Feasibility agent returned invalid YAML"})
-                else:
-                    ambiguous.append({"statement": st, "path": path, "reason": result.message or "Not feasible"})
             except Exception as e:
                 ambiguous.append({"statement": st, "path": path, "reason": str(e)})
 

@@ -8,7 +8,7 @@ import httpx
 import jwt
 import structlog
 from cachetools import TTLCache  # type: ignore[import-untyped]
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from src.core.config import config
 from src.core.errors import GitHubGraphQLError
@@ -222,23 +222,16 @@ class GitHubClient:
 
         
     async def _resolve_tree_sha(self, repo_full_name: str, ref: str, headers: dict[str, str]) -> str | None:
-        """Resolve the SHA of the tree for the given ref (commit SHA from ref -> tree SHA from commit)."""
+        """Resolve the tree SHA for the given ref (branch, tag, or commit SHA) via the commits API."""
         session = await self._get_session()
-        ref_url = f"{config.github.api_base_url}/repos/{repo_full_name}/git/ref/heads/{ref}"
-        async with session.get(ref_url, headers=headers) as response:
-            if response.status != 200:
-                return None
-            data = await response.json()
-        commit_sha = data.get("object", {}).get("sha") if isinstance(data, dict) else None
-        if not commit_sha:
-            return None
-        commit_url = f"{config.github.api_base_url}/repos/{repo_full_name}/git/commits/{commit_sha}"
-        async with session.get(commit_url, headers=headers) as response:
+        url = f"{config.github.api_base_url}/repos/{repo_full_name}/commits/{ref}"
+        async with session.get(url, headers=headers) as response:
             if response.status != 200:
                 return None
             commit_data = await response.json()
-        tree_sha = commit_data.get("tree", {}).get("sha") if isinstance(commit_data, dict) else None
-        return tree_sha
+        if not isinstance(commit_data, dict):
+            return None
+        return commit_data.get("commit", {}).get("tree", {}).get("sha")
 
     async def get_file_content(
         self,
@@ -260,11 +253,10 @@ class GitHubClient:
         if not headers:
             return None
         url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{file_path}"
-        if ref:
-            url = f"{url}?ref={ref}"
+        params = {"ref": ref} if ref else None
 
         session = await self._get_session()
-        async with session.get(url, headers=headers) as response:
+        async with session.get(url, headers=headers, params=params) as response:
             if response.status == 200:
                 logger.info(f"Successfully fetched file '{file_path}' from '{repo_full_name}'.")
                 return await response.text()
@@ -1197,7 +1189,11 @@ class GitHubClient:
             logger.error("pr_fetch_unexpected_error", repo=repo_full_name, error_type="unknown_error", error=str(e))
             return []
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    @retry(
+        retry=retry_if_exception_type(aiohttp.ClientError),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+    )
     async def execute_graphql(
         self, query: str, variables: dict[str, Any], user_token: str | None = None, installation_id: int | None = None
     ) -> dict[str, Any]:
@@ -1231,7 +1227,7 @@ class GitHubClient:
             # We'll try with empty headers if that's what _get_auth_headers returns (it returns None on failure).
             # If None, we can't proceed.
             logger.error("GraphQL execution failed: No authentication headers available.")
-            raise Exception("Authentication required for GraphQL query.")
+            raise PermissionError("Authentication required for GraphQL query.")
 
         start_time = time.time()
 

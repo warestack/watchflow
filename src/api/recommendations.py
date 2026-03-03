@@ -390,7 +390,20 @@ def generate_pr_body(
     """
     Generate a professional, concise PR body that helps maintainers understand and approve.
 
-    Follows Matas' patterns: evidence-based, data-driven, professional tone, no emojis.
+    Builds markdown with repository analysis, recommended rules (with optional rationale),
+    and next steps. Follows evidence-based, data-driven tone; no emojis.
+
+    Args:
+        repo_full_name: Repository in 'owner/repo' form (used in intro text).
+        recommendations: List of rule dicts (description, severity, etc.).
+        hygiene_summary: Metrics summary for the analysis report section.
+        rules_yaml: Full rules YAML (not embedded in body; referenced in "Changes").
+        installation_id: Optional; used for landing-page links in generated content.
+        analysis_report: Optional pre-generated markdown report; else generated from hygiene_summary.
+        rule_reasonings: Optional map of rule description -> rationale for each recommendation.
+
+    Returns:
+        Full PR body as a single markdown string.
     """
     body_lines = [
         "## Add Watchflow Governance Rules",
@@ -502,9 +515,22 @@ async def get_suggested_rules_from_repo(
 ) -> tuple[str, int, list[dict[str, Any]], list[str]]:
     """
     Run agentic scan+translate for a repo (rules.md, etc. -> Watchflow YAML).
+
     Safe to call from event processors; returns empty result on any failure.
-    Returns (rules_yaml, rules_count, ambiguous_list, rule_sources).
     When ref is provided (e.g. from push or PR head), scans that branch; otherwise uses default branch.
+
+    Args:
+        repo_full_name: Repository in 'owner/repo' form.
+        installation_id: GitHub App installation ID (or None if using user token).
+        github_token: Optional user or installation token for GitHub API.
+        ref: Optional branch ref (e.g. refs/heads/feature-x) or branch name; uses default branch if None.
+
+    Returns:
+        Tuple of (rules_yaml, rules_count, ambiguous_list, rule_sources).
+        - rules_yaml: Full "rules: [...]" YAML string.
+        - rules_count: Number of rules in rules_yaml.
+        - ambiguous_list: List of dicts with statement/path/reason for untranslated statements.
+        - rule_sources: Per-rule source ("mapping" or "agent"), same order as rules.
     """
     try:
         repo_data, repo_error = await github_client.get_repository(
@@ -544,8 +570,11 @@ async def get_suggested_rules_from_repo(
         try:
             parsed = yaml.safe_load(rules_yaml)
             rules_count = len(parsed.get("rules", [])) if isinstance(parsed, dict) else 0
-        except Exception:
-            pass
+        except (yaml.YAMLError, ValueError) as e:
+            logger.warning("get_suggested_rules_yaml_parse_failed", repo=repo_full_name, error=str(e))
+        except Exception as e:
+            logger.exception("get_suggested_rules_yaml_unexpected_error", repo=repo_full_name, error=str(e))
+            raise
         return (rules_yaml, rules_count, ambiguous, rule_sources)
     except Exception as e:
         logger.warning("get_suggested_rules_from_repo_failed", repo=repo_full_name, error=str(e))
@@ -655,7 +684,6 @@ async def recommend_rules(
 
     # Generate rules_yaml from recommendations
     # RuleRecommendation now includes all required fields directly
-    import yaml
 
     # Extract YAML fields from recommendations
     rules_list = []
@@ -947,6 +975,20 @@ async def scan_ai_rule_files(
     ) -> ScanAIFilesResponse:
     """
     Scan a repository for AI assistant rule files (Cursor, Claude, Copilot, etc.).
+
+    Lists files matching *rules*.md, *guidelines*.md, *prompt*.md, .cursor/rules/*.mdc,
+    optionally fetches content, and flags files that contain AI-instruction keywords.
+
+    Args:
+        request: The incoming HTTP request (used for IP logging).
+        payload: Request body with repo_url and optional github_token, installation_id, include_content.
+        user: Authenticated user (optional); used for token when present.
+
+    Returns:
+        ScanAIFilesResponse: repo_full_name, ref, candidate_files (path, has_keywords, optional content), warnings.
+
+    Raises:
+        HTTPException: 422 if repo URL is invalid; 401/403/404/429 for auth or GitHub API errors.
     """
     repo_url_str = str(payload.repo_url)
     client_ip = request.client.host if request.client else "unknown"
@@ -1047,6 +1089,25 @@ async def translate_ai_rule_files(
     payload: TranslateAIFilesRequest,
     user: User | None = Depends(get_current_user_optional),
 ) -> TranslateAIFilesResponse:
+    """
+    Translate AI rule files in a repository to Watchflow YAML rules.
+
+    Scans the repo for AI rule files (*rules*.md, *guidelines*.md, etc.), extracts
+    rule-like statements, then maps them to Watchflow rules via deterministic patterns
+    or the feasibility agent. Returns merged YAML and any statements that could not
+    be translated (ambiguous).
+
+    Args:
+        request: The incoming HTTP request.
+        payload: Request body with repo_url and optional github_token/installation_id.
+        user: Authenticated user (optional); used for token when present.
+
+    Returns:
+        TranslateAIFilesResponse: rules_yaml, rules_count, ambiguous list, and warnings.
+
+    Raises:
+        HTTPException: 422 if repo URL is invalid; 401/403/404/429 for auth or API errors.
+    """
     repo_url_str = str(payload.repo_url)
     logger.info("translate_ai_files_requested", repo_url=repo_url_str)
 
@@ -1113,12 +1174,15 @@ async def translate_ai_rule_files(
         )
 
     rules_yaml, ambiguous, rule_sources = await translate_ai_rule_files_to_yaml(candidates_with_content)
-    rules_count = rules_yaml.count("\n  - ") + (1 if rules_yaml.strip() != "rules: []" and "  - " in rules_yaml else 0)
+    rules_count = 0
     try:
         parsed = yaml.safe_load(rules_yaml)
         rules_count = len(parsed.get("rules", [])) if isinstance(parsed, dict) else 0
-    except Exception:
-        pass
+    except (yaml.YAMLError, ValueError) as e:
+        logger.warning("translate_ai_rule_files_yaml_parse_failed", repo_full_name=repo_full_name, error=str(e))
+    except Exception as e:
+        logger.exception("translate_ai_rule_files_unexpected_error", repo_full_name=repo_full_name, error=str(e))
+        raise
 
     return TranslateAIFilesResponse(
         repo_full_name=repo_full_name,
