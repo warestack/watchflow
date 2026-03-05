@@ -297,7 +297,7 @@ class MinApprovalsCondition(BaseCondition):
             if review.get("state") == "APPROVED":
                 approved_count += 1
 
-        return approved_count >= min_approvals
+        return bool(approved_count >= int(min_approvals))
 
 
 # Regex to detect issue references in PR body/title: #123, closes #123, fixes #123, etc.
@@ -365,3 +365,179 @@ class RequireLinkedIssueCondition(BaseCondition):
         title = pull_request.get("title") or ""
         combined = f"{title}\n{body}"
         return bool(_ISSUE_REF_PATTERN.search(combined))
+
+
+class _PatchPatternCondition(BaseCondition):
+    """Base class for conditions that match regex patterns against PR diff patches.
+
+    Subclasses configure the parameter key, violation severity, and message format.
+    """
+
+    _pattern_param_key: str = ""
+    _violation_severity: Severity = Severity.MEDIUM
+
+    def _make_message(self, matched: list[str], filename: str) -> str:
+        """Return the violation message. Override for custom wording."""
+        return f"Patterns {matched} found in added lines of {filename}"
+
+    def _make_how_to_fix(self) -> str:
+        """Return the how_to_fix text. Override for custom wording."""
+        return "Remove the matched patterns from your code changes."
+
+    async def evaluate(self, context: Any) -> list[Violation]:
+        """Evaluate patch-pattern condition."""
+        parameters = context.get("parameters", {})
+        event = context.get("event", {})
+
+        patterns = parameters.get(self._pattern_param_key)
+        if not patterns or not isinstance(patterns, list):
+            return []
+
+        changed_files = event.get("changed_files", [])
+        if not changed_files:
+            return []
+
+        from src.rules.utils.diff import match_patterns_in_patch
+
+        violations = []
+        for file_info in changed_files:
+            patch = file_info.get("patch")
+            if not patch:
+                continue
+
+            matched = match_patterns_in_patch(patch, patterns)
+            if matched:
+                filename = file_info.get("filename", "unknown")
+                violations.append(
+                    Violation(
+                        rule_description=self.description,
+                        severity=self._violation_severity,
+                        message=self._make_message(matched, filename),
+                        how_to_fix=self._make_how_to_fix(),
+                    )
+                )
+
+        return violations
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        """Legacy validation interface."""
+        patterns = parameters.get(self._pattern_param_key)
+        if not patterns or not isinstance(patterns, list):
+            return True
+
+        changed_files = event.get("changed_files", [])
+        from src.rules.utils.diff import match_patterns_in_patch
+
+        for file_info in changed_files:
+            patch = file_info.get("patch")
+            if patch and match_patterns_in_patch(patch, patterns):
+                return False
+
+        return True
+
+
+class DiffPatternCondition(_PatchPatternCondition):
+    """Validates that a PR diff does not contain specified restricted patterns."""
+
+    name = "diff_pattern"
+    description = "Checks if code changes contain restricted patterns or fail to contain required patterns."
+    parameter_patterns = ["diff_restricted_patterns"]
+    event_types = ["pull_request"]
+    examples = [{"diff_restricted_patterns": ["console\\.log", "TODO:"]}]
+
+    _pattern_param_key = "diff_restricted_patterns"
+    _violation_severity = Severity.MEDIUM
+
+    def _make_message(self, matched: list[str], filename: str) -> str:
+        return f"Restricted patterns {matched} found in added lines of {filename}"
+
+    def _make_how_to_fix(self) -> str:
+        return "Remove the restricted patterns from your code changes."
+
+
+class SecurityPatternCondition(_PatchPatternCondition):
+    """Detects security-sensitive patterns (like API keys) in code changes."""
+
+    name = "security_pattern"
+    description = "Detects hardcoded secrets, API keys, or sensitive data in PR diffs."
+    parameter_patterns = ["security_patterns"]
+    event_types = ["pull_request"]
+    examples = [{"security_patterns": ["api_key", "secret", "password", "token"]}]
+
+    _pattern_param_key = "security_patterns"
+    _violation_severity = Severity.CRITICAL
+
+    def _make_message(self, matched: list[str], filename: str) -> str:
+        return f"Security-sensitive patterns {matched} detected in {filename}"
+
+    def _make_how_to_fix(self) -> str:
+        return "Remove hardcoded secrets or sensitive patterns from the code."
+
+
+class UnresolvedCommentsCondition(BaseCondition):
+    """Validates that a pull request has no unresolved review comments."""
+
+    name = "unresolved_comments"
+    description = "Blocks PR merge if unresolved review comments exist."
+    parameter_patterns = ["block_on_unresolved_comments", "require_resolution"]
+    event_types = ["pull_request"]
+    examples = [{"block_on_unresolved_comments": True}]
+
+    async def evaluate(self, context: Any) -> list[Violation]:
+        """Evaluate unresolved comments condition."""
+        parameters = context.get("parameters", {})
+        event = context.get("event", {})
+
+        block = parameters.get("block_on_unresolved_comments") or parameters.get("require_resolution")
+        if not block:
+            return []
+
+        review_threads = event.get("review_threads", [])
+        if not review_threads:
+            return []
+
+        unresolved_count = 0
+        for thread in review_threads:
+            # Depending on how the dict is parsed/stored in the event data
+            if hasattr(thread, "is_resolved"):
+                is_resolved = thread.is_resolved
+                is_outdated = getattr(thread, "is_outdated", False)
+            else:
+                is_resolved = thread.get("is_resolved", False)
+                is_outdated = thread.get("is_outdated", False)
+
+            # If a thread is unresolved and not outdated
+            if not is_resolved and not is_outdated:
+                unresolved_count += 1
+
+        if unresolved_count > 0:
+            return [
+                Violation(
+                    rule_description=self.description,
+                    severity=Severity.HIGH,
+                    message=f"PR has {unresolved_count} unresolved review comment thread(s)",
+                    how_to_fix="Resolve all review comments before merging.",
+                )
+            ]
+
+        return []
+
+    async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
+        """Legacy validation interface."""
+        block = parameters.get("block_on_unresolved_comments") or parameters.get("require_resolution")
+        if not block:
+            return True
+
+        review_threads = event.get("review_threads", [])
+        for thread in review_threads:
+            if hasattr(thread, "is_resolved"):
+                is_resolved = thread.is_resolved
+                is_outdated = getattr(thread, "is_outdated", False)
+            else:
+                is_resolved = thread.get("is_resolved", False)
+                is_outdated = thread.get("is_outdated", False)
+
+            if not is_resolved and not is_outdated:
+                return False
+
+        return True

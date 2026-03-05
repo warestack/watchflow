@@ -6,9 +6,9 @@ CODEOWNERS parsing, contributor analysis, and rule validation.
 """
 
 from src.rules.utils.codeowners import (
+    CodeOwnersParser,
     get_file_owners,
     is_critical_file,
-    load_codeowners,
     path_has_owner,
 )
 from src.rules.utils.contributors import (
@@ -22,9 +22,9 @@ from src.rules.utils.validation import (
 )
 
 __all__ = [
+    "CodeOwnersParser",
     "get_file_owners",
     "is_critical_file",
-    "load_codeowners",
     "path_has_owner",
     "get_contributor_analyzer",
     "get_past_contributors",
@@ -32,6 +32,3 @@ __all__ = [
     "_validate_rules_yaml",
     "validate_rules_yaml_from_repo",
 ]
-
-# Alias for backward compatibility
-get_codeowners = load_codeowners

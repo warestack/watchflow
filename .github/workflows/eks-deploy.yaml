@@ -33,10 +33,10 @@ jobs:
       AWS_ACCESS_KEY_ID: "${{ secrets.AWS_ACCESS_KEY_ID }}"
       AWS_SECRET_ACCESS_KEY: "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
 
-      # GitHub OAuth secrets
-      APP_NAME_GITHUB: "${{ secrets.APP_NAME_GITHUB }}"
-      CLIENT_ID_GITHUB: "${{ secrets.CLIENT_ID_GITHUB }}"
-      APP_CLIENT_SECRET: "${{ secrets.APP_CLIENT_SECRET }}"
+      # GitHub App Configuration
+      APP_NAME_GITHUB: "watchflow"
+      APP_CLIENT_ID_GITHUB: "${{ secrets.APP_CLIENT_ID_GITHUB }}"
+      APP_CLIENT_SECRET_GITHUB: "${{ secrets.APP_CLIENT_SECRET_GITHUB }}"
       PRIVATE_KEY_BASE64_GITHUB: "${{ secrets.PRIVATE_KEY_BASE64_GITHUB }}"
       WEBHOOK_SECRET_GITHUB: "${{ secrets.WEBHOOK_SECRET_GITHUB }}"
 
@@ -95,8 +95,8 @@ jobs:
             --set image.repository=${{ env.IMAGE_REPOSITORY }} \
             --set image.tag=${{ env.IMAGE_TAG }} \
             --set secrets.APP_NAME_GITHUB=${{ env.APP_NAME_GITHUB }} \
-            --set secrets.CLIENT_ID_GITHUB=${{ env.CLIENT_ID_GITHUB }} \
-            --set secrets.APP_CLIENT_SECRET=${{ env.APP_CLIENT_SECRET }} \
+            --set secrets.APP_CLIENT_ID_GITHUB=${{ env.APP_CLIENT_ID_GITHUB }} \
+            --set secrets.APP_CLIENT_SECRET_GITHUB=${{ env.APP_CLIENT_SECRET_GITHUB }} \
             --set secrets.PRIVATE_KEY_BASE64_GITHUB=${{ env.PRIVATE_KEY_BASE64_GITHUB }} \
             --set secrets.WEBHOOK_SECRET_GITHUB=${{ env.WEBHOOK_SECRET_GITHUB }} \
             --set secrets.OPENAI_API_KEY=${{ env.OPENAI_API_KEY }} \

@@ -152,6 +152,103 @@ Changed files must (or must not) match the pattern; exact behavior depends on co
 
 **Allowed hours, days, weekend** — See condition registry and examples in repo for `allowed_hours`, `timezone`, `days`, and deployment-related parameters.
 
+### Code quality and diff scanning
+
+**Restricted diff patterns**
+
+```yaml
+parameters:
+  diff_restricted_patterns: ["console\\.log", "TODO:", "debugger"]
+```
+
+Flag added lines in the PR diff that match any of the listed regex patterns.
+
+**Security pattern detection**
+
+```yaml
+parameters:
+  security_patterns: ["api_key", "secret", "password", "token"]
+```
+
+Detect hardcoded secrets or sensitive data in PR diffs. Violations are raised with critical severity.
+
+**Test coverage enforcement**
+
+```yaml
+parameters:
+  require_tests: true
+  test_file_pattern: "^tests/.*"   # optional, defaults to common test paths
+```
+
+Source file changes must include corresponding test file changes. Ignored file types: `.md`, `.txt`, `.yaml`, `.json`.
+
+**Unresolved review comments**
+
+```yaml
+parameters:
+  block_on_unresolved_comments: true
+```
+
+Block merge when unresolved (non-outdated) review comment threads exist on the PR.
+
+**Comment response time SLA**
+
+```yaml
+parameters:
+  max_comment_response_time_hours: 24
+```
+
+Flag unresolved review threads that have exceeded the specified hour-based SLA.
+
+### Access control and compliance
+
+**Self-approval prevention**
+
+```yaml
+parameters:
+  block_self_approval: true
+```
+
+PR authors cannot approve their own pull requests. Violations are raised with critical severity.
+
+**Cross-team approval**
+
+```yaml
+parameters:
+  required_team_approvals: ["backend", "security"]
+```
+
+Require approvals from members of specified GitHub teams before merge.
+
+**Signed commits**
+
+```yaml
+parameters:
+  require_signed_commits: true
+```
+
+All commits in the PR must be cryptographically signed (GPG, SSH, or S/MIME). Required for SOC2/FedRAMP compliance.
+
+**Changelog required**
+
+```yaml
+parameters:
+  require_changelog_update: true
+```
+
+PRs that modify source code must include a corresponding `CHANGELOG.md` or `.changeset/` update. Docs, tests, and `.github/` paths are excluded.
+
+### LLM-assisted conditions
+
+**Description-diff alignment**
+
+```yaml
+parameters:
+  require_description_diff_alignment: true
+```
+
+Uses the configured AI provider to check whether the PR description semantically reflects the actual code changes. Flags mismatches like "description says fix login but diff only touches billing code." Adds ~1-3s latency per evaluation. If the LLM is unavailable (provider not configured, rate limit), the condition gracefully skips without blocking the PR.
+
 ---
 
 ## Example rules

@@ -23,13 +23,66 @@ SEVERITY_STR_EMOJI = {
 }
 
 
+def _build_collapsible_violations_text(violations: list[Violation]) -> str:
+    """Builds a collapsible Markdown string grouped by severity for a list of violations.
+
+    Args:
+        violations: A list of Violation objects to format.
+
+    Returns:
+        A Markdown formatted string with collapsible details blocks for each severity level.
+    """
+    if not violations:
+        return ""
+
+    text = ""
+    severity_order = ["critical", "high", "medium", "low", "info"]
+    severity_groups: dict[str, list[Violation]] = {s: [] for s in severity_order}
+
+    for violation in violations:
+        sev = violation.severity.value if hasattr(violation.severity, "value") else str(violation.severity)
+        if sev in severity_groups:
+            severity_groups[sev].append(violation)
+        else:
+            severity_groups["low"].append(violation)
+
+    for severity in severity_order:
+        if severity_groups[severity]:
+            emoji = SEVERITY_STR_EMOJI.get(severity, "⚪")
+            count = len(severity_groups[severity])
+
+            text += "<details>\n"
+            text += f"<summary><b>{emoji} {severity.title()} Severity ({count})</b></summary>\n\n"
+
+            for violation in severity_groups[severity]:
+                text += f"### {violation.rule_description or 'Unknown Rule'}\n"
+                text += f"{violation.message}\n"
+                if violation.how_to_fix:
+                    text += f"**How to fix:** {violation.how_to_fix}\n"
+                text += "\n"
+
+            text += "</details>\n\n"
+
+    return text
+
+
 def format_check_run_output(
     violations: list[Violation],
     error: str | None = None,
     repo_full_name: str | None = None,
     installation_id: int | None = None,
 ) -> dict[str, Any]:
-    """Format violations for check run output."""
+    """Format violations for check run output.
+
+    Args:
+        violations: List of rule violations to report.
+        error: Optional error message if rule processing failed entirely.
+        repo_full_name: The full repository name (e.g., owner/repo).
+        installation_id: The GitHub App installation ID.
+
+    Returns:
+        A dictionary matching the GitHub Check Run Output schema containing title, summary, and text.
+    """
     if error:
         # Check if it's a missing rules file error
         if "rules not configured" in error.lower() or "rules file not found" in error.lower():
@@ -75,7 +128,7 @@ def format_check_run_output(
         }
 
     # Group violations by severity
-    severity_order = ["critical", "high", "medium", "low"]
+    severity_order = ["critical", "high", "medium", "low", "info"]
     severity_groups: dict[str, list[Violation]] = {s: [] for s in severity_order}
 
     for violation in violations:
@@ -99,21 +152,9 @@ def format_check_run_output(
 
     # Build detailed text
     text = "# Watchflow Rule Violations\n\n"
-
-    for severity in severity_order:
-        if severity_groups[severity]:
-            emoji = SEVERITY_STR_EMOJI.get(severity, "⚪")
-            text += f"## {emoji} {severity.title()} Severity\n\n"
-
-            for violation in severity_groups[severity]:
-                text += f"### {violation.rule_description or 'Unknown Rule'}\n"
-                text += f"Rule validation failed with severity: **{violation.severity}**\n"
-                if violation.how_to_fix:
-                    text += f"**How to fix:** {violation.how_to_fix}\n"
-                text += "\n"
-
+    text += _build_collapsible_violations_text(violations)
     text += "---\n"
-    text += "*To configure rules, edit the `.watchflow/rules.yaml` file in this repository.*"
+    text += "💡 *To configure rules, edit the `.watchflow/rules.yaml` file in this repository.*"
 
     return {"title": f"{len(violations)} rule violations found", "summary": summary, "text": text}
 
@@ -149,35 +190,34 @@ def format_rules_not_configured_comment(
     )
 
 
-def format_violations_comment(violations: list[Violation]) -> str:
-    """Format violations as a GitHub comment."""
-    comment = "## 🚨 Watchflow Rule Violations Detected\n\n"
+def format_violations_comment(violations: list[Violation], content_hash: str | None = None) -> str:
+    """Format violations as a GitHub comment.
 
-    # Group violations by severity
-    severity_order = ["critical", "high", "medium", "low"]
-    severity_groups: dict[str, list[Violation]] = {s: [] for s in severity_order}
+    Args:
+        violations: List of rule violations to include in the comment.
+        content_hash: Optional hash to include as a hidden marker for deduplication.
 
-    for violation in violations:
-        sev = violation.severity.value if hasattr(violation.severity, "value") else str(violation.severity)
-        if sev in severity_groups:
-            severity_groups[sev].append(violation)
+    Returns:
+        A Markdown formatted string suitable for a Pull Request timeline comment.
+        Returns an empty string if there are no violations.
+    """
+    if not violations:
+        return ""
 
-    # Add violations by severity (most severe first)
-    for severity in severity_order:
-        if severity_groups[severity]:
-            emoji = SEVERITY_STR_EMOJI.get(severity, "⚪")
-            comment += f"### {emoji} {severity.title()} Severity\n\n"
+    # Add hidden HTML marker for deduplication (not visible in rendered markdown)
+    marker = f"<!-- watchflow-violations-hash:{content_hash} -->\n" if content_hash else ""
 
-            for violation in severity_groups[severity]:
-                comment += f"**{violation.rule_description or 'Unknown Rule'}**\n"
-                comment += f"Rule validation failed with severity: **{violation.severity}**\n"
-                if violation.how_to_fix:
-                    comment += f"**How to fix:** {violation.how_to_fix}\n"
-                comment += "\n"
-
+    comment = marker
+    comment += f"### 🛡️ Watchflow Governance Checks\n**Status:** ❌ {len(violations)} Violations Found\n\n"
+    comment += _build_collapsible_violations_text(violations)
     comment += "---\n"
-    comment += "*This comment was automatically generated by [Watchflow](https://watchflow.dev).*\n"
-    comment += "*To configure rules, edit the `.watchflow/rules.yaml` file in this repository.*"
+    comment += (
+        "💡 *Reply with `@watchflow ack [reason]` to override these rules, or `@watchflow help` for commands.*\n\n"
+    )
+    comment += (
+        "Thanks for using [Watchflow](https://watchflow.dev)! It's completely free for OSS and private repositories. "
+    )
+    comment += "You can also [self-host it easily](https://github.com/warestack/watchflow)."
 
     return comment
 
@@ -259,7 +299,7 @@ All rule violations have been properly acknowledged and overridden. The pull req
 {format_acknowledgment_summary(acknowledgable_violations, acknowledgments)}
 
 **Violations Requiring Fixes:**
-{format_violations_for_check_run(violations)}
+{_build_collapsible_violations_text(violations)}
 
 Please address the remaining violations or acknowledge them with a valid reason.
 """

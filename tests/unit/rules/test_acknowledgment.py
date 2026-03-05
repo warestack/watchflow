@@ -35,8 +35,8 @@ class TestRuleIDEnum:
             assert len(rule_id.value) > 0
 
     def test_rule_id_count(self):
-        """Verify we have exactly 11 standardized rule IDs."""
-        assert len(RuleID) == 11
+        """Verify we have the correct number of standardized rule IDs."""
+        assert len(RuleID) == 21
 
     def test_all_rule_ids_have_descriptions(self):
         """Every RuleID should have a corresponding description."""
@@ -140,22 +140,38 @@ class TestMapViolationTextToRuleId:
     @pytest.mark.parametrize(
         "text,expected_rule_id",
         [
-            ("Pull request does not have the minimum required approvals", RuleID.MIN_PR_APPROVALS),
-            ("Pull request is missing required label: security", RuleID.REQUIRED_LABELS),
-            ("Pull request title does not match the required pattern", RuleID.PR_TITLE_PATTERN),
-            ("Pull request description is too short (20 chars)", RuleID.PR_DESCRIPTION_REQUIRED),
-            ("Individual files cannot exceed 10MB limit", RuleID.FILE_SIZE_LIMIT),
+            ("PR has 1 approvals, requires 2", RuleID.MIN_PR_APPROVALS),
+            ("Missing required labels: security", RuleID.REQUIRED_LABELS),
+            ("PR title 'foo' does not match required pattern '^feat'", RuleID.PR_TITLE_PATTERN),
+            ("PR description is too short", RuleID.PR_DESCRIPTION_REQUIRED),
+            ("Files exceed size limit of 10MB", RuleID.FILE_SIZE_LIMIT),
             ("Pull request exceeds maximum lines changed (1234 > 500)", RuleID.MAX_PR_LOC),
             (
                 "PR does not reference a linked issue (e.g. #123 or closes #123 in body/title)",
                 RuleID.REQUIRE_LINKED_ISSUE,
             ),
-            ("Force pushes are not allowed on this branch", RuleID.NO_FORCE_PUSH),
-            ("Direct pushes to main/master branches prohibited", RuleID.PROTECTED_BRANCH_PUSH),
+            ("Force push detected on protected branch", RuleID.NO_FORCE_PUSH),
+            ("PR targets protected branch 'main'", RuleID.PROTECTED_BRANCH_PUSH),
             ("Paths without a code owner in CODEOWNERS: src/bar.py", RuleID.PATH_HAS_CODE_OWNER),
             (
                 "Code owners for modified paths must be added as reviewers: alice",
                 RuleID.REQUIRE_CODE_OWNER_REVIEWERS,
+            ),
+            ("Restricted patterns ['console'] found in added lines of src/app.js", RuleID.DIFF_PATTERN),
+            ("Security-sensitive patterns ['api_key'] detected in src/auth.py", RuleID.SECURITY_PATTERN),
+            ("PR has 1 unresolved review comment thread(s)", RuleID.UNRESOLVED_COMMENTS),
+            ("Source files were modified without corresponding test changes.", RuleID.TEST_COVERAGE),
+            ("2 review thread(s) have exceeded the 24-hour response SLA.", RuleID.COMMENT_RESPONSE_TIME),
+            ("Found 3 unsigned commit(s): abc1234, def5678, ghi9012", RuleID.SIGNED_COMMITS),
+            (
+                "Source code was modified without a corresponding CHANGELOG update.",
+                RuleID.CHANGELOG_REQUIRED,
+            ),
+            ("Pull request was approved by its own author.", RuleID.NO_SELF_APPROVAL),
+            ("Missing approvals from required teams: @org/security, @org/qa", RuleID.CROSS_TEAM_APPROVAL),
+            (
+                "PR description does not align with code changes: desc says X but diff does Y",
+                RuleID.DESCRIPTION_DIFF_ALIGNMENT,
             ),
         ],
     )
@@ -175,7 +191,7 @@ class TestMapViolationTextToRuleDescription:
 
     def test_maps_to_description(self):
         """Should map violation text to human-readable description."""
-        text = "Pull request does not have the minimum required approvals"
+        text = "PR has 1 approvals, requires 2"
         description = map_violation_text_to_rule_description(text)
         assert description == "Pull requests require at least 2 approvals"
 
@@ -193,7 +209,7 @@ class TestParseAcknowledgmentComment:
 **Reason:** Emergency fix
 
 The following violations have been overridden:
-• Pull request does not have the minimum required approvals
+• PR has 1 approvals, requires 2
 
 ---
 *This acknowledgment was validated.*"""
@@ -211,8 +227,8 @@ The following violations have been overridden:
 **Reason:** Sprint deadline
 
 The following violations have been overridden:
-• Pull request does not have the minimum required approvals
-• Pull request is missing required label: review
+• PR has 1 approvals, requires 2
+• Missing required labels: review
 
 ---"""
 
@@ -230,7 +246,7 @@ The following violations have been overridden:
     def test_returns_acknowledgment_models(self):
         """Should return proper Acknowledgment model instances."""
         comment = """The following violations have been overridden:
-• Force pushes are not allowed"""
+• Force push detected on protected branch"""
 
         acknowledgments = parse_acknowledgment_comment(comment, "admin")
 
@@ -240,7 +256,7 @@ The following violations have been overridden:
     def test_stops_at_section_delimiter(self):
         """Should stop parsing when hitting section delimiters."""
         comment = """The following violations have been overridden:
-• Pull request title does not match the required pattern
+• PR title 'foo' does not match required pattern '^feat'
 ---
 ⚠️ Other content that should be ignored
 • Some other bullet that is NOT a violation"""

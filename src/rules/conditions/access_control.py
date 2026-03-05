@@ -122,8 +122,10 @@ class CodeOwnersCondition(BaseCondition):
         event = context.get("event", {})
 
         changed_files = self._get_changed_files(event)
-        if not changed_files:
-            logger.debug("CodeOwnersCondition: No files to check")
+        codeowners_content = event.get("codeowners_content")
+
+        if not changed_files or not codeowners_content:
+            logger.debug("CodeOwnersCondition: No files or no CODEOWNERS to check")
             return []
 
         from src.rules.utils.codeowners import is_critical_file
@@ -131,7 +133,9 @@ class CodeOwnersCondition(BaseCondition):
         critical_owners = parameters.get("critical_owners")
 
         critical_files = [
-            file_path for file_path in changed_files if is_critical_file(file_path, critical_owners=critical_owners)
+            file_path
+            for file_path in changed_files
+            if is_critical_file(file_path, codeowners_content=codeowners_content, critical_owners=critical_owners)
         ]
 
         if critical_files:
@@ -150,24 +154,21 @@ class CodeOwnersCondition(BaseCondition):
     async def validate(self, parameters: dict[str, Any], event: dict[str, Any]) -> bool:
         """Legacy validation interface for backward compatibility."""
         changed_files = self._get_changed_files(event)
-        if not changed_files:
-            logger.debug("CodeOwnersCondition: No files to check")
+        codeowners_content = event.get("codeowners_content")
+
+        if not changed_files or not codeowners_content:
+            logger.debug("CodeOwnersCondition: No files or no CODEOWNERS to check")
             return True
 
         from src.rules.utils.codeowners import is_critical_file
 
         critical_owners = parameters.get("critical_owners")
 
-        requires_code_owner_review = any(
-            is_critical_file(file_path, critical_owners=critical_owners) for file_path in changed_files
-        )
+        for file_path in changed_files:
+            if is_critical_file(file_path, codeowners_content=codeowners_content, critical_owners=critical_owners):
+                return False
 
-        logger.debug(
-            "CodeOwnersCondition: Files checked",
-            files=changed_files,
-            requires_review=requires_code_owner_review,
-        )
-        return not requires_code_owner_review
+        return True
 
     def _get_changed_files(self, event: dict[str, Any]) -> list[str]:
         """Extract changed files from the event."""
@@ -297,6 +298,11 @@ def _required_code_owner_reviewers(event: dict[str, Any]) -> tuple[list[str], li
     requested_teams = pr.get("requested_teams") or []
     requested_logins = {u.get("login") for u in requested_users if u.get("login")}
     requested_slugs = {t.get("slug") for t in requested_teams if t.get("slug")}
+
+    # The PR author is inherently a reviewer of their own code
+    author_login = pr.get("user", {}).get("login")
+    if author_login:
+        requested_logins.add(author_login)
 
     # Owner can be a user (login) or a team (slug or org/slug). Match user by login, team by slug.
     requested_identifiers = requested_logins | requested_slugs
