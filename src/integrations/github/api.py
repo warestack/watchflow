@@ -2,6 +2,7 @@ import asyncio
 import base64
 import time
 from typing import Any, cast
+from urllib.parse import quote
 
 import aiohttp
 import httpx
@@ -198,24 +199,47 @@ class GitHubClient:
     recursive: bool = True,
     ) -> list[dict[str, Any]]:
         """Get the tree of a repository. Requires authentication (github_token or installation_id)."""
+        start = time.monotonic()
         headers = await self._get_auth_headers(
             installation_id=installation_id,
             user_token=user_token,
         )
         if not headers:
+            latency_ms = int((time.monotonic() - start) * 1000)
+            logger.info(
+                "get_repository_tree",
+                operation="get_repository_tree",
+                subject_ids={"repo": repo_full_name, "installation_id": installation_id, "user_token_present": bool(user_token), "ref": ref or "main"},
+                decision="auth_missing",
+                latency_ms=latency_ms,
+            )
             return []
         ref = ref or "main"
         tree_sha = await self._resolve_tree_sha(repo_full_name, ref, headers)
         if not tree_sha:
+            latency_ms = int((time.monotonic() - start) * 1000)
+            logger.info(
+                "get_repository_tree",
+                operation="get_repository_tree",
+                subject_ids={"repo": repo_full_name, "installation_id": installation_id, "user_token_present": bool(user_token), "ref": ref},
+                decision="ref_resolution_failed",
+                latency_ms=latency_ms,
+            )
             return []
-        
         url = ( f"{config.github.api_base_url}"
                 f"/repos/{repo_full_name}/git/trees/{tree_sha}"
                 f"?recursive={recursive}" )
-        
         session = await self._get_session()
         async with session.get(url, headers=headers) as response:
             if response.status != 200:
+                latency_ms = int((time.monotonic() - start) * 1000)
+                logger.info(
+                    "get_repository_tree",
+                    operation="get_repository_tree",
+                    subject_ids={"repo": repo_full_name, "ref": ref, "tree_sha": tree_sha},
+                    decision=f"http_error_{response.status}",
+                    latency_ms=latency_ms,
+                )
                 return []
             data = await response.json()
             return cast("list[dict[str, Any]]", data.get("tree", []))
@@ -224,7 +248,8 @@ class GitHubClient:
     async def _resolve_tree_sha(self, repo_full_name: str, ref: str, headers: dict[str, str]) -> str | None:
         """Resolve the tree SHA for the given ref (branch, tag, or commit SHA) via the commits API."""
         session = await self._get_session()
-        url = f"{config.github.api_base_url}/repos/{repo_full_name}/commits/{ref}"
+        ref_encoded = quote(ref, safe="")
+        url = f"{config.github.api_base_url}/repos/{repo_full_name}/commits/{ref_encoded}"
         async with session.get(url, headers=headers) as response:
             if response.status != 200:
                 return None
@@ -1073,6 +1098,38 @@ class GitHubClient:
             logger.error(
                 f"Failed to create PR in {repo_full_name} (head: {head}, base: {base}). "
                 f"Status: {response.status}, Response: {error_text}"
+            )
+            return None
+
+    async def create_issue(
+        self,
+        repo_full_name: str,
+        title: str,
+        body: str,
+        installation_id: int | None = None,
+        user_token: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Create a repository issue. Requires Issues: read/write permission."""
+        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
+        if not headers:
+            logger.error("Failed to get auth headers for create_issue in %s", repo_full_name)
+            return None
+        url = f"{config.github.api_base_url}/repos/{repo_full_name}/issues"
+        payload = {"title": title, "body": body}
+        session = await self._get_session()
+        async with session.post(url, headers=headers, json=payload) as response:
+            if response.status in (200, 201):
+                result = await response.json()
+                issue_number = result.get("number")
+                issue_url = result.get("html_url", "")
+                logger.info("Successfully created issue #%s in %s: %s", issue_number, repo_full_name, issue_url)
+                return cast("dict[str, Any]", result)
+            error_text = await response.text()
+            logger.error(
+                "Failed to create issue in %s. Status: %s, Response: %s",
+                repo_full_name,
+                response.status,
+                error_text,
             )
             return None
 

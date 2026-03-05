@@ -2,15 +2,17 @@ import logging
 import time
 from typing import Any
 
+import yaml
+
 from src.agents import get_agent
 from src.api.recommendations import get_suggested_rules_from_repo
-from src.rules.ai_rules_scan import is_relevant_pr
 from src.core.models import Violation
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.event_processors.pull_request.enricher import PullRequestEnricher
 from src.integrations.github.check_runs import CheckRunManager
 from src.presentation import github_formatter
-from src.rules.loaders.github_loader import RulesFileNotFoundError
+from src.rules.ai_rules_scan import is_relevant_pr
+from src.rules.loaders.github_loader import GitHubRuleLoader, RulesFileNotFoundError
 from src.tasks.task_queue import Task
 
 logger = logging.getLogger(__name__)
@@ -64,6 +66,7 @@ class PullRequestProcessor(BaseEventProcessor):
 
             # Agentic: scan repo only when relevant (PR targets default branch)
             # Use the PR head ref so we scan the branch being proposed, not main.
+            suggested_rules_yaml: str | None = None
             if is_relevant_pr(task.payload):
                 try:
                     pr_head_ref = pr_data.get("head", {}).get("ref")  # branch name, e.g. feature-x
@@ -80,6 +83,7 @@ class PullRequestProcessor(BaseEventProcessor):
                         logger.info("   Per-rule source: %s", rule_sources)
                     if rules_count > 0:
                         logger.info("   YAML:\n%s", rules_yaml)
+                        suggested_rules_yaml = rules_yaml
                     if ambiguous:
                         logger.info("   Ambiguous (not translated): %s", [a.get("statement", "") for a in ambiguous])
                     logger.info("=" * 80)
@@ -92,7 +96,7 @@ class PullRequestProcessor(BaseEventProcessor):
             event_data = await self.enricher.enrich_event_data(task, github_token)
             api_calls += 1
 
-            # 2. Fetch rules
+            # 2. Fetch rules and merge in dynamically translated rules (pre-merge enforcement)
             try:
                 rules_optional = await self.rule_provider.get_rules(repo_full_name, installation_id)
                 rules = rules_optional if rules_optional is not None else []
@@ -127,6 +131,30 @@ class PullRequestProcessor(BaseEventProcessor):
                     processing_time_ms=int((time.time() - start_time) * 1000),
                     error="Rules not configured",
                 )
+
+            # Append dynamically translated rules so they are enforced as pre-merge checks
+            if suggested_rules_yaml:
+                try:
+                    parsed = yaml.safe_load(suggested_rules_yaml)
+                    if isinstance(parsed, dict) and "rules" in parsed and isinstance(parsed["rules"], list):
+                        suggested_count = 0
+                        for rule_data in parsed["rules"]:
+                            if isinstance(rule_data, dict):
+                                try:
+                                    rule = GitHubRuleLoader._parse_rule(rule_data)
+                                    rules.append(rule)
+                                    suggested_count += 1
+                                except Exception as parse_err:
+                                    logger.warning("Failed to parse suggested rule: %s", parse_err)
+                        if suggested_count > 0:
+                            logger.info(
+                                "Enforcing %d rules total (%d from repo, %d suggested from AI rule files)",
+                                len(rules),
+                                len(rules) - suggested_count,
+                                suggested_count,
+                            )
+                except yaml.YAMLError as e:
+                    logger.warning("Failed to parse suggested rules YAML: %s", e)
 
             # 3. Check for existing acknowledgments
             previous_acknowledgments = {}

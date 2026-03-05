@@ -12,6 +12,7 @@ from src.agents.acknowledgment_agent import AcknowledgmentAgent
 from src.agents.base import BaseAgent
 from src.agents.engine_agent import RuleEngineAgent
 from src.agents.feasibility_agent import RuleFeasibilityAgent
+from src.agents.extractor_agent import RuleExtractorAgent
 from src.agents.repository_analysis_agent import RepositoryAnalysisAgent
 
 logger = logging.getLogger(__name__)
@@ -43,10 +44,12 @@ def get_agent(agent_type: str, **kwargs: Any) -> BaseAgent:
         return RuleEngineAgent(**kwargs)
     elif agent_type == "feasibility":
         return RuleFeasibilityAgent(**kwargs)
+    elif agent_type == "extractor":
+        return RuleExtractorAgent(**kwargs)
     elif agent_type == "acknowledgment":
         return AcknowledgmentAgent(**kwargs)
     elif agent_type == "repository_analysis":
         return RepositoryAnalysisAgent(**kwargs)
     else:
-        supported = ", ".join(["engine", "feasibility", "acknowledgment", "repository_analysis"])
+        supported = ", ".join(["engine", "feasibility", "extractor", "acknowledgment", "repository_analysis"])
         raise ValueError(f"Unsupported agent type: {agent_type}. Supported: {supported}")

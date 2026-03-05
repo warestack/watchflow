@@ -61,6 +61,10 @@ class Config:
                 max_tokens=int(os.getenv("AI_ACKNOWLEDGMENT_MAX_TOKENS", "2000")),
                 temperature=float(os.getenv("AI_ACKNOWLEDGMENT_TEMPERATURE", "0.1")),
             ),
+            extractor_agent=AgentConfig(
+                max_tokens=int(os.getenv("AI_EXTRACTOR_MAX_TOKENS", "4096")),
+                temperature=float(os.getenv("AI_EXTRACTOR_TEMPERATURE", "0.1")),
+            ),
         )
 
         # LangSmith configuration

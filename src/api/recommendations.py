@@ -187,6 +187,14 @@ class TranslateAIFilesRequest(BaseModel):
     installation_id: int | None = Field(None, description="Optional GitHub App installation ID")
 
 
+class AmbiguousItem(BaseModel):
+    """One statement that could not be translated to a Watchflow rule."""
+
+    statement: str = Field(..., description="Original rule-like statement")
+    path: str = Field(..., description="Source file path")
+    reason: str = Field(..., description="Why it was not translated")
+
+
 class TranslateAIFilesResponse(BaseModel):
     """Response from translate-ai-files endpoint."""
 
@@ -194,7 +202,7 @@ class TranslateAIFilesResponse(BaseModel):
     ref: str = Field(..., description="Branch scanned (e.g. main)")
     rules_yaml: str = Field(..., description="Merged rules YAML (rules: [...])")
     rules_count: int = Field(..., description="Number of rules in rules_yaml")
-    ambiguous: list[dict[str, Any]] = Field(default_factory=list, description="Statements that could not be translated")
+    ambiguous: list[AmbiguousItem] = Field(default_factory=list, description="Statements that could not be translated")
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -847,8 +855,7 @@ async def proceed_with_pr(
         )
 
         if repo_error:
-            err_status = repo_error["status"]
-            status_code = status.HTTP_429_TOO_MANY_REQUESTS if err_status == 403 else err_status
+            status_code = repo_error["status"]
             if status_code not in (401, 403, 404, 429):
                 status_code = status.HTTP_502_BAD_GATEWAY
             raise HTTPException(status_code=status_code, detail=repo_error["message"])
@@ -1023,8 +1030,7 @@ async def scan_ai_rule_files(
         repo_full_name, installation_id=installation_id, user_token=github_token
     )
     if repo_error:
-        err_status = repo_error["status"]
-        status_code = status.HTTP_429_TOO_MANY_REQUESTS if err_status == 403 else err_status
+        status_code = repo_error["status"]
         if status_code not in (401, 403, 404, 429):
             status_code = status.HTTP_502_BAD_GATEWAY
         raise HTTPException(status_code=status_code, detail=repo_error["message"])
@@ -1135,8 +1141,7 @@ async def translate_ai_rule_files(
         repo_full_name, installation_id=installation_id, user_token=github_token
     )
     if repo_error:
-        err_status = repo_error["status"]
-        status_code = status.HTTP_429_TOO_MANY_REQUESTS if err_status == 403 else err_status
+        status_code = repo_error["status"]
         if status_code not in (401, 403, 404, 429):
             status_code = status.HTTP_502_BAD_GATEWAY
         raise HTTPException(status_code=status_code, detail=repo_error["message"])

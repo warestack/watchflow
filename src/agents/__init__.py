@@ -11,6 +11,7 @@ from src.agents.base import AgentResult, BaseAgent
 from src.agents.engine_agent import RuleEngineAgent
 from src.agents.factory import get_agent
 from src.agents.feasibility_agent import RuleFeasibilityAgent
+from src.agents.extractor_agent import RuleExtractorAgent
 from src.agents.repository_analysis_agent import RepositoryAnalysisAgent
 
 __all__ = [
@@ -18,6 +19,7 @@ __all__ = [
     "AgentResult",
     "RuleFeasibilityAgent",
     "RuleEngineAgent",
+    "RuleExtractorAgent",
     "AcknowledgmentAgent",
     "RepositoryAnalysisAgent",
     "get_agent",
