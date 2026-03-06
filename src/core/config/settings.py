@@ -130,10 +130,10 @@ class Config:
             errors.append("APP_NAME_GITHUB is required")
 
         if not self.github.app_id:
-            errors.append("CLIENT_ID_GITHUB is required")
+            errors.append("APP_CLIENT_ID_GITHUB is required")
 
         if not self.github.app_client_secret:
-            errors.append("APP_CLIENT_SECRET is required")
+            errors.append("APP_CLIENT_SECRET_GITHUB is required")
 
         if not self.github.private_key:
             errors.append("PRIVATE_KEY_BASE64_GITHUB is required")

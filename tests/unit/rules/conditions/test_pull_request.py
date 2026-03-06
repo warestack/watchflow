@@ -6,11 +6,14 @@ Tests for TitlePatternCondition, MinDescriptionLengthCondition, and RequiredLabe
 import pytest
 
 from src.rules.conditions.pull_request import (
+    DiffPatternCondition,
     MinApprovalsCondition,
     MinDescriptionLengthCondition,
     RequiredLabelsCondition,
     RequireLinkedIssueCondition,
+    SecurityPatternCondition,
     TitlePatternCondition,
+    UnresolvedCommentsCondition,
 )
 
 
@@ -375,3 +378,97 @@ class TestRequireLinkedIssueCondition:
         context = {"parameters": {"require_linked_issue": True}, "event": event}
         violations = await condition.evaluate(context)
         assert len(violations) == 0
+
+
+class TestDiffPatternCondition:
+    """Tests for DiffPatternCondition."""
+
+    @pytest.mark.asyncio
+    async def test_evaluate_returns_violations_on_match(self) -> None:
+        condition = DiffPatternCondition()
+        patch = "@@ -1,3 +1,4 @@\n def func():\n-    pass\n+    console.log('debug')\n+    return True"
+        event = {"changed_files": [{"filename": "src/app.js", "patch": patch}]}
+        context = {"parameters": {"diff_restricted_patterns": ["console\\.log"]}, "event": event}
+
+        violations = await condition.evaluate(context)
+        assert len(violations) == 1
+        assert "console" in violations[0].message
+        assert "src/app.js" in violations[0].message
+
+    @pytest.mark.asyncio
+    async def test_evaluate_returns_empty_when_no_match(self) -> None:
+        condition = DiffPatternCondition()
+        patch = "@@ -1,2 +1,3 @@\n def func():\n+    return True"
+        event = {"changed_files": [{"filename": "src/app.js", "patch": patch}]}
+        context = {"parameters": {"diff_restricted_patterns": ["console\\.log"]}, "event": event}
+
+        violations = await condition.evaluate(context)
+        assert len(violations) == 0
+
+    @pytest.mark.asyncio
+    async def test_validate_returns_false_on_match(self) -> None:
+        condition = DiffPatternCondition()
+        patch = "@@ -1 +1,2 @@\n+TODO: fix this"
+        event = {"changed_files": [{"filename": "src/app.js", "patch": patch}]}
+        result = await condition.validate({"diff_restricted_patterns": ["TODO:"]}, event)
+        assert result is False
+
+
+class TestSecurityPatternCondition:
+    """Tests for SecurityPatternCondition."""
+
+    @pytest.mark.asyncio
+    async def test_evaluate_returns_violations_on_match(self) -> None:
+        condition = SecurityPatternCondition()
+        patch = "@@ -1 +1,2 @@\n+api_key = '123456'"
+        event = {"changed_files": [{"filename": "src/auth.py", "patch": patch}]}
+        context = {"parameters": {"security_patterns": ["api_key"]}, "event": event}
+
+        violations = await condition.evaluate(context)
+        assert len(violations) == 1
+        assert violations[0].severity.value == "critical"
+        assert "api_key" in violations[0].message
+
+
+class TestUnresolvedCommentsCondition:
+    """Tests for UnresolvedCommentsCondition."""
+
+    @pytest.mark.asyncio
+    async def test_evaluate_returns_violations_for_unresolved(self) -> None:
+        condition = UnresolvedCommentsCondition()
+        event = {
+            "review_threads": [
+                {"is_resolved": False, "is_outdated": False},
+                {"is_resolved": True, "is_outdated": False},
+            ]
+        }
+        context = {"parameters": {"block_on_unresolved_comments": True}, "event": event}
+
+        violations = await condition.evaluate(context)
+        assert len(violations) == 1
+        assert "1 unresolved review comment thread" in violations[0].message
+
+    @pytest.mark.asyncio
+    async def test_evaluate_ignores_outdated_or_resolved(self) -> None:
+        condition = UnresolvedCommentsCondition()
+        event = {
+            "review_threads": [
+                {"is_resolved": False, "is_outdated": True},
+                {"is_resolved": True, "is_outdated": False},
+            ]
+        }
+        context = {"parameters": {"block_on_unresolved_comments": True}, "event": event}
+
+        violations = await condition.evaluate(context)
+        assert len(violations) == 0
+
+    @pytest.mark.asyncio
+    async def test_validate_returns_false_for_unresolved(self) -> None:
+        condition = UnresolvedCommentsCondition()
+        event = {
+            "review_threads": [
+                {"is_resolved": False, "is_outdated": False},
+            ]
+        }
+        result = await condition.validate({"require_resolution": True}, event)
+        assert result is False

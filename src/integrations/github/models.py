@@ -60,6 +60,26 @@ class CommentConnection(BaseModel):
     total_count: int = Field(alias="totalCount")
 
 
+class ThreadCommentNode(BaseModel):
+    author: Actor | None
+    body: str
+    createdAt: str
+
+
+class ThreadCommentConnection(BaseModel):
+    nodes: list[ThreadCommentNode]
+
+
+class ReviewThreadNode(BaseModel):
+    isResolved: bool
+    isOutdated: bool
+    comments: ThreadCommentConnection
+
+
+class ReviewThreadConnection(BaseModel):
+    nodes: list[ReviewThreadNode]
+
+
 class PullRequest(BaseModel):
     """
     GitHub Pull Request Data Representation.
@@ -79,6 +99,7 @@ class PullRequest(BaseModel):
     reviews: ReviewConnection = Field(alias="reviews")
     commits: CommitConnection = Field(alias="commits")
     files: FileConnection = Field(default_factory=lambda: FileConnection(edges=[]))
+    review_threads: ReviewThreadConnection | None = Field(None, alias="reviewThreads")
 
 
 class Repository(BaseModel):

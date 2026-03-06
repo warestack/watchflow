@@ -434,16 +434,19 @@ def generate_pr_body(
 
         body_lines.extend(
             [
-                f"### {description} - {severity}",
+                "<details>",
+                f"<summary><b>{severity} Severity:</b> {description}</summary>",
+                "",
             ]
         )
         if reasoning:
             body_lines.extend(
                 [
-                    "",
                     f"**Rationale:** {reasoning}",
+                    "",
                 ]
             )
+        body_lines.append("</details>")
         body_lines.append("")
 
     body_lines.extend(

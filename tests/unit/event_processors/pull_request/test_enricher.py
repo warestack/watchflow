@@ -65,7 +65,7 @@ async def test_enrich_event_data(enricher, mock_task, mock_github_client):
 async def test_fetch_acknowledgments(enricher, mock_github_client):
     mock_github_client.get_issue_comments.return_value = [
         {
-            "body": "🚨 Watchflow Rule Violations Detected\n\n**Reason:** valid reason\n\n---\nThe following violations have been overridden:\n• **Rule** - Pull request does not have the minimum required approvals\n",
+            "body": "🚨 Watchflow Rule Violations Detected\n\n**Reason:** valid reason\n\n---\nThe following violations have been overridden:\n• PR has 1 approvals, requires 2\n",
             "user": {"login": "reviewer"},
         }
     ]

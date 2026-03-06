@@ -2,9 +2,16 @@
 
 [![Works with GitHub](https://img.shields.io/badge/Works%20with-GitHub-1f1f23?style=for-the-badge&logo=github)](https://github.com/warestack/watchflow)
 
+![GitHub stars](https://img.shields.io/github/stars/warestack/watchflow?style=social)
+![GitHub forks](https://img.shields.io/github/forks/warestack/watchflow?style=social)
+![GitHub issues](https://img.shields.io/github/issues/warestack/watchflow)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Tests](https://github.com/warestack/watchflow/actions/workflows/tests.yaml/badge.svg)](https://github.com/warestack/watchflow/actions/workflows/tests.yaml)
+[![Pre-commit hooks](https://github.com/warestack/watchflow/actions/workflows/pre-commit-hooks.yaml/badge.svg)](https://github.com/warestack/watchflow/actions/workflows/pre-commit-hooks.yaml)
+
 GitHub governance that runs where you already work. No new dashboards, no “AI-powered” fluff—just rules in YAML, evaluated on every PR and push, with check runs and comments that maintainers actually read.
 
-Watchflow is the governance layer for your repo: it enforces the policies you define (CODEOWNERS, approvals, linked issues, PR size, title patterns, branch protection) so you don’t have to chase reviewers or guess what’s allowed. Built for teams that still care about traceability and review quality.
+Watchflow is the governance layer for your repo: it enforces the policies you define (CODEOWNERS, approvals, linked issues, PR size, title patterns, branch protection, diff scanning, review thread SLAs, signed commits, and more) so you don’t have to chase reviewers or guess what’s allowed. Built for teams that still care about traceability and review quality.
 
 ---
 
@@ -46,11 +53,20 @@ Rules are **description + event_types + parameters**. The engine matches paramet
 | **PR** | `critical_owners: []` / code owners | pull_request | Changes to critical paths require code-owner review. |
 | **PR** | `require_path_has_code_owner: true` | pull_request | Every changed path must have an owner in CODEOWNERS. |
 | **PR** | `protected_branches: ["main"]` | pull_request | Block direct targets to these branches. |
+| **PR** | `diff_restricted_patterns: ["console\\.log", "TODO:"]` | pull_request | Flag restricted regex patterns in PR diff added lines. |
+| **PR** | `security_patterns: ["api_key", "secret"]` | pull_request | Detect hardcoded secrets or sensitive data in diffs (critical). |
+| **PR** | `block_on_unresolved_comments: true` | pull_request | Block merge when unresolved review threads exist. |
+| **PR** | `require_tests: true` | pull_request | Source changes must include corresponding test file changes. |
+| **PR** | `max_comment_response_time_hours: 24` | pull_request | Review threads must be addressed within SLA. |
+| **PR** | `require_signed_commits: true` | pull_request | All commits must be cryptographically signed (GPG/SSH). |
+| **PR** | `require_changelog_update: true` | pull_request | Source changes must include a CHANGELOG or .changeset update. |
+| **PR** | `block_self_approval: true` | pull_request | PR authors cannot approve their own code. |
+| **PR** | `required_team_approvals: ["backend", "security"]` | pull_request | Require approvals from specified GitHub teams. |
 | **Push** | `no_force_push: true` | push | Reject force pushes. |
 | **Files** | `max_file_size_mb: 1` | pull_request | No single file > N MB. |
 | **Files** | `pattern` + `condition_type: "files_match_pattern"` | pull_request | Changed files must (or must not) match glob/regex. |
+| **PR** | `require_description_diff_alignment: true` | pull_request | Description must match code changes (LLM-assisted). |
 | **Time** | `allowed_hours`, `days`, weekend | deployment / workflow | Restrict when actions can run. |
-| **Deploy** | `environment`, approvals | deployment | Deployment protection. |
 
 Rules are read from the **default branch** (e.g. `main`). Each webhook delivery is deduplicated by `X-GitHub-Delivery` so handler and processor both run; comments and check runs stay in sync.
 

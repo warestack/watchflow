@@ -5,7 +5,7 @@ Watchflow is a **rule engine** for GitHub: you define rules in YAML; we evaluate
 ## Design principles
 
 - **Repo-native** — Rules live in `.watchflow/rules.yaml` on the default branch; same mental model as branch protection and CODEOWNERS.
-- **Condition-based enforcement** — Rule evaluation is deterministic: parameters map to conditions (e.g. `require_linked_issue`, `max_lines`, `require_code_owner_reviewers`). No LLM in the hot path for “did this PR violate the rule?”
+- **Condition-based enforcement** — Rule evaluation is deterministic by default: parameters map to conditions (e.g. `require_linked_issue`, `max_lines`, `require_code_owner_reviewers`). Optional LLM-assisted conditions (e.g. `require_description_diff_alignment`) are clearly documented and opt-in.
 - **Webhook-first** — Each delivery is identified by `X-GitHub-Delivery`; handler and processor get distinct task IDs so both run and comments/check runs stay in sync.
 - **Optional intelligence** — Repo analysis and feasibility checks use LLMs to *suggest* rules; enforcement stays rule-driven.
 
@@ -41,7 +41,7 @@ graph TD
 ### Condition registry
 
 - Maps parameter names to condition classes (e.g. `require_linked_issue` → `RequireLinkedIssueCondition`, `max_lines` → `MaxPrLocCondition`, `require_code_owner_reviewers` → `RequireCodeOwnerReviewersCondition`).
-- Supported conditions: linked issue, title pattern, description length, labels, approvals, PR size (lines), CODEOWNERS (path has owner, require owners as reviewers), protected branches, no force push, file size, file pattern, time/deploy rules. See [Configuration](../getting-started/configuration.md).
+- Supported conditions: linked issue, title pattern, description length, labels, approvals, PR size (lines), CODEOWNERS (path has owner, require owners as reviewers), protected branches, no force push, file size, file pattern, diff pattern scanning, security pattern detection, unresolved comments, test coverage, comment response SLA, signed commits, changelog required, self-approval prevention, cross-team approval, description-diff alignment (LLM-assisted), time/deploy rules. See [Configuration](../getting-started/configuration.md).
 
 ### PR enricher
 
@@ -53,12 +53,12 @@ graph TD
 
 ## Where AI is used (and where it isn’t)
 
-- **Rule evaluation** — No. Violations are determined by conditions only.
+- **Rule evaluation** — No LLM by default. Violations are determined by deterministic conditions. Optional LLM-assisted conditions (e.g. `DescriptionDiffAlignmentCondition`) are clearly marked and gracefully degrade on failure.
 - **Acknowledgment parsing** — Optional LLM to interpret reason; can be extended.
 - **Repo analysis** — Yes. `POST /api/v1/rules/recommend` uses an agent to suggest rules from repo structure and PR history; you copy/paste or create a PR.
 - **Feasibility** — Yes. “Can I enforce this rule?” uses an agent to map natural language to supported conditions and suggest YAML.
 
-So: **enforcement is deterministic and condition-based**; **suggestions and feasibility are agent-assisted**. That keeps the hot path simple and auditable.
+So: **enforcement is deterministic and condition-based by default**; **LLM-assisted conditions are opt-in and fail-open**; **suggestions and feasibility are agent-assisted**. That keeps the hot path simple and auditable.
 
 ## Use cases
 
