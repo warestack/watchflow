@@ -69,36 +69,65 @@ class PushProcessor(BaseEventProcessor):
         # Agentic: scan repo only when relevant (default branch or touched rule files)
         # Use the branch that was pushed so we scan that branch's file content, not main.
         if is_relevant_push(task.payload):
-            try:
-                github_token = await self.github_client.get_installation_access_token(task.installation_id)
-                push_ref = payload.get("ref")  # e.g. refs/heads/feature-x
-                rules_yaml, rules_count, ambiguous, rule_sources = await get_suggested_rules_from_repo(
-                    task.repo_full_name, task.installation_id, github_token, ref=push_ref
+            scan_start = time.time()
+            github_token = await self.github_client.get_installation_access_token(task.installation_id)
+            if not github_token:
+                latency_ms = int((time.time() - scan_start) * 1000)
+                logger.warning(
+                    "suggested_rules_scan",
+                    operation="suggested_rules_scan",
+                    subject_ids={"repo": task.repo_full_name, "installation": task.installation_id},
+                    decision="skipped",
+                    latency_ms=latency_ms,
+                    reason="No installation token",
                 )
-                logger.info("=" * 80)
-                logger.info("📋 Suggested rules (agentic scan + translation)")
-                logger.info(f"   Repo: {task.repo_full_name} | Ref: {push_ref or 'default'} | Translated rules: {rules_count}")
-                if rule_sources:
-                    from_mapping = sum(1 for s in rule_sources if s == "mapping")
-                    from_agent = sum(1 for s in rule_sources if s == "agent")
-                    logger.info("   From deterministic mapping: %s | From AI agent: %s", from_mapping, from_agent)
-                    logger.info("   Per-rule source: %s", rule_sources)
-                if rules_count > 0:
-                    logger.info("   YAML:\n%s", rules_yaml)
-                    # Self-improving loop: open a PR with proposed .watchflow/rules.yaml so the team can review.
-                    await self._create_pr_with_suggested_rules(
-                        task=task,
-                        github_token=github_token,
-                        rules_yaml=rules_yaml,
-                        push_sha=payload.get("after") or payload.get("head_commit", {}).get("sha"),
+            else:
+                try:
+                    push_ref = payload.get("ref")  # e.g. refs/heads/feature-x
+                    rules_yaml, rules_count, ambiguous, rule_sources = await get_suggested_rules_from_repo(
+                        task.repo_full_name, task.installation_id, github_token, ref=push_ref
                     )
-                if ambiguous:
-                    logger.info("   Ambiguous (not translated): %s", [a.get("statement", "") for a in ambiguous])
-                logger.info("=" * 80)
-            except Exception as e:
-                logger.warning("Suggested rules scan failed: %s", e)
+                    latency_ms = int((time.time() - scan_start) * 1000)
+                    from_mapping = sum(1 for s in rule_sources if s == "mapping") if rule_sources else 0
+                    from_agent = sum(1 for s in rule_sources if s == "agent") if rule_sources else 0
+                    preview = (rules_yaml[:200] + "…") if rules_yaml and len(rules_yaml) > 200 else (rules_yaml or "")
+                    logger.info(
+                        "suggested_rules_scan",
+                        operation="suggested_rules_scan",
+                        subject_ids={"repo": task.repo_full_name, "ref": push_ref or "default"},
+                        decision="found" if rules_count > 0 else "none",
+                        latency_ms=latency_ms,
+                        rules_count=rules_count,
+                        ambiguous_count=len(ambiguous),
+                        from_mapping=from_mapping,
+                        from_agent=from_agent,
+                        preview=preview,
+                    )
+                    if rules_count > 0:
+                        await self._create_pr_with_suggested_rules(
+                            task=task,
+                            github_token=github_token,
+                            rules_yaml=rules_yaml,
+                            push_sha=payload.get("after") or payload.get("head_commit", {}).get("sha"),
+                        )
+                except Exception as e:
+                    latency_ms = int((time.time() - scan_start) * 1000)
+                    logger.warning(
+                        "Suggested rules scan failed",
+                        operation="suggested_rules_scan",
+                        subject_ids={"repo": task.repo_full_name},
+                        decision="failure",
+                        latency_ms=latency_ms,
+                        error=str(e),
+                    )
         else:
-            logger.info("Push not relevant for agentic scan (skip): ref=%s", task.payload.get("ref"))
+            logger.info(
+                "suggested_rules_scan",
+                operation="suggested_rules_scan",
+                subject_ids={"repo": task.repo_full_name, "ref": task.payload.get("ref")},
+                decision="skip",
+                reason="Push not relevant",
+            )
 
         rules_optional = await self.rule_provider.get_rules(task.repo_full_name, task.installation_id)
         rules = rules_optional if rules_optional is not None else []

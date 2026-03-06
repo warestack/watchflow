@@ -19,7 +19,14 @@ class CheckRunEventHandler(EventHandler):
 
     async def handle(self, event: WebhookEvent) -> WebhookResponse:
         """Handle check run events by enqueuing them for background processing."""
-        logger.info("Enqueuing check run event", repo=event.repo_full_name)
+        logger.info(
+            "Enqueuing check run event",
+            operation="enqueue_check_run",
+            subject_ids=[event.repo_full_name],
+            decision="pending",
+            latency_ms=0,
+            repo=event.repo_full_name,
+        )
 
         task = task_queue.build_task(
             "check_run",
@@ -36,13 +43,25 @@ class CheckRunEventHandler(EventHandler):
         )
 
         if enqueued:
-            logger.info("Check run event enqueued")
+            logger.info(
+                "Check run event enqueued",
+                operation="enqueue_check_run",
+                subject_ids=[event.repo_full_name],
+                decision="enqueued",
+                latency_ms=0,
+            )
             return WebhookResponse(
                 status="ok",
                 detail="Check run event has been queued for processing",
                 event_type=EventType.CHECK_RUN,
             )
-        logger.info("Check run event duplicate skipped")
+        logger.info(
+            "Check run event duplicate skipped",
+            operation="enqueue_check_run",
+            subject_ids=[event.repo_full_name],
+            decision="duplicate_skipped",
+            latency_ms=0,
+        )
         return WebhookResponse(
             status="ignored",
             detail="Duplicate check run event skipped",

@@ -14,7 +14,6 @@ from src.api.rate_limit import rate_limiter
 from src.core.models import User
 from src.integrations.github.api import github_client
 
-# 
 from src.rules.ai_rules_scan import (
     scan_repo_for_ai_rule_files,
     translate_ai_rule_files_to_yaml,
@@ -582,7 +581,7 @@ async def get_suggested_rules_from_repo(
             logger.warning("get_suggested_rules_yaml_parse_failed", repo=repo_full_name, error=str(e))
         except Exception as e:
             logger.exception("get_suggested_rules_yaml_unexpected_error", repo=repo_full_name, error=str(e))
-            raise
+            return ("rules: []\n", 0, [], [])
         return (rules_yaml, rules_count, ambiguous, rule_sources)
     except Exception as e:
         logger.warning("get_suggested_rules_from_repo_failed", repo=repo_full_name, error=str(e))
@@ -1189,11 +1188,39 @@ async def translate_ai_rule_files(
         logger.exception("translate_ai_rule_files_unexpected_error", repo_full_name=repo_full_name, error=str(e))
         raise
 
+    # Sanitize ambiguous reasons so we don't return raw exception text to the client
+    safe_ambiguous: list[AmbiguousItem] = []
+    for item in ambiguous:
+        reason = item.get("reason", "") if isinstance(item, dict) else ""
+        if not isinstance(reason, str):
+            reason = str(reason)
+        if (
+            len(reason) > 200
+            or "Error" in reason
+            or "Exception" in reason
+            or "Traceback" in reason
+        ):
+            logger.debug(
+                "translate_ai_rule_files_ambiguous_reason_redacted",
+                repo_full_name=repo_full_name,
+                rule_sources=rule_sources,
+                statement=(item.get("statement", "")[:100] if isinstance(item, dict) else ""),
+                original_reason=reason[:500],
+            )
+            reason = "Could not translate statement; see logs."
+        safe_ambiguous.append(
+            AmbiguousItem(
+                statement=(item.get("statement", "") or "") if isinstance(item, dict) else "",
+                path=(item.get("path", "") or "") if isinstance(item, dict) else "",
+                reason=reason,
+            )
+        )
+
     return TranslateAIFilesResponse(
         repo_full_name=repo_full_name,
         ref=ref,
         rules_yaml=rules_yaml,
         rules_count=rules_count,
-        ambiguous=ambiguous,
+        ambiguous=safe_ambiguous,
         warnings=[],
     )

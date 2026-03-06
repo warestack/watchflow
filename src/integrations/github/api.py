@@ -226,9 +226,9 @@ class GitHubClient:
                 latency_ms=latency_ms,
             )
             return []
-        url = ( f"{config.github.api_base_url}"
-                f"/repos/{repo_full_name}/git/trees/{tree_sha}"
-                f"?recursive={recursive}" )
+        url = f"{config.github.api_base_url}/repos/{repo_full_name}/git/trees/{tree_sha}"
+        if recursive:
+            url += "?recursive=1"
         session = await self._get_session()
         async with session.get(url, headers=headers) as response:
             if response.status != 200:

@@ -23,7 +23,7 @@ def get_agent(agent_type: str, **kwargs: Any) -> BaseAgent:
     Get an agent instance by type name.
 
     Args:
-        agent_type: Type of agent ("engine", "feasibility", "acknowledgment")
+        agent_type: Type of agent ("engine", "feasibility", "extractor", "acknowledgment", "repository_analysis")
         **kwargs: Additional configuration for the agent
 
     Returns:
@@ -35,6 +35,7 @@ def get_agent(agent_type: str, **kwargs: Any) -> BaseAgent:
     Examples:
         >>> engine_agent = get_agent("engine")
         >>> feasibility_agent = get_agent("feasibility")
+        >>> extractor_agent = get_agent("extractor")
         >>> acknowledgment_agent = get_agent("acknowledgment")
         >>> analysis_agent = get_agent("repository_analysis")
     """

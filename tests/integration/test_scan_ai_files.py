@@ -15,7 +15,8 @@ class TestScanAIFilesEndpoint:
 
     @pytest.fixture
     def client(self) -> TestClient:
-        return TestClient(app)
+        with TestClient(app) as client:
+            yield client
 
     def test_scan_ai_files_returns_200_and_list_when_mocked(
         self, client: TestClient

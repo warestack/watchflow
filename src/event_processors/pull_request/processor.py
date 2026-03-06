@@ -68,29 +68,45 @@ class PullRequestProcessor(BaseEventProcessor):
             # Use the PR head ref so we scan the branch being proposed, not main.
             suggested_rules_yaml: str | None = None
             if is_relevant_pr(task.payload):
+                scan_start = time.time()
                 try:
                     pr_head_ref = pr_data.get("head", {}).get("ref")  # branch name, e.g. feature-x
                     rules_yaml, rules_count, ambiguous, rule_sources = await get_suggested_rules_from_repo(
                         repo_full_name, installation_id, github_token, ref=pr_head_ref
                     )
-                    logger.info("=" * 80)
-                    logger.info("📋 Suggested rules (agentic scan + translation)")
-                    logger.info(f"   Repo: {repo_full_name} | PR #{pr_number} | Ref: {pr_head_ref or 'default'} | Translated rules: {rules_count}")
-                    if rule_sources:
-                        from_mapping = sum(1 for s in rule_sources if s == "mapping")
-                        from_agent = sum(1 for s in rule_sources if s == "agent")
-                        logger.info("   From deterministic mapping: %s | From AI agent: %s", from_mapping, from_agent)
-                        logger.info("   Per-rule source: %s", rule_sources)
+                    latency_ms = int((time.time() - scan_start) * 1000)
+                    from_mapping = sum(1 for s in rule_sources if s == "mapping") if rule_sources else 0
+                    from_agent = sum(1 for s in rule_sources if s == "agent") if rule_sources else 0
+                    logger.info(
+                        "suggested_rules_scan",
+                        operation="suggested_rules_scan",
+                        subject_ids=[repo_full_name, f"pr#{pr_number}"],
+                        decision="found" if rules_count > 0 else "none",
+                        latency_ms=latency_ms,
+                        rules_count=rules_count,
+                        ambiguous_count=len(ambiguous),
+                        from_mapping=from_mapping,
+                        from_agent=from_agent,
+                    )
                     if rules_count > 0:
-                        logger.info("   YAML:\n%s", rules_yaml)
                         suggested_rules_yaml = rules_yaml
-                    if ambiguous:
-                        logger.info("   Ambiguous (not translated): %s", [a.get("statement", "") for a in ambiguous])
-                    logger.info("=" * 80)
                 except Exception as e:
-                    logger.warning("Suggested rules scan failed: %s", e)
+                    latency_ms = int((time.time() - scan_start) * 1000)
+                    logger.exception(
+                        "Suggested rules scan failed",
+                        operation="suggested_rules_scan",
+                        subject_ids=[repo_full_name, f"pr#{pr_number}"],
+                        decision="failure",
+                        latency_ms=latency_ms,
+                    )
             else:
-                logger.info("PR not relevant for agentic scan (skip): base ref=%s", task.payload.get("pull_request", {}).get("base", {}).get("ref"))
+                logger.info(
+                    "suggested_rules_scan",
+                    operation="suggested_rules_scan",
+                    subject_ids=[repo_full_name, f"pr#{pr_number}"],
+                    decision="skip",
+                    reason="PR not relevant (base ref)",
+                )
 
             # 1. Enrich event data
             event_data = await self.enricher.enrich_event_data(task, github_token)

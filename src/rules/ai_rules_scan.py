@@ -17,6 +17,12 @@ logger = structlog.get_logger(__name__)
 # Max length for repository-derived rule text passed to the feasibility agent (prompt-injection hardening)
 MAX_REPOSITORY_STATEMENT_LENGTH = 2000
 
+# Max length for content passed to the extractor agent (prompt-injection and token cap)
+MAX_PROMPT_LENGTH = 16_000
+
+# Max length for safe log preview of statement text
+TRUNCATE_PREVIEW_LEN = 200
+
 # --- Path patterns (globs) ---
 AI_RULE_FILE_PATTERNS = [
     "*rules*.md",
@@ -77,6 +83,40 @@ def _valid_rule_schema(r: dict[str, Any]) -> bool:
     if "parameters" in r and not isinstance(r["parameters"], dict):
         return False
     return True
+
+
+def _truncate_preview(text: str, max_len: int = TRUNCATE_PREVIEW_LEN) -> str:
+    """Return a safe truncated preview for logging; avoid leaking full content."""
+    if not text or not isinstance(text, str):
+        return ""
+    t = text.strip()
+    return t[:max_len] + ("…" if len(t) > max_len else "")
+
+
+# Max chars for a single fenced code block; longer blocks are replaced with a placeholder
+_MAX_CODE_BLOCK_LENGTH = 2000
+
+
+def sanitize_and_redact(content: str, max_length: int = MAX_PROMPT_LENGTH) -> str:
+    """
+    Sanitize content before sending to the extractor LLM: strip secrets/PII-like patterns,
+    remove long code blocks (replace with placeholder), and truncate to max_length.
+    """
+    if not content or not isinstance(content, str):
+        return ""
+    out = content.strip()
+    # Redact common secret/PII patterns
+    out = re.sub(r"(?i)api[_-]?key\s*[:=]\s*['\"]?[\w\-]{20,}['\"]?", "[REDACTED]", out)
+    out = re.sub(r"(?i)token\s*[:=]\s*['\"]?[\w\-\.]{20,}['\"]?", "[REDACTED]", out)
+    out = re.sub(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "[REDACTED]", out)
+    # Replace long fenced code blocks (```...``` or ```lang\n...```) with placeholder
+    def replace_long_block(m: re.Match[str]) -> str:
+        block = m.group(0)
+        return block if len(block) <= _MAX_CODE_BLOCK_LENGTH else "\n[long code block omitted]\n"
+    out = re.sub(r"```[\s\S]*?```", replace_long_block, out)
+    if len(out) > max_length:
+        out = out[:max_length].rstrip() + "\n\n[truncated]"
+    return out
 
 
 def _sanitize_repository_statement(st: str) -> str:
@@ -206,6 +246,9 @@ async def extract_rule_statements_with_agent(
     """
     if not content or not content.strip():
         return []
+    content = sanitize_and_redact(content)
+    if not content:
+        return []
     if get_extractor_agent is None:
         from src.agents import get_agent
 
@@ -219,7 +262,7 @@ async def extract_rule_statements_with_agent(
         if result.success and result.data and isinstance(result.data.get("statements"), list):
             return [s for s in result.data["statements"] if s and isinstance(s, str)]
     except Exception as e:
-        logger.warning("extractor_agent_failed", error=str(e))
+        logger.warning("extractor_agent_failed", error=_truncate_preview(str(e), 300))
     return []
 
 
@@ -293,12 +336,6 @@ def try_map_statement_to_yaml(statement: str) -> dict[str, Any] | None:
     if not statement or not statement.strip():
         return None
     lower = statement.lower()
-    # for patterns, rule_dict in STATEMENT_TO_YAML_MAPPINGS:
-    #     for p in patterns:
-    #         if p in lower:
-    #             return dict(rule_dict)
-    # return None
-
     for patterns, rule_dict in STATEMENT_TO_YAML_MAPPINGS:
         for p in patterns:
             if p in lower:
@@ -357,7 +394,9 @@ async def translate_ai_rule_files_to_yaml(
             logger.warning("extract_failed", error=str(raw))
             continue
         path, statements = raw
-        logger.info("extract_result", path=path, statements_count=len(statements), statements=statements)
+        preview = _truncate_preview(statements[0]) if statements else ""
+        logger.info("extract_result", path=path, statements_count=len(statements), preview=preview)
+        logger.debug("extract_result_full", path=path, statements=[_truncate_preview(s) for s in statements])
         for st in statements:
             # 1) Try deterministic mapping first
             mapped = try_map_statement_to_yaml(st)
