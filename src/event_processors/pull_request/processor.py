@@ -110,7 +110,7 @@ class PullRequestProcessor(BaseEventProcessor):
                     )
                     if rules_count > 0:
                         suggested_rules_yaml = rules_yaml
-                except Exception as e:
+                except Exception:
                     latency_ms = int((time.time() - scan_start) * 1000)
                     logger.exception(
                         "Suggested rules scan failed",

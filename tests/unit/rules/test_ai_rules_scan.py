@@ -11,8 +11,6 @@ Covers:
 import pytest
 
 from src.rules.ai_rules_scan import (
-    AI_RULE_FILE_PATTERNS,
-    AI_RULE_KEYWORDS,
     content_has_ai_keywords,
     filter_tree_entries_for_ai_rules,
     path_matches_ai_rule_patterns,

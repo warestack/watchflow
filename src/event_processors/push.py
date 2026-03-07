@@ -12,7 +12,6 @@ from src.integrations.github.check_runs import CheckRunManager
 from src.rules.ai_rules_scan import is_relevant_push
 from src.tasks.task_queue import Task
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -294,9 +293,7 @@ class PushProcessor(BaseEventProcessor):
                 base_ref = (pr.get("base") or {}).get("ref") or ""
                 head_ref = (pr.get("head") or {}).get("ref") or ""
                 title = pr.get("title") or ""
-                if base_ref == default_branch and (
-                    head_ref.startswith(branch_prefix) or title == pr_title
-                ):
+                if base_ref == default_branch and (head_ref.startswith(branch_prefix) or title == pr_title):
                     existing_pr = pr
                     break
             if existing_pr:

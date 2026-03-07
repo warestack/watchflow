@@ -2,6 +2,7 @@ from collections.abc import Callable
 from typing import Any, TypedDict
 
 import structlog
+import yaml
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from giturlparse import parse  # type: ignore
 from pydantic import BaseModel, Field, HttpUrl
@@ -13,12 +14,10 @@ from src.api.rate_limit import rate_limiter
 # Internal: User model, auth assumed present—see core/api for details.
 from src.core.models import User
 from src.integrations.github.api import github_client
-
 from src.rules.ai_rules_scan import (
     scan_repo_for_ai_rule_files,
     translate_ai_rule_files_to_yaml,
 )
-import yaml
 
 logger = structlog.get_logger()
 
@@ -141,6 +140,7 @@ class MetricConfig(TypedDict):
     thresholds: dict[str, float]
     explanation: Callable[[float | int], str]
 
+
 class ScanAIFilesRequest(BaseModel):
     """
     Payload for scanning a repo for AI assistant rule files (Cursor, Claude, Copilot, etc.).
@@ -178,6 +178,7 @@ class ScanAIFilesResponse(BaseModel):
     )
     warnings: list[str] = Field(default_factory=list, description="Warnings (e.g. rate limit, partial results)")
 
+
 class TranslateAIFilesRequest(BaseModel):
     """Request for translating AI rule files into .watchflow rules YAML."""
 
@@ -203,7 +204,6 @@ class TranslateAIFilesResponse(BaseModel):
     rules_count: int = Field(..., description="Number of rules in rules_yaml")
     ambiguous: list[AmbiguousItem] = Field(default_factory=list, description="Statements that could not be translated")
     warnings: list[str] = Field(default_factory=list)
-
 
 
 def _get_severity_label(value: float, thresholds: dict[str, float]) -> tuple[str, str]:
@@ -966,6 +966,7 @@ async def proceed_with_pr(
             detail="Failed to create pull request. Please try again.",
         ) from e
 
+
 @router.post(
     "/scan-ai-files",
     response_model=ScanAIFilesResponse,
@@ -981,7 +982,7 @@ async def scan_ai_rule_files(
     request: Request,
     payload: ScanAIFilesRequest,
     user: User | None = Depends(get_current_user_optional),
-    ) -> ScanAIFilesResponse:
+) -> ScanAIFilesResponse:
     """
     Scan a repository for AI assistant rule files (Cursor, Claude, Copilot, etc.).
 
@@ -1007,9 +1008,7 @@ async def scan_ai_rule_files(
         repo_full_name = parse_repo_from_url(repo_url_str)
     except ValueError as e:
         logger.warning("invalid_url_provided", url=repo_url_str, error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)
-        ) from e
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
 
     # Resolve token (same as recommend_rules)
     github_token = None
@@ -1057,9 +1056,7 @@ async def scan_ai_rule_files(
 
     # Optional content fetcher for keyword scan (and optionally include in response)
     async def get_content(path: str):
-        return await github_client.get_file_content(
-            repo_full_name, path, installation_id, github_token
-        )
+        return await github_client.get_file_content(repo_full_name, path, installation_id, github_token)
 
     # Always fetch content so has_keywords is set; strip content in response unless include_content
     raw_candidates = await scan_repo_for_ai_rule_files(
@@ -1083,6 +1080,7 @@ async def scan_ai_rule_files(
         candidate_files=candidates,
         warnings=[],
     )
+
 
 @router.post(
     "/translate-ai-files",
@@ -1166,9 +1164,7 @@ async def translate_ai_rule_files(
     async def get_content(path: str):
         return await github_client.get_file_content(repo_full_name, path, installation_id, github_token)
 
-    raw_candidates = await scan_repo_for_ai_rule_files(
-        tree_entries, fetch_content=True, get_file_content=get_content
-    )
+    raw_candidates = await scan_repo_for_ai_rule_files(tree_entries, fetch_content=True, get_file_content=get_content)
     candidates_with_content = [c for c in raw_candidates if c.get("content")]
     if not candidates_with_content:
         return TranslateAIFilesResponse(
@@ -1197,12 +1193,7 @@ async def translate_ai_rule_files(
         reason = item.get("reason", "") if isinstance(item, dict) else ""
         if not isinstance(reason, str):
             reason = str(reason)
-        if (
-            len(reason) > 200
-            or "Error" in reason
-            or "Exception" in reason
-            or "Traceback" in reason
-        ):
+        if len(reason) > 200 or "Error" in reason or "Exception" in reason or "Traceback" in reason:
             logger.debug(
                 "translate_ai_rule_files_ambiguous_reason_redacted",
                 repo_full_name=repo_full_name,

@@ -18,9 +18,7 @@ class TestScanAIFilesEndpoint:
         with TestClient(app) as client:
             yield client
 
-    def test_scan_ai_files_returns_200_and_list_when_mocked(
-        self, client: TestClient
-    ) -> None:
+    def test_scan_ai_files_returns_200_and_list_when_mocked(self, client: TestClient) -> None:
         """With GitHub mocked, endpoint returns 200 and candidate_files is a list."""
         mock_tree = [
             {"path": "README.md", "type": "blob"},
@@ -88,10 +86,9 @@ class TestScanAIFilesEndpoint:
         data = response.json()
         assert "detail" in data
 
-    def test_scan_ai_files_repo_error_returns_expected_status(
-        self, client: TestClient
-    ) -> None:
+    def test_scan_ai_files_repo_error_returns_expected_status(self, client: TestClient) -> None:
         """When get_repository returns an error, endpoint maps to expected status and body."""
+
         async def mock_get_repository_error(*args, **kwargs):
             return (None, {"status": 403, "message": "Resource not accessible by integration"})
 
@@ -107,4 +104,3 @@ class TestScanAIFilesEndpoint:
         assert response.status_code == 403
         data = response.json()
         assert "detail" in data
-

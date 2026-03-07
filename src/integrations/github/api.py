@@ -135,9 +135,7 @@ class GitHubClient:
         Fetch repository metadata. Returns (repo_data, None) on success;
         (None, {"status": int, "message": str}) on failure for meaningful API responses.
         """
-        headers = await self._get_auth_headers(
-            installation_id=installation_id, user_token=user_token
-        ) or {}
+        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token) or {}
         url = f"{config.github.api_base_url}/repos/{repo_full_name}"
         session = await self._get_session()
         async with session.get(url, headers=headers) as response:
@@ -160,7 +158,10 @@ class GitHubClient:
             if response.status == 401:
                 return (
                     None,
-                    {"status": 401, "message": gh_message or "Invalid or expired token. Check github_token or installation_id."},
+                    {
+                        "status": 401,
+                        "message": gh_message or "Invalid or expired token. Check github_token or installation_id.",
+                    },
                 )
             return None, {"status": response.status, "message": gh_message or f"GitHub API returned {response.status}."}
 
@@ -168,9 +169,7 @@ class GitHubClient:
         self, repo_full_name: str, path: str, installation_id: int | None = None, user_token: str | None = None
     ) -> list[dict[str, Any]]:
         """List directory contents using installation or user token (auth required)."""
-        headers = await self._get_auth_headers(
-            installation_id=installation_id, user_token=user_token
-        ) or {}
+        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token) or {}
         url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{path}"
         session = await self._get_session()
         async with session.get(url, headers=headers) as response:
@@ -183,21 +182,23 @@ class GitHubClient:
             response.raise_for_status()
             return []
 
-
     async def get_repository_tree(
-    self,
-    repo_full_name: str,
-    ref: str | None = None,
-    installation_id: int | None = None,
-    user_token: str | None = None,
-    recursive: bool = True,
+        self,
+        repo_full_name: str,
+        ref: str | None = None,
+        installation_id: int | None = None,
+        user_token: str | None = None,
+        recursive: bool = True,
     ) -> list[dict[str, Any]]:
         """Get the tree of a repository. Requires authentication (github_token or installation_id)."""
         start = time.monotonic()
-        headers = await self._get_auth_headers(
-            installation_id=installation_id,
-            user_token=user_token,
-        ) or {}
+        headers = (
+            await self._get_auth_headers(
+                installation_id=installation_id,
+                user_token=user_token,
+            )
+            or {}
+        )
         ref = ref or "main"
         tree_sha = await self._resolve_tree_sha(repo_full_name, ref, headers)
         if not tree_sha:
@@ -205,7 +206,12 @@ class GitHubClient:
             logger.info(
                 "get_repository_tree",
                 operation="get_repository_tree",
-                subject_ids={"repo": repo_full_name, "installation_id": installation_id, "user_token_present": bool(user_token), "ref": ref},
+                subject_ids={
+                    "repo": repo_full_name,
+                    "installation_id": installation_id,
+                    "user_token_present": bool(user_token),
+                    "ref": ref,
+                },
                 decision="ref_resolution_failed",
                 latency_ms=latency_ms,
             )
@@ -228,7 +234,6 @@ class GitHubClient:
             data = await response.json()
             return cast("list[dict[str, Any]]", data.get("tree", []))
 
-        
     async def _resolve_tree_sha(self, repo_full_name: str, ref: str, headers: dict[str, str]) -> str | None:
         """Resolve the tree SHA for the given ref (branch, tag, or commit SHA) via the commits API."""
         session = await self._get_session()
@@ -254,11 +259,14 @@ class GitHubClient:
         Fetches the content of a file from a repository. Requires authentication (github_token or installation_id).
         When ref is provided (branch name, tag, or commit SHA), returns content at that ref; otherwise uses default branch.
         """
-        headers = await self._get_auth_headers(
-            installation_id=installation_id,
-            user_token=user_token,
-            accept="application/vnd.github.raw",
-        ) or {}
+        headers = (
+            await self._get_auth_headers(
+                installation_id=installation_id,
+                user_token=user_token,
+                accept="application/vnd.github.raw",
+            )
+            or {}
+        )
         url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{file_path}"
         params = {"ref": ref} if ref else None
 
@@ -1350,9 +1358,7 @@ class GitHubClient:
         payload = {"query": query, "variables": variables}
 
         # Get appropriate headers (auth required: user_token or installation_id)
-        headers = await self._get_auth_headers(
-            user_token=user_token, installation_id=installation_id
-        )
+        headers = await self._get_auth_headers(user_token=user_token, installation_id=installation_id)
         if not headers:
             # Fallback or error? GraphQL usually demands auth.
             # If we have no headers, we likely can't query GraphQL successfully for many fields.

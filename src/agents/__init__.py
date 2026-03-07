@@ -9,9 +9,9 @@ output, retry logic, and timeout handling.
 from src.agents.acknowledgment_agent import AcknowledgmentAgent
 from src.agents.base import AgentResult, BaseAgent
 from src.agents.engine_agent import RuleEngineAgent
+from src.agents.extractor_agent import RuleExtractorAgent
 from src.agents.factory import get_agent
 from src.agents.feasibility_agent import RuleFeasibilityAgent
-from src.agents.extractor_agent import RuleExtractorAgent
 from src.agents.repository_analysis_agent import RepositoryAnalysisAgent
 
 __all__ = [

@@ -72,11 +72,25 @@ class RuleExtractorAgent(BaseAgent):
         async def extract_node(state: ExtractorState) -> dict:
             raw = (state.markdown_content or "").strip()
             if not raw:
-                return {"statements": [], "decision": "none", "confidence": 0.0, "reasoning": "Empty input", "recommendations": [], "strategy_used": ""}
+                return {
+                    "statements": [],
+                    "decision": "none",
+                    "confidence": 0.0,
+                    "reasoning": "Empty input",
+                    "recommendations": [],
+                    "strategy_used": "",
+                }
             # Centralized sanitization (see execute(): defense-in-depth with redact_and_cap at entry).
             content = redact_and_cap(raw)
             if not content:
-                return {"statements": [], "decision": "none", "confidence": 0.0, "reasoning": "Empty after sanitization", "recommendations": [], "strategy_used": ""}
+                return {
+                    "statements": [],
+                    "decision": "none",
+                    "confidence": 0.0,
+                    "reasoning": "Empty after sanitization",
+                    "recommendations": [],
+                    "strategy_used": "",
+                }
             prompt = EXTRACTOR_PROMPT.format(markdown_content=content)
             structured_llm = self.llm.with_structured_output(ExtractorOutput)
             result = await structured_llm.ainvoke(prompt)
@@ -198,7 +212,11 @@ class RuleExtractorAgent(BaseAgent):
                     "recommendations": [],
                     "strategy_used": "",
                 },
-                metadata={"execution_time_ms": execution_time * 1000, "error_type": "timeout", "routing": "human_review"},
+                metadata={
+                    "execution_time_ms": execution_time * 1000,
+                    "error_type": "timeout",
+                    "routing": "human_review",
+                },
             )
         except APIConnectionError as e:
             execution_time = time.time() - start_time
@@ -238,5 +256,9 @@ class RuleExtractorAgent(BaseAgent):
                     "recommendations": [],
                     "strategy_used": "",
                 },
-                metadata={"execution_time_ms": execution_time * 1000, "error_type": type(e).__name__, "routing": "human_review"},
+                metadata={
+                    "execution_time_ms": execution_time * 1000,
+                    "error_type": type(e).__name__,
+                    "routing": "human_review",
+                },
             )
