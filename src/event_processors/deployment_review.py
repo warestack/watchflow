@@ -13,6 +13,7 @@ class DeploymentReviewProcessor(BaseEventProcessor):
     """Processor for deployment review events using hybrid agentic rule evaluation."""
 
     def __init__(self) -> None:
+        """Initialize deployment review processor with hybrid rule engine agent."""
         # Call super class __init__ first
         super().__init__()
 
@@ -20,9 +21,21 @@ class DeploymentReviewProcessor(BaseEventProcessor):
         self.engine_agent = get_agent("engine")
 
     def get_event_type(self) -> str:
+        """Return the event type this processor handles."""
         return "deployment_review"
 
     async def process(self, task: Task) -> ProcessingResult:
+        """Process deployment_review event with hybrid rule evaluation.
+
+        Handles deployment review approvals/rejections from reviewers after
+        a deployment protection rule has requested human review.
+
+        Args:
+            task: Task containing deployment_review event payload
+
+        Returns:
+            ProcessingResult with evaluation results
+        """
         start_time = time.time()
         payload = task.payload
         deployment_review = payload.get("deployment_review", {})

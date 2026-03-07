@@ -12,13 +12,27 @@ class DeploymentProcessor(BaseEventProcessor):
     """Processor for deployment events - for logging only."""
 
     def __init__(self) -> None:
+        """Initialize deployment processor for logging purposes."""
         # Call super class __init__ first
         super().__init__()
 
     def get_event_type(self) -> str:
+        """Return the event type this processor handles."""
         return "deployment"
 
     async def process(self, task: Task) -> ProcessingResult:
+        """Process deployment event for logging purposes only.
+
+        This processor does not enforce rules - it only logs deployment creation
+        events for observability. Rule evaluation is handled by
+        deployment_protection_rule events.
+
+        Args:
+            task: Task containing deployment event payload
+
+        Returns:
+            ProcessingResult with success=True (always succeeds)
+        """
         start_time = time.time()
         payload = task.payload
         deployment = payload.get("deployment", {})
