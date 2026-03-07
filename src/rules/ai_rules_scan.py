@@ -9,8 +9,12 @@ import re
 import structlog
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
-from src.core.utils.patterns import matches_any
+
 import yaml
+from pydantic import ValidationError
+
+from src.core.utils.patterns import matches_any
+from src.rules.models import Rule
 
 logger = structlog.get_logger(__name__)
 
@@ -22,6 +26,27 @@ MAX_PROMPT_LENGTH = 16_000
 
 # Max length for safe log preview of statement text
 TRUNCATE_PREVIEW_LEN = 200
+
+
+class HumanReviewRequired(Exception):
+    """Raised when the extractor agent routes to human-in-the-loop (low confidence or non-success)."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        decision: str = "",
+        confidence: float = 0.0,
+        reasoning: str = "",
+        recommendations: list[str] | None = None,
+        statements: list[str] | None = None,
+    ):
+        super().__init__(message)
+        self.decision = decision
+        self.confidence = confidence
+        self.reasoning = reasoning
+        self.recommendations = recommendations or []
+        self.statements = statements or []
 
 # --- Path patterns (globs) ---
 AI_RULE_FILE_PATTERNS = [
@@ -75,14 +100,17 @@ def content_has_ai_keywords(content: str | None) -> bool:
 
 
 def _valid_rule_schema(r: dict[str, Any]) -> bool:
-    """Return True if the rule dict has required fields for a Watchflow rule (e.g. description)."""
-    if not isinstance(r.get("description"), str) or not r["description"].strip():
+    """Return True if the rule dict validates against the Watchflow rule contract (Pydantic Rule model)."""
+    try:
+        Rule.model_validate(r)
+        return True
+    except ValidationError as e:
+        logger.debug(
+            "rule_schema_validation_failed",
+            description=(r.get("description", "")[:100] if isinstance(r.get("description"), str) else ""),
+            errors=e.errors(),
+        )
         return False
-    if "event_types" in r and not isinstance(r["event_types"], list):
-        return False
-    if "parameters" in r and not isinstance(r["parameters"], dict):
-        return False
-    return True
 
 
 def _truncate_preview(text: str, max_len: int = TRUNCATE_PREVIEW_LEN) -> str:
@@ -259,8 +287,30 @@ async def extract_rule_statements_with_agent(
     try:
         agent = get_extractor_agent()
         result = await agent.execute(markdown_content=content)
-        if result.success and result.data and isinstance(result.data.get("statements"), list):
-            return [s for s in result.data["statements"] if s and isinstance(s, str)]
+        data = result.data or {}
+        statements = data.get("statements") if isinstance(data.get("statements"), list) else None
+        confidence = float(data.get("confidence", 0.0))
+        decision = (data.get("decision") or "") if isinstance(data.get("decision"), str) else ""
+        reasoning = (data.get("reasoning") or "") if isinstance(data.get("reasoning"), str) else ""
+        recommendations = data.get("recommendations")
+        if isinstance(recommendations, list):
+            recommendations = [str(r) for r in recommendations]
+        else:
+            recommendations = []
+
+        if not result.success or confidence < 0.5:
+            raise HumanReviewRequired(
+                result.message or "Extractor routed to human review",
+                decision=decision,
+                confidence=confidence,
+                reasoning=reasoning,
+                recommendations=recommendations,
+                statements=[s for s in (statements or []) if s and isinstance(s, str)],
+            )
+        if statements is not None:
+            return [s for s in statements if s and isinstance(s, str)]
+    except HumanReviewRequired:
+        raise
     except Exception as e:
         logger.warning("extractor_agent_failed", error=_truncate_preview(str(e), 300))
     return []
@@ -390,8 +440,17 @@ async def translate_ai_rule_files_to_yaml(
     extract_results = await asyncio.gather(*extract_tasks, return_exceptions=True)
 
     for raw in extract_results:
+        if isinstance(raw, HumanReviewRequired):
+            logger.info(
+                "extract_routed_to_human_review",
+                decision=getattr(raw, "decision", ""),
+                confidence=getattr(raw, "confidence", 0.0),
+                reasoning=_truncate_preview(getattr(raw, "reasoning", ""), 300),
+                recommendations=getattr(raw, "recommendations", []),
+            )
+            continue
         if isinstance(raw, BaseException):
-            logger.warning("extract_failed", error=str(raw))
+            logger.warning("extract_failed", error=_truncate_preview(str(raw), 300))
             continue
         path, statements = raw
         preview = _truncate_preview(statements[0]) if statements else ""

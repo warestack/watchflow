@@ -57,9 +57,11 @@ class PullRequestProcessor(BaseEventProcessor):
         if pr_data.get("state") == "closed" or pr_data.get("merged") or pr_data.get("draft"):
             logger.info(
                 "pr_skipped_invalid_state",
-                state=pr_data.get("state"),
-                merged=pr_data.get("merged"),
-                draft=pr_data.get("draft"),
+                extra={
+                    "state": pr_data.get("state"),
+                    "merged": pr_data.get("merged"),
+                    "draft": pr_data.get("draft"),
+                },
             )
             return ProcessingResult(
                 success=True,
@@ -95,14 +97,16 @@ class PullRequestProcessor(BaseEventProcessor):
                     from_agent = sum(1 for s in rule_sources if s == "agent") if rule_sources else 0
                     logger.info(
                         "suggested_rules_scan",
-                        operation="suggested_rules_scan",
-                        subject_ids=[repo_full_name, f"pr#{pr_number}"],
-                        decision="found" if rules_count > 0 else "none",
-                        latency_ms=latency_ms,
-                        rules_count=rules_count,
-                        ambiguous_count=len(ambiguous),
-                        from_mapping=from_mapping,
-                        from_agent=from_agent,
+                        extra={
+                            "operation": "suggested_rules_scan",
+                            "subject_ids": [repo_full_name, f"pr#{pr_number}"],
+                            "decision": "found" if rules_count > 0 else "none",
+                            "latency_ms": latency_ms,
+                            "rules_count": rules_count,
+                            "ambiguous_count": len(ambiguous),
+                            "from_mapping": from_mapping,
+                            "from_agent": from_agent,
+                        },
                     )
                     if rules_count > 0:
                         suggested_rules_yaml = rules_yaml
@@ -110,18 +114,22 @@ class PullRequestProcessor(BaseEventProcessor):
                     latency_ms = int((time.time() - scan_start) * 1000)
                     logger.exception(
                         "Suggested rules scan failed",
-                        operation="suggested_rules_scan",
-                        subject_ids=[repo_full_name, f"pr#{pr_number}"],
-                        decision="failure",
-                        latency_ms=latency_ms,
+                        extra={
+                            "operation": "suggested_rules_scan",
+                            "subject_ids": [repo_full_name, f"pr#{pr_number}"],
+                            "decision": "failure",
+                            "latency_ms": latency_ms,
+                        },
                     )
             else:
                 logger.info(
                     "suggested_rules_scan",
-                    operation="suggested_rules_scan",
-                    subject_ids=[repo_full_name, f"pr#{pr_number}"],
-                    decision="skip",
-                    reason="PR not relevant (base ref)",
+                    extra={
+                        "operation": "suggested_rules_scan",
+                        "subject_ids": [repo_full_name, f"pr#{pr_number}"],
+                        "decision": "skip",
+                        "reason": "PR not relevant (base ref)",
+                    },
                 )
 
             # 1. Enrich event data

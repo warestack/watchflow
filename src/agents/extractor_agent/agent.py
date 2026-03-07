@@ -8,6 +8,7 @@ import time
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
+from openai import APIConnectionError
 from pydantic import BaseModel, Field
 
 from src.agents.base import AgentResult, BaseAgent
@@ -19,12 +20,13 @@ logger = logging.getLogger(__name__)
 # Max length/byte cap for markdown input to reduce prompt-injection and token cost
 MAX_EXTRACTOR_INPUT_LENGTH = 16_000
 
-# Patterns to redact (replaced with [REDACTED]) before sending to LLM
+# Patterns to redact (replaced with [REDACTED]) before sending to LLM.
+# (?i) in the pattern makes the match case-insensitive; do not pass re.IGNORECASE.
 _REDACT_PATTERNS = [
-    (re.compile(r"(?i)api[_-]?key\s*[:=]\s*['\"]?[\w\-]{20,}['\"]?", re.IGNORECASE), "[REDACTED]"),
-    (re.compile(r"(?i)token\s*[:=]\s*['\"]?[\w\-\.]{20,}['\"]?", re.IGNORECASE), "[REDACTED]"),
+    (re.compile(r"(?i)api[_-]?key\s*[:=]\s*['\"]?[\w\-]{20,}['\"]?"), "[REDACTED]"),
+    (re.compile(r"(?i)token\s*[:=]\s*['\"]?[\w\-\.]{20,}['\"]?"), "[REDACTED]"),
     (re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"), "[REDACTED]"),
-    (re.compile(r"(?i)bearer\s+[\w\-\.]+", re.IGNORECASE), "Bearer [REDACTED]"),
+    (re.compile(r"(?i)bearer\s+[\w\-\.]+"), "Bearer [REDACTED]"),
 ]
 
 
@@ -71,6 +73,7 @@ class RuleExtractorAgent(BaseAgent):
             raw = (state.markdown_content or "").strip()
             if not raw:
                 return {"statements": [], "decision": "none", "confidence": 0.0, "reasoning": "Empty input", "recommendations": [], "strategy_used": ""}
+            # Centralized sanitization (see execute(): defense-in-depth with redact_and_cap at entry).
             content = redact_and_cap(raw)
             if not content:
                 return {"statements": [], "decision": "none", "confidence": 0.0, "reasoning": "Empty after sanitization", "recommendations": [], "strategy_used": ""}
@@ -115,6 +118,8 @@ class RuleExtractorAgent(BaseAgent):
             )
 
         try:
+            # Defense-in-depth: redact_and_cap at entry and again in extract_node.
+            # Keeps ExtractorState safe and ensures node always sees sanitized input.
             sanitized = redact_and_cap(markdown_content)
             logger.info("🚀 Extractor agent processing markdown (%s chars)", len(sanitized))
             initial_state = ExtractorState(markdown_content=sanitized)
@@ -194,6 +199,30 @@ class RuleExtractorAgent(BaseAgent):
                     "strategy_used": "",
                 },
                 metadata={"execution_time_ms": execution_time * 1000, "error_type": "timeout", "routing": "human_review"},
+            )
+        except APIConnectionError as e:
+            execution_time = time.time() - start_time
+            logger.warning(
+                "Extractor agent API connection failed (network/unreachable): %s",
+                e,
+                exc_info=False,
+            )
+            return AgentResult(
+                success=False,
+                message="LLM API connection failed; check network and API availability.",
+                data={
+                    "statements": [],
+                    "decision": "none",
+                    "confidence": 0.0,
+                    "reasoning": str(e)[:500],
+                    "recommendations": [],
+                    "strategy_used": "",
+                },
+                metadata={
+                    "execution_time_ms": execution_time * 1000,
+                    "error_type": "api_connection",
+                    "routing": "human_review",
+                },
             )
         except Exception as e:
             execution_time = time.time() - start_time

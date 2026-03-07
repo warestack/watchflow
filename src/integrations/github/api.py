@@ -137,12 +137,7 @@ class GitHubClient:
         """
         headers = await self._get_auth_headers(
             installation_id=installation_id, user_token=user_token
-        )
-        if not headers:
-            return (
-                None,
-                {"status": 401, "message": "Authentication required. Provide github_token or installation_id in the request."},
-            )
+        ) or {}
         url = f"{config.github.api_base_url}/repos/{repo_full_name}"
         session = await self._get_session()
         async with session.get(url, headers=headers) as response:
@@ -175,17 +170,16 @@ class GitHubClient:
         """List directory contents using installation or user token (auth required)."""
         headers = await self._get_auth_headers(
             installation_id=installation_id, user_token=user_token
-        )
-        if not headers:
-            return []
+        ) or {}
         url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{path}"
         session = await self._get_session()
         async with session.get(url, headers=headers) as response:
             if response.status == 200:
                 data = await response.json()
                 return cast("list[dict[str, Any]]", data if isinstance(data, list) else [data])
-
-            # Raise exception for error statuses to avoid silent failures
+            if response.status == 401:
+                return []
+            # Raise exception for other error statuses to avoid silent failures
             response.raise_for_status()
             return []
 
@@ -203,17 +197,7 @@ class GitHubClient:
         headers = await self._get_auth_headers(
             installation_id=installation_id,
             user_token=user_token,
-        )
-        if not headers:
-            latency_ms = int((time.monotonic() - start) * 1000)
-            logger.info(
-                "get_repository_tree",
-                operation="get_repository_tree",
-                subject_ids={"repo": repo_full_name, "installation_id": installation_id, "user_token_present": bool(user_token), "ref": ref or "main"},
-                decision="auth_missing",
-                latency_ms=latency_ms,
-            )
-            return []
+        ) or {}
         ref = ref or "main"
         tree_sha = await self._resolve_tree_sha(repo_full_name, ref, headers)
         if not tree_sha:
@@ -274,9 +258,7 @@ class GitHubClient:
             installation_id=installation_id,
             user_token=user_token,
             accept="application/vnd.github.raw",
-        )
-        if not headers:
-            return None
+        ) or {}
         url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{file_path}"
         params = {"ref": ref} if ref else None
 
