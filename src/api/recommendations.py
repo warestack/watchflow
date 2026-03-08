@@ -2,6 +2,7 @@ from collections.abc import Callable
 from typing import Any, TypedDict
 
 import structlog
+import yaml
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from giturlparse import parse  # type: ignore
 from pydantic import BaseModel, Field, HttpUrl
@@ -13,6 +14,10 @@ from src.api.rate_limit import rate_limiter
 # Internal: User model, auth assumed present—see core/api for details.
 from src.core.models import User
 from src.integrations.github.api import github_client
+from src.rules.ai_rules_scan import (
+    scan_repo_for_ai_rule_files,
+    translate_ai_rule_files_to_yaml,
+)
 
 logger = structlog.get_logger()
 
@@ -134,6 +139,71 @@ class MetricConfig(TypedDict):
     category: str
     thresholds: dict[str, float]
     explanation: Callable[[float | int], str]
+
+
+class ScanAIFilesRequest(BaseModel):
+    """
+    Payload for scanning a repo for AI assistant rule files (Cursor, Claude, Copilot, etc.).
+    """
+
+    repo_url: HttpUrl = Field(
+        ..., description="Full URL of the GitHub repository (e.g., https://github.com/owner/repo)"
+    )
+    github_token: str | None = Field(
+        None, description="Optional GitHub Personal Access Token (higher rate limits / private repos)"
+    )
+    installation_id: int | None = Field(
+        None, description="GitHub App installation ID (optional; used to get installation token)"
+    )
+    include_content: bool = Field(
+        False, description="If True, include file content in response (for translation pipeline)"
+    )
+
+
+class ScanAIFilesCandidate(BaseModel):
+    """A single candidate AI rule file."""
+
+    path: str = Field(..., description="Repository-relative file path")
+    has_keywords: bool = Field(..., description="True if content contains known AI-instruction keywords")
+    content: str | None = Field(None, description="File content; only set when include_content was True")
+
+
+class ScanAIFilesResponse(BaseModel):
+    """Response from the scan-ai-files endpoint."""
+
+    repo_full_name: str = Field(..., description="Repository in owner/repo form")
+    ref: str = Field(..., description="Branch or ref that was scanned (e.g. main)")
+    candidate_files: list[ScanAIFilesCandidate] = Field(
+        default_factory=list, description="Candidate AI rule files matching path patterns"
+    )
+    warnings: list[str] = Field(default_factory=list, description="Warnings (e.g. rate limit, partial results)")
+
+
+class TranslateAIFilesRequest(BaseModel):
+    """Request for translating AI rule files into .watchflow rules YAML."""
+
+    repo_url: HttpUrl = Field(..., description="Full URL of the GitHub repository")
+    github_token: str | None = Field(None, description="Optional GitHub PAT")
+    installation_id: int | None = Field(None, description="Optional GitHub App installation ID")
+
+
+class AmbiguousItem(BaseModel):
+    """One statement that could not be translated to a Watchflow rule."""
+
+    statement: str = Field(..., description="Original rule-like statement")
+    path: str = Field(..., description="Source file path")
+    reason: str = Field(..., description="Why it was not translated")
+
+
+class TranslateAIFilesResponse(BaseModel):
+    """Response from translate-ai-files endpoint."""
+
+    repo_full_name: str = Field(..., description="Repository in owner/repo form")
+    ref: str = Field(..., description="Branch scanned (e.g. main)")
+    rules_yaml: str = Field(..., description="Merged rules YAML (rules: [...])")
+    rules_count: int = Field(..., description="Number of rules in rules_yaml")
+    ambiguous: list[AmbiguousItem] = Field(default_factory=list, description="Statements that could not be translated")
+    warnings: list[str] = Field(default_factory=list)
 
 
 def _get_severity_label(value: float, thresholds: dict[str, float]) -> tuple[str, str]:
@@ -327,7 +397,20 @@ def generate_pr_body(
     """
     Generate a professional, concise PR body that helps maintainers understand and approve.
 
-    Follows Matas' patterns: evidence-based, data-driven, professional tone, no emojis.
+    Builds markdown with repository analysis, recommended rules (with optional rationale),
+    and next steps. Follows evidence-based, data-driven tone; no emojis.
+
+    Args:
+        repo_full_name: Repository in 'owner/repo' form (used in intro text).
+        recommendations: List of rule dicts (description, severity, etc.).
+        hygiene_summary: Metrics summary for the analysis report section.
+        rules_yaml: Full rules YAML (not embedded in body; referenced in "Changes").
+        installation_id: Optional; used for landing-page links in generated content.
+        analysis_report: Optional pre-generated markdown report; else generated from hygiene_summary.
+        rule_reasonings: Optional map of rule description -> rationale for each recommendation.
+
+    Returns:
+        Full PR body as a single markdown string.
     """
     body_lines = [
         "## Add Watchflow Governance Rules",
@@ -388,6 +471,35 @@ def generate_pr_body(
     return "\n".join(body_lines)
 
 
+def generate_pr_body_for_suggested_rules(
+    repo_full_name: str,
+    rules_yaml: str,
+    rules_translated: int = 0,
+    rules_ambiguous: int = 0,
+    installation_id: int | None = None,
+) -> str:
+    """
+    Generate PR body for push-triggered "suggested rules" PRs (AI rule files translated to YAML).
+
+    Used by the push processor when creating a PR from translated AI rule files. Keeps
+    PR body formatting in one place alongside generate_pr_body (repository-analysis flow).
+    """
+    extracted_total = rules_translated + rules_ambiguous
+    summary_lines = [
+        f"- {extracted_total} rule statement(s) extracted from AI rule files",
+        f"- {rules_translated} rule(s) successfully translated to Watchflow YAML",
+        f"- {rules_ambiguous} rule(s) could not be translated (low confidence or infeasible)",
+    ]
+    translation_summary = "\n".join(summary_lines)
+    return (
+        "This PR was auto-generated by Watchflow because AI rule files (e.g. `rules.md`, "
+        "`*guidelines*.md`) were updated. It proposes updating `.watchflow/rules.yaml` with "
+        "the translated rules so your team can review the auto-generated constraints before merging.\n\n"
+        "**Translation Summary:**\n"
+        f"{translation_summary}"
+    )
+
+
 def generate_pr_title(recommendations: list[Any]) -> str:
     """
     Generate a professional, concise PR title based on recommendations.
@@ -421,6 +533,91 @@ def parse_repo_from_url(url: str) -> str:
     if not p.valid or not p.owner or not p.repo or p.host not in {"github.com", "www.github.com"}:
         raise ValueError("Invalid GitHub repository URL. Must be in format 'https://github.com/owner/repo'.")
     return f"{p.owner}/{p.repo}"
+
+
+def _ref_to_branch(ref: str | None) -> str | None:
+    """Convert a full ref (e.g. refs/heads/feature-x) to branch name for use with GitHub API."""
+    if not ref or not ref.strip():
+        return None
+    ref = ref.strip()
+    if ref.startswith("refs/heads/"):
+        return ref[len("refs/heads/") :].strip() or None
+    return ref
+
+
+async def get_suggested_rules_from_repo(
+    repo_full_name: str,
+    installation_id: int | None,
+    github_token: str | None,
+    *,
+    ref: str | None = None,
+) -> tuple[str, int, list[dict[str, Any]], list[str]]:
+    """
+    Run agentic scan+translate for a repo (rules.md, etc. -> Watchflow YAML).
+
+    Safe to call from event processors; returns empty result on any failure.
+    When ref is provided (e.g. from push or PR head), scans that branch; otherwise uses default branch.
+
+    Args:
+        repo_full_name: Repository in 'owner/repo' form.
+        installation_id: GitHub App installation ID (or None if using user token).
+        github_token: Optional user or installation token for GitHub API.
+        ref: Optional branch ref (e.g. refs/heads/feature-x) or branch name; uses default branch if None.
+
+    Returns:
+        Tuple of (rules_yaml, rules_count, ambiguous_list, rule_sources).
+        - rules_yaml: Full "rules: [...]" YAML string.
+        - rules_count: Number of rules in rules_yaml.
+        - ambiguous_list: List of dicts with statement/path/reason for untranslated statements.
+        - rule_sources: Per-rule source ("mapping" or "agent"), same order as rules.
+    """
+    try:
+        repo_data, repo_error = await github_client.get_repository(
+            repo_full_name, installation_id=installation_id, user_token=github_token
+        )
+        if repo_error or not repo_data:
+            return ("rules: []\n", 0, [], [])
+        default_branch = repo_data.get("default_branch") or "main"
+        scan_ref = _ref_to_branch(ref) if ref else default_branch
+        if not scan_ref:
+            scan_ref = default_branch
+
+        tree_entries = await github_client.get_repository_tree(
+            repo_full_name,
+            ref=scan_ref,
+            installation_id=installation_id,
+            user_token=github_token,
+            recursive=True,
+        )
+        if not tree_entries:
+            return ("rules: []\n", 0, [], [])
+
+        async def get_content(path: str):
+            return await github_client.get_file_content(
+                repo_full_name, path, installation_id, github_token, ref=scan_ref
+            )
+
+        raw_candidates = await scan_repo_for_ai_rule_files(
+            tree_entries, fetch_content=True, get_file_content=get_content
+        )
+        candidates_with_content = [c for c in raw_candidates if c.get("content")]
+        if not candidates_with_content:
+            return ("rules: []\n", 0, [], [])
+
+        rules_yaml, ambiguous, rule_sources = await translate_ai_rule_files_to_yaml(candidates_with_content)
+        rules_count = 0
+        try:
+            parsed = yaml.safe_load(rules_yaml)
+            rules_count = len(parsed.get("rules", [])) if isinstance(parsed, dict) else 0
+        except (yaml.YAMLError, ValueError) as e:
+            logger.warning("get_suggested_rules_yaml_parse_failed", repo=repo_full_name, error=str(e))
+        except Exception as e:
+            logger.exception("get_suggested_rules_yaml_unexpected_error", repo=repo_full_name, error=str(e))
+            return ("rules: []\n", 0, [], [])
+        return (rules_yaml, rules_count, ambiguous, rule_sources)
+    except Exception as e:
+        logger.warning("get_suggested_rules_from_repo_failed", repo=repo_full_name, error=str(e))
+        return ("rules: []\n", 0, [], [])
 
 
 # --- Endpoints ---  # Main API surface—keep stable for clients.
@@ -526,7 +723,6 @@ async def recommend_rules(
 
     # Generate rules_yaml from recommendations
     # RuleRecommendation now includes all required fields directly
-    import yaml
 
     # Extract YAML fields from recommendations
     rules_list = []
@@ -683,17 +879,17 @@ async def proceed_with_pr(
 
     try:
         # Step 1: Get repository metadata to find default branch
-        repo_data = await github_client.get_repository(
+        repo_data, repo_error = await github_client.get_repository(
             repo_full_name=repo_full_name,
             installation_id=installation_id,
             user_token=user_token,
         )
 
-        if not repo_data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Repository '{repo_full_name}' not found or access denied.",
-            )
+        if repo_error:
+            status_code = repo_error["status"]
+            if status_code not in (401, 403, 404, 429):
+                status_code = status.HTTP_502_BAD_GATEWAY
+            raise HTTPException(status_code=status_code, detail=repo_error["message"])
 
         base_branch = payload.base_branch or repo_data.get("default_branch", "main")
 
@@ -798,3 +994,256 @@ async def proceed_with_pr(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create pull request. Please try again.",
         ) from e
+
+
+@router.post(
+    "/scan-ai-files",
+    response_model=ScanAIFilesResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Scan repository for AI rule files",
+    description=(
+        "Lists files matching *rules*.md, *guidelines*.md, *prompt*.md, .cursor/rules/*.mdc. "
+        "Optionally fetches content and flags files that contain AI-instruction keywords."
+    ),
+    dependencies=[Depends(rate_limiter)],
+)
+async def scan_ai_rule_files(
+    request: Request,
+    payload: ScanAIFilesRequest,
+    user: User | None = Depends(get_current_user_optional),
+) -> ScanAIFilesResponse:
+    """
+    Scan a repository for AI assistant rule files (Cursor, Claude, Copilot, etc.).
+
+    Lists files matching *rules*.md, *guidelines*.md, *prompt*.md, .cursor/rules/*.mdc,
+    optionally fetches content, and flags files that contain AI-instruction keywords.
+
+    Args:
+        request: The incoming HTTP request (used for IP logging).
+        payload: Request body with repo_url and optional github_token, installation_id, include_content.
+        user: Authenticated user (optional); used for token when present.
+
+    Returns:
+        ScanAIFilesResponse: repo_full_name, ref, candidate_files (path, has_keywords, optional content), warnings.
+
+    Raises:
+        HTTPException: 422 if repo URL is invalid; 401/403/404/429 for auth or GitHub API errors.
+    """
+    repo_url_str = str(payload.repo_url)
+    client_ip = request.client.host if request.client else "unknown"
+    logger.info("scan_ai_files_requested", repo_url=repo_url_str, ip=client_ip)
+
+    try:
+        repo_full_name = parse_repo_from_url(repo_url_str)
+    except ValueError as e:
+        logger.warning("invalid_url_provided", url=repo_url_str, error=str(e))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
+
+    # Resolve token (same as recommend_rules)
+    github_token = None
+    if user and user.github_token:
+        try:
+            github_token = user.github_token.get_secret_value()
+        except (AttributeError, TypeError):
+            github_token = str(user.github_token) if user.github_token else None
+    elif payload.github_token:
+        github_token = payload.github_token
+    elif payload.installation_id:
+        installation_token = await github_client.get_installation_access_token(payload.installation_id)
+        if installation_token:
+            github_token = installation_token
+
+    installation_id = payload.installation_id
+
+    # Default branch
+    repo_data, repo_error = await github_client.get_repository(
+        repo_full_name, installation_id=installation_id, user_token=github_token
+    )
+    if repo_error:
+        status_code = repo_error["status"]
+        if status_code not in (401, 403, 404, 429):
+            status_code = status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(status_code=status_code, detail=repo_error["message"])
+    default_branch = repo_data.get("default_branch") or "main"
+    ref = default_branch
+
+    # Full tree
+    tree_entries = await github_client.get_repository_tree(
+        repo_full_name,
+        ref=ref,
+        installation_id=installation_id,
+        user_token=github_token,
+        recursive=True,
+    )
+    if not tree_entries:
+        return ScanAIFilesResponse(
+            repo_full_name=repo_full_name,
+            ref=ref,
+            candidate_files=[],
+            warnings=["Could not load repository tree; check access and ref."],
+        )
+
+    # Optional content fetcher for keyword scan (and optionally include in response)
+    async def get_content(path: str):
+        return await github_client.get_file_content(repo_full_name, path, installation_id, github_token)
+
+    # Always fetch content so has_keywords is set; strip content in response unless include_content
+    raw_candidates = await scan_repo_for_ai_rule_files(
+        tree_entries,
+        fetch_content=True,
+        get_file_content=get_content,
+    )
+
+    candidates = [
+        ScanAIFilesCandidate(
+            path=c["path"],
+            has_keywords=c["has_keywords"],
+            content=c["content"] if payload.include_content else None,
+        )
+        for c in raw_candidates
+    ]
+
+    return ScanAIFilesResponse(
+        repo_full_name=repo_full_name,
+        ref=ref,
+        candidate_files=candidates,
+        warnings=[],
+    )
+
+
+@router.post(
+    "/translate-ai-files",
+    response_model=TranslateAIFilesResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Translate AI rule files to Watchflow YAML",
+    description="Scans repo for AI rule files, extracts statements, maps or translates to .watchflow rules YAML.",
+    dependencies=[Depends(rate_limiter)],
+)
+async def translate_ai_rule_files(
+    request: Request,
+    payload: TranslateAIFilesRequest,
+    user: User | None = Depends(get_current_user_optional),
+) -> TranslateAIFilesResponse:
+    """
+    Translate AI rule files in a repository to Watchflow YAML rules.
+
+    Scans the repo for AI rule files (*rules*.md, *guidelines*.md, etc.), extracts
+    rule-like statements, then maps them to Watchflow rules via deterministic patterns
+    or the feasibility agent. Returns merged YAML and any statements that could not
+    be translated (ambiguous).
+
+    Args:
+        request: The incoming HTTP request.
+        payload: Request body with repo_url and optional github_token/installation_id.
+        user: Authenticated user (optional); used for token when present.
+
+    Returns:
+        TranslateAIFilesResponse: rules_yaml, rules_count, ambiguous list, and warnings.
+
+    Raises:
+        HTTPException: 422 if repo URL is invalid; 401/403/404/429 for auth or API errors.
+    """
+    repo_url_str = str(payload.repo_url)
+    logger.info("translate_ai_files_requested", repo_url=repo_url_str)
+
+    try:
+        repo_full_name = parse_repo_from_url(repo_url_str)
+    except ValueError as e:
+        logger.warning("invalid_url_provided", url=repo_url_str, error=str(e))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
+
+    github_token = None
+    if user and user.github_token:
+        try:
+            github_token = user.github_token.get_secret_value()
+        except (AttributeError, TypeError):
+            github_token = str(user.github_token) if user.github_token else None
+    elif payload.github_token:
+        github_token = payload.github_token
+    elif payload.installation_id:
+        installation_token = await github_client.get_installation_access_token(payload.installation_id)
+        if installation_token:
+            github_token = installation_token
+    installation_id = payload.installation_id
+
+    repo_data, repo_error = await github_client.get_repository(
+        repo_full_name, installation_id=installation_id, user_token=github_token
+    )
+    if repo_error:
+        status_code = repo_error["status"]
+        if status_code not in (401, 403, 404, 429):
+            status_code = status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(status_code=status_code, detail=repo_error["message"])
+    default_branch = repo_data.get("default_branch") or "main"
+    ref = default_branch
+
+    tree_entries = await github_client.get_repository_tree(
+        repo_full_name, ref=ref, installation_id=installation_id, user_token=github_token, recursive=True
+    )
+    if not tree_entries:
+        return TranslateAIFilesResponse(
+            repo_full_name=repo_full_name,
+            ref=ref,
+            rules_yaml="rules: []\n",
+            rules_count=0,
+            ambiguous=[],
+            warnings=["Could not load repository tree."],
+        )
+
+    async def get_content(path: str):
+        return await github_client.get_file_content(repo_full_name, path, installation_id, github_token)
+
+    raw_candidates = await scan_repo_for_ai_rule_files(tree_entries, fetch_content=True, get_file_content=get_content)
+    candidates_with_content = [c for c in raw_candidates if c.get("content")]
+    if not candidates_with_content:
+        return TranslateAIFilesResponse(
+            repo_full_name=repo_full_name,
+            ref=ref,
+            rules_yaml="rules: []\n",
+            rules_count=0,
+            ambiguous=[],
+            warnings=["No AI rule file content could be loaded."],
+        )
+
+    rules_yaml, ambiguous, rule_sources = await translate_ai_rule_files_to_yaml(candidates_with_content)
+    rules_count = 0
+    try:
+        parsed = yaml.safe_load(rules_yaml)
+        rules_count = len(parsed.get("rules", [])) if isinstance(parsed, dict) else 0
+    except (yaml.YAMLError, ValueError) as e:
+        logger.warning("translate_ai_rule_files_yaml_parse_failed", repo_full_name=repo_full_name, error=str(e))
+    except Exception as e:
+        logger.exception("translate_ai_rule_files_unexpected_error", repo_full_name=repo_full_name, error=str(e))
+        raise
+
+    # Sanitize ambiguous reasons so we don't return raw exception text to the client
+    safe_ambiguous: list[AmbiguousItem] = []
+    for item in ambiguous:
+        reason = item.get("reason", "") if isinstance(item, dict) else ""
+        if not isinstance(reason, str):
+            reason = str(reason)
+        if len(reason) > 200 or "Error" in reason or "Exception" in reason or "Traceback" in reason:
+            logger.debug(
+                "translate_ai_rule_files_ambiguous_reason_redacted",
+                repo_full_name=repo_full_name,
+                rule_sources=rule_sources,
+                statement=(item.get("statement", "")[:100] if isinstance(item, dict) else ""),
+                original_reason=reason[:500],
+            )
+            reason = "Could not translate statement; see logs."
+        safe_ambiguous.append(
+            AmbiguousItem(
+                statement=(item.get("statement", "") or "") if isinstance(item, dict) else "",
+                path=(item.get("path", "") or "") if isinstance(item, dict) else "",
+                reason=reason,
+            )
+        )
+
+    return TranslateAIFilesResponse(
+        repo_full_name=repo_full_name,
+        ref=ref,
+        rules_yaml=rules_yaml,
+        rules_count=rules_count,
+        ambiguous=safe_ambiguous,
+        warnings=[],
+    )

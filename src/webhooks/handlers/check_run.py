@@ -7,6 +7,9 @@ from src.webhooks.handlers.base import EventHandler
 
 logger = structlog.get_logger(__name__)
 
+# Instantiate processor once (same pattern as push_processor)
+check_run_processor = CheckRunProcessor()
+
 
 class CheckRunEventHandler(EventHandler):
     """Handler for check run webhook events using task queue."""
@@ -16,20 +19,51 @@ class CheckRunEventHandler(EventHandler):
 
     async def handle(self, event: WebhookEvent) -> WebhookResponse:
         """Handle check run events by enqueuing them for background processing."""
-        logger.info(f"🔄 Enqueuing check run event for {event.repo_full_name}")
-
-        task_id = await task_queue.enqueue(
-            CheckRunProcessor().process,
-            event_type="check_run",
-            repo_full_name=event.repo_full_name,
-            installation_id=event.installation_id,
-            payload=event.payload,
+        logger.info(
+            "Enqueuing check run event",
+            operation="enqueue_check_run",
+            subject_ids=[event.repo_full_name],
+            decision="pending",
+            latency_ms=0,
+            repo=event.repo_full_name,
         )
 
-        logger.info(f"✅ Check run event enqueued with task ID: {task_id}")
+        task = task_queue.build_task(
+            "check_run",
+            event.payload,
+            check_run_processor.process,
+            delivery_id=event.delivery_id,
+        )
+        enqueued = await task_queue.enqueue(
+            check_run_processor.process,
+            "check_run",
+            event.payload,
+            task,
+            delivery_id=event.delivery_id,
+        )
 
+        if enqueued:
+            logger.info(
+                "Check run event enqueued",
+                operation="enqueue_check_run",
+                subject_ids=[event.repo_full_name],
+                decision="enqueued",
+                latency_ms=0,
+            )
+            return WebhookResponse(
+                status="ok",
+                detail="Check run event has been queued for processing",
+                event_type=EventType.CHECK_RUN,
+            )
+        logger.info(
+            "Check run event duplicate skipped",
+            operation="enqueue_check_run",
+            subject_ids=[event.repo_full_name],
+            decision="duplicate_skipped",
+            latency_ms=0,
+        )
         return WebhookResponse(
-            status="ok",
-            detail=f"Check run event has been queued for processing with task ID: {task_id}",
+            status="ignored",
+            detail="Duplicate check run event skipped",
             event_type=EventType.CHECK_RUN,
         )

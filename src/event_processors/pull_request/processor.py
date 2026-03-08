@@ -4,13 +4,17 @@ import re
 import time
 from typing import Any
 
+import yaml
+
 from src.agents import get_agent
+from src.api.recommendations import get_suggested_rules_from_repo
 from src.core.models import Violation
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.event_processors.pull_request.enricher import PullRequestEnricher
 from src.integrations.github.check_runs import CheckRunManager
 from src.presentation import github_formatter
-from src.rules.loaders.github_loader import RulesFileNotFoundError
+from src.rules.ai_rules_scan import is_relevant_pr
+from src.rules.loaders.github_loader import GitHubRuleLoader, RulesFileNotFoundError
 from src.tasks.task_queue import Task
 
 logger = logging.getLogger(__name__)
@@ -53,9 +57,11 @@ class PullRequestProcessor(BaseEventProcessor):
         if pr_data.get("state") == "closed" or pr_data.get("merged") or pr_data.get("draft"):
             logger.info(
                 "pr_skipped_invalid_state",
-                state=pr_data.get("state"),
-                merged=pr_data.get("merged"),
-                draft=pr_data.get("draft"),
+                extra={
+                    "state": pr_data.get("state"),
+                    "merged": pr_data.get("merged"),
+                    "draft": pr_data.get("draft"),
+                },
             )
             return ProcessingResult(
                 success=True,
@@ -76,11 +82,61 @@ class PullRequestProcessor(BaseEventProcessor):
                 raise ValueError("Failed to get installation access token")
             github_token = github_token_optional
 
+            # Agentic: scan repo only when relevant (PR targets default branch)
+            # Use the PR head ref so we scan the branch being proposed, not main.
+            suggested_rules_yaml: str | None = None
+            if is_relevant_pr(task.payload):
+                scan_start = time.time()
+                try:
+                    pr_head_ref = pr_data.get("head", {}).get("ref")  # branch name, e.g. feature-x
+                    rules_yaml, rules_count, ambiguous, rule_sources = await get_suggested_rules_from_repo(
+                        repo_full_name, installation_id, github_token, ref=pr_head_ref
+                    )
+                    latency_ms = int((time.time() - scan_start) * 1000)
+                    from_mapping = sum(1 for s in rule_sources if s == "mapping") if rule_sources else 0
+                    from_agent = sum(1 for s in rule_sources if s == "agent") if rule_sources else 0
+                    logger.info(
+                        "suggested_rules_scan",
+                        extra={
+                            "operation": "suggested_rules_scan",
+                            "subject_ids": [repo_full_name, f"pr#{pr_number}"],
+                            "decision": "found" if rules_count > 0 else "none",
+                            "latency_ms": latency_ms,
+                            "rules_count": rules_count,
+                            "ambiguous_count": len(ambiguous),
+                            "from_mapping": from_mapping,
+                            "from_agent": from_agent,
+                        },
+                    )
+                    if rules_count > 0:
+                        suggested_rules_yaml = rules_yaml
+                except Exception:
+                    latency_ms = int((time.time() - scan_start) * 1000)
+                    logger.exception(
+                        "Suggested rules scan failed",
+                        extra={
+                            "operation": "suggested_rules_scan",
+                            "subject_ids": [repo_full_name, f"pr#{pr_number}"],
+                            "decision": "failure",
+                            "latency_ms": latency_ms,
+                        },
+                    )
+            else:
+                logger.info(
+                    "suggested_rules_scan",
+                    extra={
+                        "operation": "suggested_rules_scan",
+                        "subject_ids": [repo_full_name, f"pr#{pr_number}"],
+                        "decision": "skip",
+                        "reason": "PR not relevant (base ref)",
+                    },
+                )
+
             # 1. Enrich event data
             event_data = await self.enricher.enrich_event_data(task, github_token)
             api_calls += 1
 
-            # 2. Fetch rules
+            # 2. Fetch rules and merge in dynamically translated rules (pre-merge enforcement)
             try:
                 rules_optional = await self.rule_provider.get_rules(repo_full_name, installation_id)
                 rules = rules_optional if rules_optional is not None else []
@@ -115,6 +171,30 @@ class PullRequestProcessor(BaseEventProcessor):
                     processing_time_ms=int((time.time() - start_time) * 1000),
                     error="Rules not configured",
                 )
+
+            # Append dynamically translated rules so they are enforced as pre-merge checks
+            if suggested_rules_yaml:
+                try:
+                    parsed = yaml.safe_load(suggested_rules_yaml)
+                    if isinstance(parsed, dict) and "rules" in parsed and isinstance(parsed["rules"], list):
+                        suggested_count = 0
+                        for rule_data in parsed["rules"]:
+                            if isinstance(rule_data, dict):
+                                try:
+                                    rule = GitHubRuleLoader._parse_rule(rule_data)
+                                    rules.append(rule)
+                                    suggested_count += 1
+                                except Exception as parse_err:
+                                    logger.warning("Failed to parse suggested rule: %s", parse_err)
+                        if suggested_count > 0:
+                            logger.info(
+                                "Enforcing %d rules total (%d from repo, %d suggested from AI rule files)",
+                                len(rules),
+                                len(rules) - suggested_count,
+                                suggested_count,
+                            )
+                except yaml.YAMLError as e:
+                    logger.warning("Failed to parse suggested rules YAML: %s", e)
 
             # 3. Check for existing acknowledgments
             previous_acknowledgments = {}

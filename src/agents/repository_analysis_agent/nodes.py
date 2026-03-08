@@ -66,7 +66,9 @@ async def fetch_repository_metadata(state: AnalysisState) -> AnalysisState:
         state.detected_languages = list(detected_languages)
 
         # 3. Check for CI/CD presence
-        workflow_files = await github_client.list_directory_any_auth(repo_full_name=repo, path=".github/workflows")
+        workflow_files = await github_client.list_directory_any_auth(
+            repo_full_name=repo, path=".github/workflows", user_token=state.user_token
+        )
         state.has_ci = len(workflow_files) > 0
 
         # 4. Fetch Documentation Snippets (for Context)
