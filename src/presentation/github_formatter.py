@@ -190,6 +190,45 @@ def format_rules_not_configured_comment(
     )
 
 
+def format_suggested_rules_ambiguous_comment(
+    rules_translated: int,
+    ambiguous: list[dict[str, Any]],
+    max_statement_len: int = 200,
+    max_reason_len: int = 150,
+) -> str:
+    """Format a PR comment when some AI rule statements could not be translated (parity with push PR body)."""
+    count = len(ambiguous)
+    lines = [
+        "## Watchflow: Translation summary (AI rule files)",
+        "",
+        "**Translation summary:**",
+        f"- {rules_translated} rule(s) successfully translated and enforced as pre-merge checks.",
+        f"- {count} rule statement(s) could not be translated (low confidence or infeasible).",
+        "",
+    ]
+    if ambiguous:
+        lines.append("**Could not be translated:**")
+        lines.append("")
+        for i, item in enumerate(ambiguous[:20], 1):  # cap at 20 for comment length
+            st = (item.get("statement") or "") if isinstance(item, dict) else ""
+            path = (item.get("path") or "") if isinstance(item, dict) else ""
+            reason = (item.get("reason") or "") if isinstance(item, dict) else ""
+            if len(st) > max_statement_len:
+                st = st[:max_statement_len].rstrip() + "…"
+            if len(reason) > max_reason_len:
+                reason = reason[:max_reason_len].rstrip() + "…"
+            lines.append(f"{i}. `{path}`: {st}")
+            if reason:
+                lines.append(f"   - *Reason:* {reason}")
+            lines.append("")
+        if len(ambiguous) > 20:
+            lines.append(f"*…and {len(ambiguous) - 20} more.*")
+            lines.append("")
+    lines.append("---")
+    lines.append("*This comment was automatically posted by [Watchflow](https://watchflow.dev).*")
+    return "\n".join(lines)
+
+
 def format_violations_comment(violations: list[Violation], content_hash: str | None = None) -> str:
     """Format violations as a GitHub comment.
 

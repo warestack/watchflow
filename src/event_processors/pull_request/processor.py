@@ -85,6 +85,8 @@ class PullRequestProcessor(BaseEventProcessor):
             # Agentic: scan repo only when relevant (PR targets default branch)
             # Use the PR head ref so we scan the branch being proposed, not main.
             suggested_rules_yaml: str | None = None
+            suggested_rules_translated = 0
+            suggested_rules_ambiguous: list[Any] = []
             if is_relevant_pr(task.payload):
                 scan_start = time.time()
                 try:
@@ -108,6 +110,8 @@ class PullRequestProcessor(BaseEventProcessor):
                             "from_agent": from_agent,
                         },
                     )
+                    suggested_rules_translated = rules_count
+                    suggested_rules_ambiguous = list(ambiguous) if ambiguous else []
                     if rules_count > 0:
                         suggested_rules_yaml = rules_yaml
                 except Exception:
@@ -195,6 +199,20 @@ class PullRequestProcessor(BaseEventProcessor):
                             )
                 except yaml.YAMLError as e:
                     logger.warning("Failed to parse suggested rules YAML: %s", e)
+
+            # Surface translation summary to the user (parity with push-event PR body)
+            # Post when we have any scan result: translated and/or ambiguous, so users see X enforced and Y not translated
+            if pr_number and (suggested_rules_translated > 0 or suggested_rules_ambiguous):
+                try:
+                    comment_body = github_formatter.format_suggested_rules_ambiguous_comment(
+                        rules_translated=suggested_rules_translated,
+                        ambiguous=suggested_rules_ambiguous,
+                    )
+                    await self.github_client.create_pull_request_comment(
+                        repo_full_name, pr_number, comment_body, installation_id
+                    )
+                except Exception as comment_err:
+                    logger.warning("Could not post suggested-rules translation summary comment: %s", comment_err)
 
             # 3. Check for existing acknowledgments
             previous_acknowledgments = {}
