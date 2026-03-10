@@ -139,7 +139,10 @@ class GitHubClient:
         if not headers:
             return (
                 None,
-                {"status": 401, "message": "Authentication required. Provide github_token or installation_id in the request."},
+                {
+                    "status": 401,
+                    "message": "Authentication required. Provide github_token or installation_id in the request.",
+                },
             )
         url = f"{config.github.api_base_url}/repos/{repo_full_name}"
         session = await self._get_session()
