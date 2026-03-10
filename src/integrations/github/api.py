@@ -135,7 +135,12 @@ class GitHubClient:
         Fetch repository metadata. Returns (repo_data, None) on success;
         (None, {"status": int, "message": str}) on failure for meaningful API responses.
         """
-        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token) or {}
+        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
+        if not headers:
+            return (
+                None,
+                {"status": 401, "message": "Authentication required. Provide github_token or installation_id in the request."},
+            )
         url = f"{config.github.api_base_url}/repos/{repo_full_name}"
         session = await self._get_session()
         async with session.get(url, headers=headers) as response:
@@ -169,16 +174,17 @@ class GitHubClient:
         self, repo_full_name: str, path: str, installation_id: int | None = None, user_token: str | None = None
     ) -> list[dict[str, Any]]:
         """List directory contents using installation or user token (auth required)."""
-        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token) or {}
+        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
+        if not headers:
+            return []
         url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{path}"
         session = await self._get_session()
         async with session.get(url, headers=headers) as response:
             if response.status == 200:
                 data = await response.json()
                 return cast("list[dict[str, Any]]", data if isinstance(data, list) else [data])
-            if response.status == 401:
-                return []
-            # Raise exception for other error statuses to avoid silent failures
+
+            # Raise exception for error statuses to avoid silent failures
             response.raise_for_status()
             return []
 
@@ -192,13 +198,25 @@ class GitHubClient:
     ) -> list[dict[str, Any]]:
         """Get the tree of a repository. Requires authentication (github_token or installation_id)."""
         start = time.monotonic()
-        headers = (
-            await self._get_auth_headers(
-                installation_id=installation_id,
-                user_token=user_token,
-            )
-            or {}
+        headers = await self._get_auth_headers(
+            installation_id=installation_id,
+            user_token=user_token,
         )
+        if not headers:
+            latency_ms = int((time.monotonic() - start) * 1000)
+            logger.info(
+                "get_repository_tree",
+                operation="get_repository_tree",
+                subject_ids={
+                    "repo": repo_full_name,
+                    "installation_id": installation_id,
+                    "user_token_present": bool(user_token),
+                    "ref": ref or "main",
+                },
+                decision="auth_missing",
+                latency_ms=latency_ms,
+            )
+            return []
         ref = ref or "main"
         tree_sha = await self._resolve_tree_sha(repo_full_name, ref, headers)
         if not tree_sha:
@@ -259,14 +277,13 @@ class GitHubClient:
         Fetches the content of a file from a repository. Requires authentication (github_token or installation_id).
         When ref is provided (branch name, tag, or commit SHA), returns content at that ref; otherwise uses default branch.
         """
-        headers = (
-            await self._get_auth_headers(
-                installation_id=installation_id,
-                user_token=user_token,
-                accept="application/vnd.github.raw",
-            )
-            or {}
+        headers = await self._get_auth_headers(
+            installation_id=installation_id,
+            user_token=user_token,
+            accept="application/vnd.github.raw",
         )
+        if not headers:
+            return None
         url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{file_path}"
         params = {"ref": ref} if ref else None
 
