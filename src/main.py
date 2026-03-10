@@ -122,20 +122,20 @@ app.add_middleware(
 
 
 app.include_router(webhook_router, prefix="/webhooks", tags=["GitHub Webhooks"])
-app.include_router(rules_api_router, prefix="/api/v1", tags=["Public API"])
-app.include_router(recommendations_api_router, prefix="/api/v1", tags=["Recommendations API"])
-app.include_router(auth_api_router, prefix="/api/v1", tags=["Authentication API"])
-app.include_router(repos_api_router, prefix="/api/v1", tags=["Repositories API"])
-app.include_router(scheduler_api_router, prefix="/api/v1/scheduler", tags=["Scheduler API"])
+app.include_router(rules_api_router, prefix="/api/v1", tags=["Public"])
+app.include_router(recommendations_api_router, prefix="/api/v1", tags=["Recommendations"])
+app.include_router(auth_api_router, prefix="/api/v1", tags=["Authentication"])
+app.include_router(repos_api_router, prefix="/api/v1", tags=["Repositories"])
+app.include_router(scheduler_api_router, prefix="/api/v1/scheduler", tags=["Scheduler"])
 
 
-@app.get("/", tags=["Health Check"])
+@app.get("/", tags=["Health"])
 async def read_root() -> dict[str, str]:
     """A simple health check endpoint to confirm the service is running."""
     return {"status": "ok", "message": "Watchflow agents are running."}
 
 
-@app.get("/health/tasks", tags=["Health Check"])
+@app.get("/health/tasks", tags=["Health"])
 async def health_tasks() -> dict[str, Any]:
     """Check the status of the task queue."""
     stats = task_queue.get_stats()
@@ -150,7 +150,7 @@ async def health_tasks() -> dict[str, Any]:
     }
 
 
-@app.get("/health/scheduler", tags=["Health Check"])
+@app.get("/health/scheduler", tags=["Health"])
 async def health_scheduler() -> dict[str, Any]:
     """Check the status of the deployment scheduler."""
     return get_deployment_scheduler().get_status()
