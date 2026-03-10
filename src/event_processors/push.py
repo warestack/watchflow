@@ -3,10 +3,13 @@ import time
 from typing import Any
 
 from src.agents import get_agent
+from src.api.recommendations import generate_pr_body_for_suggested_rules, get_suggested_rules_from_repo
+from src.core.config import config
 from src.core.models import Severity, Violation
 from src.core.utils.event_filter import NULL_SHA
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.integrations.github.check_runs import CheckRunManager
+from src.rules.ai_rules_scan import is_relevant_push
 from src.tasks.task_queue import Task
 
 logger = logging.getLogger(__name__)
@@ -70,6 +73,79 @@ class PushProcessor(BaseEventProcessor):
                 api_calls_made=0,
                 processing_time_ms=int((time.time() - start_time) * 1000),
                 error="No installation ID found",
+            )
+
+        # Agentic: scan repo only when relevant (default branch or touched rule files)
+        # Use the branch that was pushed so we scan that branch's file content, not main.
+        if is_relevant_push(task.payload):
+            scan_start = time.time()
+            github_token = await self.github_client.get_installation_access_token(task.installation_id)
+            if not github_token:
+                latency_ms = int((time.time() - scan_start) * 1000)
+                logger.warning(
+                    "suggested_rules_scan",
+                    extra={
+                        "operation": "suggested_rules_scan",
+                        "subject_ids": {"repo": task.repo_full_name, "installation": task.installation_id},
+                        "decision": "skipped",
+                        "latency_ms": latency_ms,
+                        "reason": "No installation token",
+                    },
+                )
+            else:
+                try:
+                    push_ref = payload.get("ref")  # e.g. refs/heads/feature-x
+                    rules_yaml, rules_count, ambiguous, rule_sources = await get_suggested_rules_from_repo(
+                        task.repo_full_name, task.installation_id, github_token, ref=push_ref
+                    )
+                    latency_ms = int((time.time() - scan_start) * 1000)
+                    from_mapping = sum(1 for s in rule_sources if s == "mapping") if rule_sources else 0
+                    from_agent = sum(1 for s in rule_sources if s == "agent") if rule_sources else 0
+                    preview = (rules_yaml[:200] + "…") if rules_yaml and len(rules_yaml) > 200 else (rules_yaml or "")
+                    logger.info(
+                        "suggested_rules_scan",
+                        extra={
+                            "operation": "suggested_rules_scan",
+                            "subject_ids": {"repo": task.repo_full_name, "ref": push_ref or "default"},
+                            "decision": "found" if rules_count > 0 else "none",
+                            "latency_ms": latency_ms,
+                            "rules_count": rules_count,
+                            "ambiguous_count": len(ambiguous),
+                            "from_mapping": from_mapping,
+                            "from_agent": from_agent,
+                            "preview": preview,
+                        },
+                    )
+                    if rules_count > 0:
+                        await self._create_pr_with_suggested_rules(
+                            task=task,
+                            github_token=github_token,
+                            rules_yaml=rules_yaml,
+                            push_sha=payload.get("after") or payload.get("head_commit", {}).get("sha"),
+                            rules_translated=rules_count,
+                            rules_ambiguous=len(ambiguous),
+                        )
+                except Exception as e:
+                    latency_ms = int((time.time() - scan_start) * 1000)
+                    logger.warning(
+                        "Suggested rules scan failed",
+                        extra={
+                            "operation": "suggested_rules_scan",
+                            "subject_ids": {"repo": task.repo_full_name},
+                            "decision": "failure",
+                            "latency_ms": latency_ms,
+                            "error": str(e),
+                        },
+                    )
+        else:
+            logger.info(
+                "suggested_rules_scan",
+                extra={
+                    "operation": "suggested_rules_scan",
+                    "subject_ids": {"repo": task.repo_full_name, "ref": task.payload.get("ref")},
+                    "decision": "skip",
+                    "reason": "Push not relevant",
+                },
             )
 
         rules_optional = await self.rule_provider.get_rules(task.repo_full_name, task.installation_id)
@@ -153,6 +229,183 @@ class PushProcessor(BaseEventProcessor):
         return ProcessingResult(
             success=True, violations=violations, api_calls_made=api_calls, processing_time_ms=processing_time
         )
+
+    async def _create_pr_with_suggested_rules(
+        self,
+        task: Task,
+        github_token: str,
+        rules_yaml: str,
+        push_sha: str | None,
+        rules_translated: int = 0,
+        rules_ambiguous: int = 0,
+    ) -> None:
+        """
+        Self-improving loop: create a branch with proposed .watchflow/rules.yaml and open a PR
+        against the default branch so the team can review the auto-generated rules.
+        Idempotent: skips if rules match default branch; reuses existing open PR/branch with
+        prefix watchflow/update-rules-* instead of creating duplicates.
+        """
+        repo_full_name = task.repo_full_name
+        installation_id = task.installation_id
+        if not installation_id or not push_sha or len(push_sha) < 7:
+            logger.warning("create_pr_skipped: missing installation_id or push_sha for repo %s", repo_full_name)
+            return
+        branch_suffix = push_sha[:7]
+        branch_prefix = "watchflow/update-rules-"
+        pr_title = "Watchflow: proposed rules from AI rule files"
+        file_path = f"{config.repo_config.base_path}/{config.repo_config.rules_file}"
+
+        try:
+            repo_data, repo_error = await self.github_client.get_repository(
+                repo_full_name, installation_id=installation_id, user_token=github_token
+            )
+            if repo_error:
+                logger.warning(
+                    "create_pr_get_repo_failed: repo=%s status=%s message=%s",
+                    repo_full_name,
+                    repo_error.get("status"),
+                    repo_error.get("message"),
+                )
+                return
+            default_branch = repo_data.get("default_branch") or "main"
+
+            # Skip if translated rules already match the current rules file on default branch
+            current_content = await self.github_client.get_file_content(
+                repo_full_name,
+                file_path,
+                installation_id=installation_id,
+                user_token=github_token,
+                ref=default_branch,
+            )
+            if (rules_yaml or "").strip() == (current_content or "").strip():
+                logger.info(
+                    "create_pr_skipped_unchanged: repo=%s rules match default branch",
+                    repo_full_name,
+                )
+                return
+
+            # Reuse existing open PR/branch with same intended update (branch prefix or title)
+            open_prs = await self.github_client.list_pull_requests(
+                repo_full_name,
+                installation_id=installation_id,
+                user_token=github_token,
+                state="open",
+                per_page=50,
+            )
+            existing_pr = None
+            for pr in open_prs:
+                base_ref = (pr.get("base") or {}).get("ref") or ""
+                head_ref = (pr.get("head") or {}).get("ref") or ""
+                title = pr.get("title") or ""
+                if base_ref == default_branch and (head_ref.startswith(branch_prefix) or title == pr_title):
+                    existing_pr = pr
+                    break
+            if existing_pr:
+                existing_branch = (existing_pr.get("head") or {}).get("ref") or ""
+                if existing_branch:
+                    # Update existing branch with new rules content; skip creating new branch/PR
+                    file_result = await self.github_client.create_or_update_file(
+                        repo_full_name,
+                        path=file_path,
+                        content=rules_yaml,
+                        message="chore: update .watchflow/rules.yaml from AI rule files",
+                        branch=existing_branch,
+                        installation_id=installation_id,
+                        user_token=github_token,
+                    )
+                    if file_result:
+                        logger.info(
+                            "create_pr_updated_existing: repo=%s branch=%s pr=%s",
+                            repo_full_name,
+                            existing_branch,
+                            existing_pr.get("number"),
+                        )
+                    else:
+                        logger.warning(
+                            "create_pr_update_existing_failed: repo=%s branch=%s",
+                            repo_full_name,
+                            existing_branch,
+                        )
+                    return
+            branch_name = f"{branch_prefix}{branch_suffix}"
+
+            base_sha = await self.github_client.get_git_ref_sha(
+                repo_full_name, ref=default_branch, installation_id=installation_id, user_token=github_token
+            )
+            if not base_sha:
+                logger.warning("create_pr_no_base_sha: repo=%s base=%s", repo_full_name, default_branch)
+                return
+
+            branch_result = await self.github_client.create_git_ref(
+                repo_full_name,
+                ref=branch_name,
+                sha=base_sha,
+                installation_id=installation_id,
+                user_token=github_token,
+            )
+            if not branch_result:
+                existing_sha = await self.github_client.get_git_ref_sha(
+                    repo_full_name, ref=branch_name, installation_id=installation_id, user_token=github_token
+                )
+                if not existing_sha:
+                    logger.warning("create_pr_branch_failed: repo=%s branch=%s", repo_full_name, branch_name)
+                    return
+                logger.info("create_pr_branch_exists: repo=%s branch=%s", repo_full_name, branch_name)
+
+            file_result = await self.github_client.create_or_update_file(
+                repo_full_name,
+                path=file_path,
+                content=rules_yaml,
+                message="chore: update .watchflow/rules.yaml from AI rule files",
+                branch=branch_name,
+                installation_id=installation_id,
+                user_token=github_token,
+            )
+            if not file_result:
+                logger.warning(
+                    "create_pr_file_failed: repo=%s path=%s branch=%s",
+                    repo_full_name,
+                    file_path,
+                    branch_name,
+                )
+                return
+
+            pr_body = generate_pr_body_for_suggested_rules(
+                repo_full_name=repo_full_name,
+                rules_yaml=rules_yaml,
+                rules_translated=rules_translated,
+                rules_ambiguous=rules_ambiguous,
+                installation_id=installation_id,
+            )
+            pr_result = await self.github_client.create_pull_request(
+                repo_full_name,
+                title="Watchflow: proposed rules from AI rule files",
+                head=branch_name,
+                base=default_branch,
+                body=pr_body,
+                installation_id=installation_id,
+                user_token=github_token,
+            )
+            if not pr_result:
+                logger.warning(
+                    "create_pr_pull_failed: repo=%s head=%s base=%s",
+                    repo_full_name,
+                    branch_name,
+                    default_branch,
+                )
+                return
+            pr_url = pr_result.get("html_url", "")
+            pr_number = pr_result.get("number", 0)
+            logger.info(
+                "create_pr_success: repo=%s pr #%s %s branch=%s base=%s",
+                repo_full_name,
+                pr_number,
+                pr_url,
+                branch_name,
+                default_branch,
+            )
+        except Exception as e:
+            logger.warning("create_pr_with_suggested_rules_failed: repo=%s error=%s", repo_full_name, e)
 
     def _convert_rules_to_new_format(self, rules: list[Any]) -> list[dict[str, Any]]:
         """Convert Rule objects to the new flat schema format."""

@@ -2,13 +2,14 @@ import asyncio
 import base64
 import time
 from typing import Any, cast
+from urllib.parse import quote
 
 import aiohttp
 import httpx
 import jwt
 import structlog
 from cachetools import TTLCache  # type: ignore[import-untyped]
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from src.core.config import config
 from src.core.errors import GitHubGraphQLError
@@ -129,28 +130,54 @@ class GitHubClient:
 
     async def get_repository(
         self, repo_full_name: str, installation_id: int | None = None, user_token: str | None = None
-    ) -> dict[str, Any] | None:
-        """Fetch repository metadata (default branch, language, etc.). Supports public access."""
-        headers = await self._get_auth_headers(
-            installation_id=installation_id, user_token=user_token, allow_anonymous=True
-        )
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        """
+        Fetch repository metadata. Returns (repo_data, None) on success;
+        (None, {"status": int, "message": str}) on failure for meaningful API responses.
+        """
+        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
         if not headers:
-            return None
+            return (
+                None,
+                {
+                    "status": 401,
+                    "message": "Authentication required. Provide github_token or installation_id in the request.",
+                },
+            )
         url = f"{config.github.api_base_url}/repos/{repo_full_name}"
         session = await self._get_session()
         async with session.get(url, headers=headers) as response:
             if response.status == 200:
                 data = await response.json()
-                return cast("dict[str, Any]", data)
-            return None
+                return cast("dict[str, Any]", data), None
+            try:
+                body = await response.json()
+                gh_message = body.get("message", "") if isinstance(body, dict) else ""
+            except Exception:
+                gh_message = ""
+            if response.status == 404:
+                msg = gh_message or "Repository not found or access denied. Check repo name and token permissions."
+                return None, {"status": 404, "message": msg}
+            if response.status == 403:
+                msg = "GitHub API rate limit exceeded. Try again later or provide github_token for higher limits."
+                if gh_message and "rate limit" in gh_message.lower():
+                    msg = gh_message
+                return None, {"status": 403, "message": msg}
+            if response.status == 401:
+                return (
+                    None,
+                    {
+                        "status": 401,
+                        "message": gh_message or "Invalid or expired token. Check github_token or installation_id.",
+                    },
+                )
+            return None, {"status": response.status, "message": gh_message or f"GitHub API returned {response.status}."}
 
     async def list_directory_any_auth(
         self, repo_full_name: str, path: str, installation_id: int | None = None, user_token: str | None = None
     ) -> list[dict[str, Any]]:
-        """List directory contents using either installation or user token."""
-        headers = await self._get_auth_headers(
-            installation_id=installation_id, user_token=user_token, allow_anonymous=True
-        )
+        """List directory contents using installation or user token (auth required)."""
+        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
         if not headers:
             return []
         url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{path}"
@@ -164,24 +191,107 @@ class GitHubClient:
             response.raise_for_status()
             return []
 
+    async def get_repository_tree(
+        self,
+        repo_full_name: str,
+        ref: str | None = None,
+        installation_id: int | None = None,
+        user_token: str | None = None,
+        recursive: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Get the tree of a repository. Requires authentication (github_token or installation_id)."""
+        start = time.monotonic()
+        headers = await self._get_auth_headers(
+            installation_id=installation_id,
+            user_token=user_token,
+        )
+        if not headers:
+            latency_ms = int((time.monotonic() - start) * 1000)
+            logger.info(
+                "get_repository_tree",
+                operation="get_repository_tree",
+                subject_ids={
+                    "repo": repo_full_name,
+                    "installation_id": installation_id,
+                    "user_token_present": bool(user_token),
+                    "ref": ref or "main",
+                },
+                decision="auth_missing",
+                latency_ms=latency_ms,
+            )
+            return []
+        ref = ref or "main"
+        tree_sha = await self._resolve_tree_sha(repo_full_name, ref, headers)
+        if not tree_sha:
+            latency_ms = int((time.monotonic() - start) * 1000)
+            logger.info(
+                "get_repository_tree",
+                operation="get_repository_tree",
+                subject_ids={
+                    "repo": repo_full_name,
+                    "installation_id": installation_id,
+                    "user_token_present": bool(user_token),
+                    "ref": ref,
+                },
+                decision="ref_resolution_failed",
+                latency_ms=latency_ms,
+            )
+            return []
+        url = f"{config.github.api_base_url}/repos/{repo_full_name}/git/trees/{tree_sha}"
+        if recursive:
+            url += "?recursive=1"
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as response:
+            if response.status != 200:
+                latency_ms = int((time.monotonic() - start) * 1000)
+                logger.info(
+                    "get_repository_tree",
+                    operation="get_repository_tree",
+                    subject_ids={"repo": repo_full_name, "ref": ref, "tree_sha": tree_sha},
+                    decision=f"http_error_{response.status}",
+                    latency_ms=latency_ms,
+                )
+                return []
+            data = await response.json()
+            return cast("list[dict[str, Any]]", data.get("tree", []))
+
+    async def _resolve_tree_sha(self, repo_full_name: str, ref: str, headers: dict[str, str]) -> str | None:
+        """Resolve the tree SHA for the given ref (branch, tag, or commit SHA) via the commits API."""
+        session = await self._get_session()
+        ref_encoded = quote(ref, safe="")
+        url = f"{config.github.api_base_url}/repos/{repo_full_name}/commits/{ref_encoded}"
+        async with session.get(url, headers=headers) as response:
+            if response.status != 200:
+                return None
+            commit_data = await response.json()
+        if not isinstance(commit_data, dict):
+            return None
+        return commit_data.get("commit", {}).get("tree", {}).get("sha")
+
     async def get_file_content(
-        self, repo_full_name: str, file_path: str, installation_id: int | None, user_token: str | None = None
+        self,
+        repo_full_name: str,
+        file_path: str,
+        installation_id: int | None,
+        user_token: str | None = None,
+        ref: str | None = None,
     ) -> str | None:
         """
-        Fetches the content of a file from a repository. Supports anonymous access for public analysis.
+        Fetches the content of a file from a repository. Requires authentication (github_token or installation_id).
+        When ref is provided (branch name, tag, or commit SHA), returns content at that ref; otherwise uses default branch.
         """
         headers = await self._get_auth_headers(
             installation_id=installation_id,
             user_token=user_token,
             accept="application/vnd.github.raw",
-            allow_anonymous=True,
         )
         if not headers:
             return None
         url = f"{config.github.api_base_url}/repos/{repo_full_name}/contents/{file_path}"
+        params = {"ref": ref} if ref else None
 
         session = await self._get_session()
-        async with session.get(url, headers=headers) as response:
+        async with session.get(url, headers=headers, params=params) as response:
             if response.status == 200:
                 logger.info(f"Successfully fetched file '{file_path}' from '{repo_full_name}'.")
                 return await response.text()
@@ -1094,6 +1204,38 @@ class GitHubClient:
             )
             return None
 
+    async def create_issue(
+        self,
+        repo_full_name: str,
+        title: str,
+        body: str,
+        installation_id: int | None = None,
+        user_token: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Create a repository issue. Requires Issues: read/write permission."""
+        headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
+        if not headers:
+            logger.error("Failed to get auth headers for create_issue in %s", repo_full_name)
+            return None
+        url = f"{config.github.api_base_url}/repos/{repo_full_name}/issues"
+        payload = {"title": title, "body": body}
+        session = await self._get_session()
+        async with session.post(url, headers=headers, json=payload) as response:
+            if response.status in (200, 201):
+                result = await response.json()
+                issue_number = result.get("number")
+                issue_url = result.get("html_url", "")
+                logger.info("Successfully created issue #%s in %s: %s", issue_number, repo_full_name, issue_url)
+                return cast("dict[str, Any]", result)
+            error_text = await response.text()
+            logger.error(
+                "Failed to create issue in %s. Status: %s, Response: %s",
+                repo_full_name,
+                response.status,
+                error_text,
+            )
+            return None
+
     async def fetch_recent_pull_requests(
         self,
         repo_full_name: str,
@@ -1123,7 +1265,6 @@ class GitHubClient:
             headers = await self._get_auth_headers(
                 installation_id=installation_id,
                 user_token=user_token,
-                allow_anonymous=True,  # Support public repos
             )
             if not headers:
                 logger.error("pr_fetch_auth_failed", repo=repo_full_name, error_type="auth_error")
@@ -1208,7 +1349,11 @@ class GitHubClient:
             logger.error("pr_fetch_unexpected_error", repo=repo_full_name, error_type="unknown_error", error=str(e))
             return []
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    @retry(
+        retry=retry_if_exception_type(aiohttp.ClientError),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+    )
     async def execute_graphql(
         self, query: str, variables: dict[str, Any], user_token: str | None = None, installation_id: int | None = None
     ) -> dict[str, Any]:
@@ -1232,18 +1377,15 @@ class GitHubClient:
         url = f"{config.github.api_base_url}/graphql"
         payload = {"query": query, "variables": variables}
 
-        # Get appropriate headers (can be anonymous for public data or authenticated)
-        # Priority: user_token > installation_id > anonymous (if allowed)
-        headers = await self._get_auth_headers(
-            user_token=user_token, installation_id=installation_id, allow_anonymous=True
-        )
+        # Get appropriate headers (auth required: user_token or installation_id)
+        headers = await self._get_auth_headers(user_token=user_token, installation_id=installation_id)
         if not headers:
             # Fallback or error? GraphQL usually demands auth.
             # If we have no headers, we likely can't query GraphQL successfully for many fields.
             # We'll try with empty headers if that's what _get_auth_headers returns (it returns None on failure).
             # If None, we can't proceed.
             logger.error("GraphQL execution failed: No authentication headers available.")
-            raise Exception("Authentication required for GraphQL query.")
+            raise PermissionError("Authentication required for GraphQL query.")
 
         start_time = time.time()
 

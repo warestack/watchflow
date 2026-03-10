@@ -7,7 +7,7 @@ def test_proceed_with_pr_happy_path(monkeypatch):
     client = TestClient(app)
 
     async def _fake_get_repo(repo_full_name, installation_id=None, user_token=None):
-        return {"default_branch": "main"}
+        return ({"default_branch": "main"}, None)
 
     async def _fake_get_sha(repo_full_name, ref, installation_id=None, user_token=None):
         return "base-sha"

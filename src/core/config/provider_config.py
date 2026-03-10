@@ -40,6 +40,7 @@ class ProviderConfig:
     engine_agent: AgentConfig | None = None
     feasibility_agent: AgentConfig | None = None
     acknowledgment_agent: AgentConfig | None = None
+    extractor_agent: AgentConfig | None = None
 
     def get_model_for_provider(self, provider: str) -> str:
         """Get the appropriate model for the given provider with fallbacks."""
