@@ -1009,24 +1009,29 @@ class GitHubClient:
         Fetches recent commits that touched a specific file path.
         Used to build contributor expertise profiles for reviewer recommendations.
         """
-        token = await self.get_installation_access_token(installation_id)
-        if not token:
-            return []
-
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github.v3+json",
-        }
-        url = f"{config.github.api_base_url}/repos/{repo}/commits?path={file_path}&per_page={min(limit, 100)}"
-
-        session = await self._get_session()
-        async with session.get(url, headers=headers) as response:
-            if response.status == 200:
-                commits = await response.json()
-                return cast("list[dict[str, Any]]", commits)
-            else:
-                logger.warning(f"Failed to get commits for file {file_path} in {repo}. Status: {response.status}")
+        try:
+            token = await self.get_installation_access_token(installation_id)
+            if not token:
                 return []
+
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github.v3+json",
+            }
+            encoded_path = quote(file_path, safe="")
+            url = f"{config.github.api_base_url}/repos/{repo}/commits?path={encoded_path}&per_page={min(limit, 100)}"
+
+            session = await self._get_session()
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    commits = await response.json()
+                    return cast("list[dict[str, Any]]", commits)
+                else:
+                    logger.warning(f"Failed to get commits for file {file_path} in {repo}. Status: {response.status}")
+                    return []
+        except Exception as e:
+            logger.warning(f"Error getting commits for file {file_path} in {repo}: {e}")
+            return []
 
     async def get_user_pull_requests(
         self, repo: str, username: str, installation_id: int, limit: int = 100

@@ -22,12 +22,17 @@ class RiskSignal(BaseModel):
     points: int
 
 
+class RankedReviewer(BaseModel):
+    """A single reviewer entry in the LLM ranking output."""
+
+    username: str = Field(description="GitHub username of the reviewer")
+    reason: str = Field(description="Short explanation of why this reviewer is recommended")
+
+
 class LLMReviewerRanking(BaseModel):
     """Structured output from the LLM reviewer ranking step."""
 
-    ranked_reviewers: list[dict[str, str]] = Field(
-        description="Ordered list of {username, reason} dicts, best match first"
-    )
+    ranked_reviewers: list[RankedReviewer] = Field(description="Ordered list of reviewers, best match first")
     summary: str = Field(description="One-line overall recommendation summary")
 
 

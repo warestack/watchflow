@@ -7,6 +7,7 @@ import structlog
 
 from src.agents.reviewer_recommendation_agent.models import (
     LLMReviewerRanking,
+    RankedReviewer,
     RecommendationState,
     ReviewerCandidate,
     RiskSignal,
@@ -465,7 +466,7 @@ async def recommend_reviewers(state: RecommendationState, llm: object) -> Recomm
         # Fallback: build ranking from scored candidates without LLM
         state.llm_ranking = LLMReviewerRanking(
             ranked_reviewers=[
-                {"username": c.username, "reason": "; ".join(c.reasons[:2]) or "top contributor"}
+                RankedReviewer(username=c.username, reason="; ".join(c.reasons[:2]) or "top contributor")
                 for c in sorted_candidates
             ],
             summary=f"Recommended {len(sorted_candidates)} reviewer(s) based on code ownership and commit history.",
