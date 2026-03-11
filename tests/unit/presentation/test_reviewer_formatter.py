@@ -80,6 +80,12 @@ class TestFormatRiskAssessmentComment:
         comment = format_risk_assessment_comment(_risk_result())
         assert "/reviewers" in comment
 
+    def test_escapes_at_mentions_in_signals(self):
+        signals = [{"label": "First-time contributor", "description": "@newdev is a new contributor", "points": 2}]
+        comment = format_risk_assessment_comment(_risk_result(risk_signals=signals))
+        assert "@newdev" not in comment  # raw mention should be escaped
+        assert "@\u200bnewdev" in comment  # zero-width space breaks the mention
+
     def test_failure_result_shows_error(self):
         bad = AgentResult(success=False, message="GitHub API error", data={})
         comment = format_risk_assessment_comment(bad)

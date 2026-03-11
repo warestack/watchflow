@@ -300,6 +300,11 @@ _RISK_LEVEL_EMOJI = {
 }
 
 
+def _escape_github_mentions(text: str) -> str:
+    """Escape @ mentions in text to avoid unintended GitHub notifications."""
+    return text.replace("@", "@\u200b")  # zero-width space breaks the mention
+
+
 def format_risk_assessment_comment(result: AgentResult) -> str:
     """Format a /risk command response as a GitHub PR comment."""
     if not result.success:
@@ -323,7 +328,9 @@ def format_risk_assessment_comment(result: AgentResult) -> str:
     if risk_signals:
         lines.append("**Risk Signals:**")
         for signal in risk_signals:
-            lines.append(f"- **{signal['label']}** — {signal['description']} (+{signal['points']} pts)")
+            lines.append(
+                f"- **{signal['label']}** — {_escape_github_mentions(signal['description'])} (+{signal['points']} pts)"
+            )
         lines.append("")
     else:
         lines.append("No significant risk signals detected.")
@@ -380,7 +387,7 @@ def format_reviewer_recommendation_comment(result: AgentResult) -> str:
         lines.append("<summary><b>Risk signals considered</b></summary>")
         lines.append("")
         for signal in risk_signals:
-            lines.append(f"- **{signal['label']}**: {signal['description']}")
+            lines.append(f"- **{signal['label']}**: {_escape_github_mentions(signal['description'])}")
         lines.append("")
         lines.append("</details>")
         lines.append("")
