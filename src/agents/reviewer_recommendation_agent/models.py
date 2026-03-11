@@ -50,6 +50,12 @@ class RecommendationState(BaseModel):
     contributors: list[dict[str, Any]] = Field(default_factory=list)
     # file_path -> list of recent committer logins
     file_experts: dict[str, list[str]] = Field(default_factory=dict)
+    # Matched Watchflow rules (description, severity) loaded from .watchflow/rules.yaml
+    matched_rules: list[dict[str, str]] = Field(default_factory=list)
+    # Recent review activity: login -> count of reviews on recent PRs (for load balancing)
+    reviewer_load: dict[str, int] = Field(default_factory=dict)
+    # PR title (for revert detection)
+    pr_title: str = ""
 
     # --- Risk Assessment ---
     risk_score: int = 0

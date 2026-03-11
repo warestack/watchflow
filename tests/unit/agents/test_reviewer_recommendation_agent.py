@@ -4,7 +4,10 @@ Unit tests for the ReviewerRecommendationAgent.
 Covers:
 - Risk scoring logic (assess_risk node)
 - CODEOWNERS parsing helper
+- Watchflow rule matching
 - Reviewer candidate scoring (recommend_reviewers node, pre-LLM)
+- Load balancing penalties
+- Revert / dependency / breaking change detection
 - Agent factory registration
 - AgentResult output shape
 """
@@ -17,6 +20,7 @@ from src.agents.reviewer_recommendation_agent.models import (
     RecommendationState,
 )
 from src.agents.reviewer_recommendation_agent.nodes import (
+    _match_watchflow_rules,
     _parse_codeowners,
     assess_risk,
     recommend_reviewers,
@@ -153,6 +157,81 @@ class TestAssessRisk:
         result = await assess_risk(state)
         assert result.risk_level in ("high", "critical")
 
+    @pytest.mark.asyncio
+    async def test_watchflow_rule_matches_compound_severity(self):
+        state = _make_state(
+            pr_files=["src/main.py"],
+            pr_author_association="MEMBER",
+            matched_rules=[
+                {"description": "No force push", "severity": "critical"},
+                {"description": "Require tests", "severity": "high"},
+            ],
+        )
+        result = await assess_risk(state)
+        assert any("Watchflow rule" in s.label for s in result.risk_signals)
+        # critical=5 + high=3 = 8 points from rules alone
+        rule_signal = next(s for s in result.risk_signals if "Watchflow rule" in s.label)
+        assert rule_signal.points >= 8
+
+    @pytest.mark.asyncio
+    async def test_revert_pr_raises_risk(self):
+        state = _make_state(
+            pr_files=["src/main.py"],
+            pr_title='Revert "Add new feature"',
+            pr_author_association="MEMBER",
+        )
+        result = await assess_risk(state)
+        assert any("Revert" in s.label for s in result.risk_signals)
+
+    @pytest.mark.asyncio
+    async def test_dependency_changes_raises_risk(self):
+        state = _make_state(
+            pr_files=["package.json", "package-lock.json", "src/app.ts"],
+            pr_author_association="MEMBER",
+        )
+        result = await assess_risk(state)
+        assert any("Dependency" in s.label for s in result.risk_signals)
+
+    @pytest.mark.asyncio
+    async def test_breaking_changes_raises_risk(self):
+        state = _make_state(
+            pr_files=["api/v2/users.py", "src/handler.py"],
+            pr_author_association="MEMBER",
+        )
+        result = await assess_risk(state)
+        assert any("breaking" in s.label.lower() for s in result.risk_signals)
+
+
+# ---------------------------------------------------------------------------
+# _match_watchflow_rules
+# ---------------------------------------------------------------------------
+
+
+class TestMatchWatchflowRules:
+    def _make_rule(self, description: str, severity: str, params: dict) -> MagicMock:
+        rule = MagicMock()
+        rule.description = description
+        rule.severity = MagicMock(value=severity)
+        rule.parameters = params
+        rule.event_types = [MagicMock(value="pull_request")]
+        return rule
+
+    def test_path_based_rule_matches(self):
+        rule = self._make_rule("Billing rules", "critical", {"protected_paths": ["src/billing/*"]})
+        result = _match_watchflow_rules([rule], ["src/billing/charge.py", "README.md"])
+        assert len(result) == 1
+        assert result[0]["severity"] == "critical"
+
+    def test_non_path_rule_always_matches_for_pr(self):
+        rule = self._make_rule("Require linked issue", "medium", {"require_linked_issue": True})
+        result = _match_watchflow_rules([rule], ["src/main.py"])
+        assert len(result) == 1
+
+    def test_no_match_for_unrelated_path(self):
+        rule = self._make_rule("Billing rules", "critical", {"protected_paths": ["src/billing/*"]})
+        result = _match_watchflow_rules([rule], ["docs/readme.md"])
+        assert len(result) == 0
+
 
 # ---------------------------------------------------------------------------
 # recommend_reviewers (pre-LLM scoring only, LLM mocked)
@@ -246,6 +325,46 @@ class TestRecommendReviewers:
         mock_llm = self._make_mock_llm([])
         result = await recommend_reviewers(state, mock_llm)
         assert result.llm_ranking is None or result.llm_ranking.ranked_reviewers == []
+
+    @pytest.mark.asyncio
+    async def test_load_balancing_penalizes_overloaded_reviewer(self):
+        state = _make_state(
+            pr_files=["src/utils.py"],
+            pr_author="dev",
+            codeowners_content="src/ @alice @bob",
+            contributors=[],
+            file_experts={},
+            # alice has way more reviews than bob
+            reviewer_load={"alice": 10, "bob": 2, "carol": 3},
+        )
+        mock_llm = self._make_mock_llm(
+            [
+                {"username": "bob", "reason": "less loaded"},
+                {"username": "alice", "reason": "overloaded"},
+            ]
+        )
+        result = await recommend_reviewers(state, mock_llm)
+        alice = next((c for c in result.candidates if c.username == "alice"), None)
+        bob = next((c for c in result.candidates if c.username == "bob"), None)
+        assert alice is not None and bob is not None
+        # Alice's score should be penalized relative to bob's
+        assert alice.score <= bob.score or any("penalty" in r.lower() for r in alice.reasons)
+
+    @pytest.mark.asyncio
+    async def test_high_severity_rules_boost_experienced_candidates(self):
+        state = _make_state(
+            pr_files=["src/billing/charge.py"],
+            pr_author="dev",
+            codeowners_content="src/billing/ @alice",
+            contributors=[],
+            file_experts={"src/billing/charge.py": ["alice"]},
+            matched_rules=[{"description": "Billing critical", "severity": "critical"}],
+        )
+        mock_llm = self._make_mock_llm([{"username": "alice", "reason": "expert"}])
+        result = await recommend_reviewers(state, mock_llm)
+        alice = next((c for c in result.candidates if c.username == "alice"), None)
+        assert alice is not None
+        assert any("critical" in r.lower() or "high" in r.lower() for r in alice.reasons)
 
 
 # ---------------------------------------------------------------------------

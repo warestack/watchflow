@@ -64,6 +64,15 @@ class IssueCommentEventHandler(EventHandler):
                     comment=comment,
                     installation_id=installation_id,
                 )
+                # Apply risk-level label
+                if risk_result.success:
+                    risk_level = risk_result.data.get("risk_level", "low")
+                    await github_client.add_labels_to_issue(
+                        repo=repo,
+                        issue_number=pr_number,
+                        labels=[f"watchflow:risk-{risk_level}"],
+                        installation_id=installation_id,
+                    )
                 logger.info(f"📊 Posted risk assessment for PR #{pr_number}.")
                 return WebhookResponse(status="ok")
 
@@ -92,6 +101,15 @@ class IssueCommentEventHandler(EventHandler):
                     comment=comment,
                     installation_id=installation_id,
                 )
+                # Apply labels: risk level + reviewer-recommendation
+                if reviewer_result.success:
+                    risk_level = reviewer_result.data.get("risk_level", "low")
+                    await github_client.add_labels_to_issue(
+                        repo=repo,
+                        issue_number=pr_number,
+                        labels=[f"watchflow:risk-{risk_level}", "watchflow:reviewer-recommendation"],
+                        installation_id=installation_id,
+                    )
                 logger.info(f"👥 Posted reviewer recommendations for PR #{pr_number}.")
                 return WebhookResponse(status="ok")
 

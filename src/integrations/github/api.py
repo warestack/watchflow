@@ -491,6 +491,32 @@ class GitHubClient:
         except Exception:
             return {}
 
+    async def add_labels_to_issue(
+        self, repo: str, issue_number: int, labels: list[str], installation_id: int
+    ) -> list[dict[str, Any]]:
+        """Add labels to an issue or pull request (PRs are issues in GitHub API)."""
+        try:
+            token = await self.get_installation_access_token(installation_id)
+            if not token:
+                return []
+
+            headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+            url = f"{config.github.api_base_url}/repos/{repo}/issues/{issue_number}/labels"
+            data = {"labels": labels}
+
+            session = await self._get_session()
+            async with session.post(url, headers=headers, json=data) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    logger.info(f"Added labels {labels} to #{issue_number} in {repo}")
+                    return cast("list[dict[str, Any]]", result)
+                else:
+                    logger.warning(f"Failed to add labels to #{issue_number} in {repo}. Status: {response.status}")
+                    return []
+        except Exception as e:
+            logger.warning(f"Error adding labels to #{issue_number} in {repo}: {e}")
+            return []
+
     async def create_pull_request_comment(
         self, repo: str, pr_number: int, comment: str, installation_id: int
     ) -> dict[str, Any]:

@@ -80,11 +80,12 @@ class TestRiskCommand:
     @pytest.mark.asyncio
     @patch("src.webhooks.handlers.issue_comment.get_agent")
     @patch("src.webhooks.handlers.issue_comment.github_client")
-    async def test_risk_command_posts_comment(self, mock_gh, mock_get_agent):
+    async def test_risk_command_posts_comment_and_labels(self, mock_gh, mock_get_agent):
         mock_agent = MagicMock()
         mock_agent.execute = AsyncMock(return_value=_MOCK_AGENT_RESULT)
         mock_get_agent.return_value = mock_agent
         mock_gh.create_pull_request_comment = AsyncMock(return_value={})
+        mock_gh.add_labels_to_issue = AsyncMock(return_value=[])
 
         response = await self.handler.handle(_make_event("/risk"))
 
@@ -96,6 +97,10 @@ class TestRiskCommand:
         posted_body = mock_gh.create_pull_request_comment.call_args.kwargs["comment"]
         assert "Risk Assessment" in posted_body
         assert "High" in posted_body
+        # Verify label is applied
+        mock_gh.add_labels_to_issue.assert_called_once_with(
+            repo="owner/repo", issue_number=42, labels=["watchflow:risk-high"], installation_id=99
+        )
 
     @pytest.mark.asyncio
     @patch("src.webhooks.handlers.issue_comment.get_agent")
@@ -128,11 +133,12 @@ class TestReviewersCommand:
     @pytest.mark.asyncio
     @patch("src.webhooks.handlers.issue_comment.get_agent")
     @patch("src.webhooks.handlers.issue_comment.github_client")
-    async def test_reviewers_command_posts_comment(self, mock_gh, mock_get_agent):
+    async def test_reviewers_command_posts_comment_and_labels(self, mock_gh, mock_get_agent):
         mock_agent = MagicMock()
         mock_agent.execute = AsyncMock(return_value=_MOCK_AGENT_RESULT)
         mock_get_agent.return_value = mock_agent
         mock_gh.create_pull_request_comment = AsyncMock(return_value={})
+        mock_gh.add_labels_to_issue = AsyncMock(return_value=[])
 
         response = await self.handler.handle(_make_event("/reviewers"))
 
@@ -142,6 +148,13 @@ class TestReviewersCommand:
         posted_body = mock_gh.create_pull_request_comment.call_args.kwargs["comment"]
         assert "Reviewer Recommendation" in posted_body
         assert "@alice" in posted_body
+        # Verify labels are applied (risk level + reviewer-recommendation)
+        mock_gh.add_labels_to_issue.assert_called_once_with(
+            repo="owner/repo",
+            issue_number=42,
+            labels=["watchflow:risk-high", "watchflow:reviewer-recommendation"],
+            installation_id=99,
+        )
 
     @pytest.mark.asyncio
     @patch("src.webhooks.handlers.issue_comment.get_agent")
@@ -151,6 +164,7 @@ class TestReviewersCommand:
         mock_agent.execute = AsyncMock(return_value=_MOCK_AGENT_RESULT)
         mock_get_agent.return_value = mock_agent
         mock_gh.create_pull_request_comment = AsyncMock(return_value={})
+        mock_gh.add_labels_to_issue = AsyncMock(return_value=[])
 
         response = await self.handler.handle(_make_event("/reviewers --force"))
 
