@@ -27,14 +27,14 @@ class IssueCommentEventHandler(EventHandler):
         return event.event_type == EventType.ISSUE_COMMENT
 
     def _is_on_cooldown(self, repo: str, pr_number: int, command: str) -> bool:
-        """Return True if the same slash command was run recently (prevents spam)."""
+        """Return True if the same slash command was run recently (prevents spam). Does not mutate state."""
         key = (repo, pr_number, command)
-        now = time.monotonic()
         last = _COMMAND_COOLDOWN.get(key)
-        if last is not None and now - last < _COOLDOWN_SECONDS:
-            return True
-        _COMMAND_COOLDOWN[key] = now
-        return False
+        return last is not None and time.monotonic() - last < _COOLDOWN_SECONDS
+
+    def _mark_cooldown(self, repo: str, pr_number: int, command: str) -> None:
+        """Record that a slash command was successfully executed now."""
+        _COMMAND_COOLDOWN[(repo, pr_number, command)] = time.monotonic()
 
     async def handle(self, event: WebhookEvent) -> WebhookResponse:
         """Handle issue comment events."""
@@ -93,6 +93,7 @@ class IssueCommentEventHandler(EventHandler):
                         installation_id=installation_id,
                     )
                 logger.info(f"📊 Posted risk assessment for PR #{pr_number}.")
+                self._mark_cooldown(repo, pr_number, "risk")
                 return WebhookResponse(status="ok")
 
             # /reviewers — recommend reviewers based on ownership + expertise.
@@ -137,6 +138,7 @@ class IssueCommentEventHandler(EventHandler):
                         installation_id=installation_id,
                     )
                 logger.info(f"👥 Posted reviewer recommendations for PR #{pr_number}.")
+                self._mark_cooldown(repo, pr_number, "reviewers")
                 return WebhookResponse(status="ok")
 
             # Help command—user likely lost/confused.
