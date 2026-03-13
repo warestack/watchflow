@@ -1,6 +1,7 @@
 import logging
 from typing import Any
 
+from src.agents.base import AgentResult
 from src.core.models import Acknowledgment, Severity, Violation
 
 logger = logging.getLogger(__name__)
@@ -288,6 +289,113 @@ def format_violations_for_check_run(violations: list[Violation]) -> str:
         message = violation.message
         lines.append(f"• **{rule_description}** - {message}")
 
+    return "\n".join(lines)
+
+
+_RISK_LEVEL_EMOJI = {
+    "low": "🟢",
+    "medium": "🟡",
+    "high": "🟠",
+    "critical": "🔴",
+}
+
+
+def _escape_github_mentions(text: str) -> str:
+    """Escape @ mentions in text to avoid unintended GitHub notifications."""
+    return text.replace("@", "@\u200b")  # zero-width space breaks the mention
+
+
+def format_risk_assessment_comment(result: AgentResult) -> str:
+    """Format a /risk command response as a GitHub PR comment."""
+    if not result.success:
+        return f"### 🛡️ Watchflow: Risk Assessment\n\n❌ Could not assess risk: {result.message}"
+
+    data = result.data
+    risk_level: str = data.get("risk_level", "unknown")
+    risk_score: int = data.get("risk_score", 0)
+    risk_signals: list[dict[str, Any]] = data.get("risk_signals", [])
+    files_count: int = data.get("pr_files_count", 0)
+    emoji = _RISK_LEVEL_EMOJI.get(risk_level, "⚪")
+
+    lines = [
+        "### 🛡️ Watchflow: Risk Assessment",
+        "",
+        f"**Risk Level:** {emoji} {risk_level.title()} (score: {risk_score})  ",
+        f"**Files Changed:** {files_count}",
+        "",
+    ]
+
+    if risk_signals:
+        lines.append("**Risk Signals:**")
+        for signal in risk_signals:
+            lines.append(
+                f"- **{signal['label']}** — {_escape_github_mentions(signal['description'])} (+{signal['points']} pts)"
+            )
+        lines.append("")
+    else:
+        lines.append("No significant risk signals detected.")
+        lines.append("")
+
+    lines += [
+        "---",
+        "*Run `/reviewers` to get reviewer suggestions based on this risk assessment.*",
+        "*Powered by [Watchflow](https://watchflow.dev)*",
+    ]
+    return "\n".join(lines)
+
+
+def format_reviewer_recommendation_comment(result: AgentResult) -> str:
+    """Format a /reviewers command response as a GitHub PR comment."""
+    if not result.success:
+        return f"### 👥 Watchflow: Reviewer Recommendation\n\n❌ Could not generate recommendations: {result.message}"
+
+    data = result.data
+    risk_level: str = data.get("risk_level", "unknown")
+    files_count: int = data.get("pr_files_count", 0)
+    llm_ranking: dict[str, Any] | None = data.get("llm_ranking")
+    emoji = _RISK_LEVEL_EMOJI.get(risk_level, "⚪")
+
+    lines = [
+        "### 👥 Watchflow: Reviewer Recommendation",
+        "",
+        f"**Risk:** {emoji} {risk_level.title()} ({files_count} files changed)",
+        "",
+    ]
+
+    if llm_ranking and llm_ranking.get("ranked_reviewers"):
+        lines.append("**Recommended:**")
+        for i, reviewer in enumerate(llm_ranking["ranked_reviewers"], 1):
+            username = reviewer.get("username", "")
+            reason = reviewer.get("reason", "")
+            lines.append(f"{i}. @{username} — {reason}")
+        lines.append("")
+
+        summary = llm_ranking.get("summary", "")
+        if summary:
+            lines.append(f"**Summary:** {summary}")
+            lines.append("")
+    else:
+        lines.append(
+            "No reviewer candidates found. Ensure CODEOWNERS is configured or the repository has contributors."
+        )
+        lines.append("")
+
+    # Risk signals as reasoning
+    risk_signals: list[dict[str, Any]] = data.get("risk_signals", [])
+    if risk_signals:
+        lines.append("<details>")
+        lines.append("<summary><b>Risk signals considered</b></summary>")
+        lines.append("")
+        for signal in risk_signals:
+            lines.append(f"- **{signal['label']}**: {_escape_github_mentions(signal['description'])}")
+        lines.append("")
+        lines.append("</details>")
+        lines.append("")
+
+    lines += [
+        "---",
+        "*Powered by [Watchflow](https://watchflow.dev)*",
+    ]
     return "\n".join(lines)
 
 

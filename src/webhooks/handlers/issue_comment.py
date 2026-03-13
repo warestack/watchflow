@@ -1,5 +1,6 @@
 import logging
 import re
+import time
 
 from src.agents import get_agent
 from src.core.models import EventType, WebhookEvent
@@ -9,6 +10,10 @@ from src.tasks.task_queue import task_queue
 from src.webhooks.handlers.base import EventHandler, WebhookResponse
 
 logger = logging.getLogger(__name__)
+
+# Simple in-memory cooldown for slash commands: (repo, pr_number, command) -> timestamp
+_COMMAND_COOLDOWN: dict[tuple[str, int, str], float] = {}
+_COOLDOWN_SECONDS = 30  # minimum seconds between identical slash commands
 
 
 class IssueCommentEventHandler(EventHandler):
@@ -20,6 +25,16 @@ class IssueCommentEventHandler(EventHandler):
 
     async def can_handle(self, event: WebhookEvent) -> bool:
         return event.event_type == EventType.ISSUE_COMMENT
+
+    def _is_on_cooldown(self, repo: str, pr_number: int, command: str) -> bool:
+        """Return True if the same slash command was run recently (prevents spam). Does not mutate state."""
+        key = (repo, pr_number, command)
+        last = _COMMAND_COOLDOWN.get(key)
+        return last is not None and time.monotonic() - last < _COOLDOWN_SECONDS
+
+    def _mark_cooldown(self, repo: str, pr_number: int, command: str) -> None:
+        """Record that a slash command was successfully executed now."""
+        _COMMAND_COOLDOWN[(repo, pr_number, command)] = time.monotonic()
 
     async def handle(self, event: WebhookEvent) -> WebhookResponse:
         """Handle issue comment events."""
@@ -39,6 +54,93 @@ class IssueCommentEventHandler(EventHandler):
 
             logger.info(f"👤 Processing comment from human user: {commenter}")
 
+            # /risk — show PR risk breakdown.
+            if self._is_risk_comment(comment_body):
+                pr_number = (
+                    event.payload.get("issue", {}).get("number")
+                    or event.payload.get("pull_request", {}).get("number")
+                    or event.payload.get("number")
+                )
+                if not pr_number:
+                    return WebhookResponse(status="ignored", detail="Could not determine PR number")
+
+                if self._is_on_cooldown(repo, pr_number, "risk"):
+                    logger.info(f"Slash command /risk on cooldown for PR #{pr_number}")
+                    return WebhookResponse(status="ignored", detail="Command on cooldown")
+
+                agent = get_agent("reviewer_recommendation")
+                risk_result = await agent.execute(
+                    repo_full_name=repo,
+                    pr_number=pr_number,
+                    installation_id=installation_id,
+                )
+                from src.presentation.github_formatter import format_risk_assessment_comment
+
+                comment = format_risk_assessment_comment(risk_result)
+                await github_client.create_pull_request_comment(
+                    repo=repo,
+                    pr_number=pr_number,
+                    comment=comment,
+                    installation_id=installation_id,
+                )
+                # Apply risk-level label
+                if risk_result.success:
+                    risk_level = risk_result.data.get("risk_level", "low")
+                    await github_client.add_labels_to_issue(
+                        repo=repo,
+                        issue_number=pr_number,
+                        labels=[f"watchflow:risk-{risk_level}"],
+                        installation_id=installation_id,
+                    )
+                logger.info(f"📊 Posted risk assessment for PR #{pr_number}.")
+                self._mark_cooldown(repo, pr_number, "risk")
+                return WebhookResponse(status="ok")
+
+            # /reviewers — recommend reviewers based on ownership + expertise.
+            if self._is_reviewers_comment(comment_body):
+                pr_number = (
+                    event.payload.get("issue", {}).get("number")
+                    or event.payload.get("pull_request", {}).get("number")
+                    or event.payload.get("number")
+                )
+                if not pr_number:
+                    return WebhookResponse(status="ignored", detail="Could not determine PR number")
+
+                force = "--force" in comment_body
+
+                # --force skips cooldown; otherwise apply rate limiting
+                if not force and self._is_on_cooldown(repo, pr_number, "reviewers"):
+                    logger.info(f"Slash command /reviewers on cooldown for PR #{pr_number}")
+                    return WebhookResponse(status="ignored", detail="Command on cooldown")
+
+                agent = get_agent("reviewer_recommendation")
+                reviewer_result = await agent.execute(
+                    repo_full_name=repo,
+                    pr_number=pr_number,
+                    installation_id=installation_id,
+                )
+                from src.presentation.github_formatter import format_reviewer_recommendation_comment
+
+                comment = format_reviewer_recommendation_comment(reviewer_result)
+                await github_client.create_pull_request_comment(
+                    repo=repo,
+                    pr_number=pr_number,
+                    comment=comment,
+                    installation_id=installation_id,
+                )
+                # Apply labels: risk level + reviewer-recommendation
+                if reviewer_result.success:
+                    risk_level = reviewer_result.data.get("risk_level", "low")
+                    await github_client.add_labels_to_issue(
+                        repo=repo,
+                        issue_number=pr_number,
+                        labels=[f"watchflow:risk-{risk_level}", "watchflow:reviewer-recommendation"],
+                        installation_id=installation_id,
+                    )
+                logger.info(f"👥 Posted reviewer recommendations for PR #{pr_number}.")
+                self._mark_cooldown(repo, pr_number, "reviewers")
+                return WebhookResponse(status="ok")
+
             # Help command—user likely lost/confused.
             if self._is_help_comment(comment_body):
                 help_message = (
@@ -47,6 +149,9 @@ class IssueCommentEventHandler(EventHandler):
                     '- @watchflow ack "reason" — Short form for acknowledge.\n'
                     '- @watchflow evaluate "rule description" — Evaluate the feasibility of a rule.\n'
                     "- @watchflow validate — Validate the .watchflow/rules.yaml file.\n"
+                    "- /risk — Show PR risk assessment (size, sensitive paths, contributor signals).\n"
+                    "- /reviewers — Recommend reviewers based on code ownership and expertise.\n"
+                    "- /reviewers --force — Re-run reviewer recommendation.\n"
                     "- @watchflow help — Show this help message.\n"
                 )
                 logger.info("ℹ️ Responding to help command.")
@@ -207,3 +312,11 @@ class IssueCommentEventHandler(EventHandler):
         ]
         # Pythonic: use any() for pattern match—cleaner, faster.
         return any(re.search(pattern, comment_body, re.IGNORECASE) for pattern in patterns)
+
+    def _is_risk_comment(self, comment_body: str) -> bool:
+        return re.search(r"^/risk\s*$", comment_body.strip(), re.IGNORECASE | re.MULTILINE) is not None
+
+    def _is_reviewers_comment(self, comment_body: str) -> bool:
+        return (
+            re.search(r"^/reviewers(\s+--force)?\s*$", comment_body.strip(), re.IGNORECASE | re.MULTILINE) is not None
+        )
