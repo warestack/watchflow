@@ -76,6 +76,7 @@ class TestSlashCommandDetection:
 
 class TestRiskCommand:
     def setup_method(self):
+        ic_module._COMMAND_COOLDOWN.clear()
         self.handler = IssueCommentEventHandler()
 
     @pytest.mark.asyncio
@@ -129,6 +130,7 @@ class TestRiskCommand:
 
 class TestReviewersCommand:
     def setup_method(self):
+        ic_module._COMMAND_COOLDOWN.clear()
         self.handler = IssueCommentEventHandler()
 
     @pytest.mark.asyncio
