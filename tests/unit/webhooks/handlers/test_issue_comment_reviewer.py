@@ -8,6 +8,7 @@ import pytest
 
 from src.agents.base import AgentResult
 from src.core.models import EventType, WebhookEvent
+from src.webhooks.handlers import issue_comment as ic_module
 from src.webhooks.handlers.issue_comment import IssueCommentEventHandler
 
 
@@ -182,3 +183,53 @@ class TestReviewersCommand:
 
         assert response.status == "ignored"
         mock_get_agent.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Cooldown / rate limiting
+# ---------------------------------------------------------------------------
+
+
+class TestSlashCommandCooldown:
+    def setup_method(self):
+        self.handler = IssueCommentEventHandler()
+        # Clear cooldown state between tests
+        ic_module._COMMAND_COOLDOWN.clear()
+
+    @pytest.mark.asyncio
+    @patch("src.webhooks.handlers.issue_comment.get_agent")
+    @patch("src.webhooks.handlers.issue_comment.github_client")
+    async def test_risk_cooldown_blocks_repeated_calls(self, mock_gh, mock_get_agent):
+        mock_agent = MagicMock()
+        mock_agent.execute = AsyncMock(return_value=_MOCK_AGENT_RESULT)
+        mock_get_agent.return_value = mock_agent
+        mock_gh.create_pull_request_comment = AsyncMock(return_value={})
+        mock_gh.add_labels_to_issue = AsyncMock(return_value=[])
+
+        # First call succeeds
+        response = await self.handler.handle(_make_event("/risk"))
+        assert response.status == "ok"
+
+        # Second call within cooldown is ignored
+        response = await self.handler.handle(_make_event("/risk"))
+        assert response.status == "ignored"
+        assert "cooldown" in response.detail.lower()
+
+    @pytest.mark.asyncio
+    @patch("src.webhooks.handlers.issue_comment.get_agent")
+    @patch("src.webhooks.handlers.issue_comment.github_client")
+    async def test_reviewers_force_bypasses_cooldown(self, mock_gh, mock_get_agent):
+        mock_agent = MagicMock()
+        mock_agent.execute = AsyncMock(return_value=_MOCK_AGENT_RESULT)
+        mock_get_agent.return_value = mock_agent
+        mock_gh.create_pull_request_comment = AsyncMock(return_value={})
+        mock_gh.add_labels_to_issue = AsyncMock(return_value=[])
+
+        # First call succeeds
+        response = await self.handler.handle(_make_event("/reviewers"))
+        assert response.status == "ok"
+
+        # --force bypasses cooldown
+        response = await self.handler.handle(_make_event("/reviewers --force"))
+        assert response.status == "ok"
+        assert mock_agent.execute.call_count == 2

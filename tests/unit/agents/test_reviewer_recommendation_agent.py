@@ -426,3 +426,101 @@ class TestReviewerRecommendationAgentExecute:
         result = await agent.execute(repo_full_name="owner/repo", pr_number=1, installation_id=42)
         assert result.success is False
         assert "timed out" in result.message.lower()
+
+
+# ---------------------------------------------------------------------------
+# Rules-first risk scoring: hardcoded patterns are fallback only
+# ---------------------------------------------------------------------------
+
+
+class TestRulesFirstRiskScoring:
+    @pytest.mark.asyncio
+    async def test_hardcoded_patterns_skipped_when_rules_exist(self):
+        """When matched_rules exist, sensitive path / dependency / breaking patterns are not used."""
+        state = _make_state(
+            pr_files=["src/auth/login.py", "config/prod.yaml", "package.json", "api/v2/users.py"],
+            pr_additions=10,
+            pr_deletions=5,
+            pr_author_association="MEMBER",
+            matched_rules=[{"description": "Protect auth", "severity": "critical"}],
+        )
+        result = await assess_risk(state)
+        labels = [s.label for s in result.risk_signals]
+        assert "Watchflow rule matches" in labels
+        assert "Security-sensitive paths" not in labels
+        assert "Dependency changes" not in labels
+        assert "Potential breaking changes" not in labels
+
+    @pytest.mark.asyncio
+    async def test_hardcoded_patterns_used_as_fallback_when_no_rules(self):
+        """When no matched_rules, hardcoded patterns provide risk signals."""
+        state = _make_state(
+            pr_files=["src/auth/login.py", "package.json"],
+            pr_additions=10,
+            pr_deletions=5,
+            pr_author_association="MEMBER",
+            matched_rules=[],
+        )
+        result = await assess_risk(state)
+        labels = [s.label for s in result.risk_signals]
+        assert "Watchflow rule matches" not in labels
+        assert "Security-sensitive paths" in labels
+        assert "Dependency changes" in labels
+
+
+# ---------------------------------------------------------------------------
+# Edge case: repo with no commit history
+# ---------------------------------------------------------------------------
+
+
+class TestNoCommitHistory:
+    @pytest.mark.asyncio
+    async def test_no_file_experts_still_recommends(self):
+        """Repo with no commit history should still produce candidates from CODEOWNERS/contributors."""
+        state = _make_state(
+            pr_files=["src/main.py"],
+            pr_author="dev",
+            codeowners_content="src/ @alice",
+            contributors=[{"login": "bob", "contributions": 50}],
+            file_experts={},
+            pr_author_association="MEMBER",
+        )
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(
+            return_value=MagicMock(
+                ranked_reviewers=[MagicMock(username="alice", reason="owner")],
+                summary="ok",
+            )
+        )
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        result = await recommend_reviewers(state, mock_llm)
+        assert len(result.candidates) > 0
+        assert any(c.username == "alice" for c in result.candidates)
+
+    @pytest.mark.asyncio
+    async def test_no_experts_no_codeowners_uses_contributors(self):
+        """No commit history and no CODEOWNERS: falls back to top repo contributors."""
+        state = _make_state(
+            pr_files=["src/main.py"],
+            pr_author="dev",
+            codeowners_content=None,
+            contributors=[{"login": "alice", "contributions": 100}, {"login": "bob", "contributions": 50}],
+            file_experts={},
+            pr_author_association="MEMBER",
+        )
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(
+            return_value=MagicMock(
+                ranked_reviewers=[MagicMock(username="alice", reason="contributor")],
+                summary="ok",
+            )
+        )
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        result = await recommend_reviewers(state, mock_llm)
+        assert len(result.candidates) > 0
+        usernames = [c.username for c in result.candidates]
+        assert "alice" in usernames or "bob" in usernames

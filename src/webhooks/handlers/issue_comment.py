@@ -1,5 +1,6 @@
 import logging
 import re
+import time
 
 from src.agents import get_agent
 from src.core.models import EventType, WebhookEvent
@@ -9,6 +10,10 @@ from src.tasks.task_queue import task_queue
 from src.webhooks.handlers.base import EventHandler, WebhookResponse
 
 logger = logging.getLogger(__name__)
+
+# Simple in-memory cooldown for slash commands: (repo, pr_number, command) -> timestamp
+_COMMAND_COOLDOWN: dict[tuple[str, int, str], float] = {}
+_COOLDOWN_SECONDS = 30  # minimum seconds between identical slash commands
 
 
 class IssueCommentEventHandler(EventHandler):
@@ -20,6 +25,16 @@ class IssueCommentEventHandler(EventHandler):
 
     async def can_handle(self, event: WebhookEvent) -> bool:
         return event.event_type == EventType.ISSUE_COMMENT
+
+    def _is_on_cooldown(self, repo: str, pr_number: int, command: str) -> bool:
+        """Return True if the same slash command was run recently (prevents spam)."""
+        key = (repo, pr_number, command)
+        now = time.monotonic()
+        last = _COMMAND_COOLDOWN.get(key)
+        if last is not None and now - last < _COOLDOWN_SECONDS:
+            return True
+        _COMMAND_COOLDOWN[key] = now
+        return False
 
     async def handle(self, event: WebhookEvent) -> WebhookResponse:
         """Handle issue comment events."""
@@ -48,6 +63,10 @@ class IssueCommentEventHandler(EventHandler):
                 )
                 if not pr_number:
                     return WebhookResponse(status="ignored", detail="Could not determine PR number")
+
+                if self._is_on_cooldown(repo, pr_number, "risk"):
+                    logger.info(f"Slash command /risk on cooldown for PR #{pr_number}")
+                    return WebhookResponse(status="ignored", detail="Command on cooldown")
 
                 agent = get_agent("reviewer_recommendation")
                 risk_result = await agent.execute(
@@ -85,6 +104,13 @@ class IssueCommentEventHandler(EventHandler):
                 )
                 if not pr_number:
                     return WebhookResponse(status="ignored", detail="Could not determine PR number")
+
+                force = "--force" in comment_body
+
+                # --force skips cooldown; otherwise apply rate limiting
+                if not force and self._is_on_cooldown(repo, pr_number, "reviewers"):
+                    logger.info(f"Slash command /reviewers on cooldown for PR #{pr_number}")
+                    return WebhookResponse(status="ignored", detail="Command on cooldown")
 
                 agent = get_agent("reviewer_recommendation")
                 reviewer_result = await agent.execute(

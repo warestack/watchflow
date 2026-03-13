@@ -1,5 +1,6 @@
 # File: src/agents/reviewer_recommendation_agent/nodes.py
 
+import asyncio
 import re
 from typing import Any
 
@@ -206,17 +207,28 @@ async def fetch_pr_data(state: RecommendationState) -> RecommendationState:
         logger.info("watchflow_rules_not_loaded", reason=str(e))
         state.matched_rules = []
 
-    # Expertise: fetch recent committers for the top 8 changed files
+    # Expertise: fetch recent committers for the top 8 changed files (batched with semaphore)
     file_experts: dict[str, list[str]] = {}
-    for file_path in state.pr_files[:8]:
-        commits = await github_client.get_commits_for_file(repo, file_path, installation_id, limit=15)
+    sem = asyncio.Semaphore(3)  # limit concurrent GitHub API calls to avoid rate limits
+
+    async def _fetch_experts(fp: str) -> tuple[str, list[str]]:
+        async with sem:
+            commits = await github_client.get_commits_for_file(repo, fp, installation_id, limit=15)
         authors = []
         for c in commits:
             login = c.get("author", {}).get("login", "") if c.get("author") else ""
             if login and login not in authors:
                 authors.append(login)
+        return fp, authors
+
+    results = await asyncio.gather(*[_fetch_experts(fp) for fp in state.pr_files[:8]], return_exceptions=True)
+    for res in results:
+        if isinstance(res, Exception):
+            logger.warning("file_expert_fetch_failed", error=str(res))
+            continue
+        fp, authors = res
         if authors:
-            file_experts[file_path] = authors
+            file_experts[fp] = authors
     state.file_experts = file_experts
 
     # Load balancing: fetch recent merged PRs and count review activity per reviewer
@@ -248,8 +260,11 @@ async def assess_risk(state: RecommendationState) -> RecommendationState:
     signals: list[RiskSignal] = []
     score = 0
 
-    # --- Watchflow rule matches (highest-priority signal) ---
-    if state.matched_rules:
+    # --- Rules-first approach: use Watchflow rules as primary risk source ---
+    # Hardcoded pattern matching is only used as fallback when no rules exist.
+    has_rules = bool(state.matched_rules)
+
+    if has_rules:
         rule_score = 0
         for rule_match in state.matched_rules:
             severity = rule_match.get("severity", "medium")
@@ -286,24 +301,54 @@ async def assess_risk(state: RecommendationState) -> RecommendationState:
         )
         score += 1
 
-    # --- Sensitive paths (fallback when no Watchflow rules matched sensitive paths) ---
-    sensitive_hits: list[str] = []
-    for file_path in state.pr_files:
-        for pattern in _SENSITIVE_PATH_PATTERNS:
-            if re.search(pattern, file_path, re.IGNORECASE):
-                sensitive_hits.append(file_path)
-                break
+    # --- Fallback pattern matching (only when no Watchflow rules exist) ---
+    if not has_rules:
+        # Sensitive paths
+        sensitive_hits: list[str] = []
+        for file_path in state.pr_files:
+            for pattern in _SENSITIVE_PATH_PATTERNS:
+                if re.search(pattern, file_path, re.IGNORECASE):
+                    sensitive_hits.append(file_path)
+                    break
 
-    if sensitive_hits:
-        pts = min(len(sensitive_hits), 5)
-        signals.append(
-            RiskSignal(
-                label="Security-sensitive paths",
-                description=f"Changes to: {', '.join(sensitive_hits[:5])}",
-                points=pts,
+        if sensitive_hits:
+            pts = min(len(sensitive_hits), 5)
+            signals.append(
+                RiskSignal(
+                    label="Security-sensitive paths",
+                    description=f"Changes to: {', '.join(sensitive_hits[:5])}",
+                    points=pts,
+                )
             )
-        )
-        score += pts
+            score += pts
+
+        # Dependency changes
+        dep_files = [
+            f for f in state.pr_files if any(re.search(p, f, re.IGNORECASE) for p in _DEPENDENCY_FILE_PATTERNS)
+        ]
+        if dep_files:
+            signals.append(
+                RiskSignal(
+                    label="Dependency changes",
+                    description=f"Modified: {', '.join(dep_files[:3])}",
+                    points=2,
+                )
+            )
+            score += 2
+
+        # Breaking changes (public API / migrations)
+        breaking_hits = [
+            f for f in state.pr_files if any(re.search(p, f, re.IGNORECASE) for p in _BREAKING_CHANGE_PATTERNS)
+        ]
+        if breaking_hits:
+            signals.append(
+                RiskSignal(
+                    label="Potential breaking changes",
+                    description=f"Modified: {', '.join(breaking_hits[:3])}",
+                    points=3,
+                )
+            )
+            score += 3
 
     # --- Test coverage ---
     has_test_files = any(re.search(r"test|spec", f, re.IGNORECASE) for f in state.pr_files)
@@ -323,32 +368,6 @@ async def assess_risk(state: RecommendationState) -> RecommendationState:
     if state.pr_title and re.search(r"^revert", state.pr_title, re.IGNORECASE):
         signals.append(RiskSignal(label="Revert PR", description="This PR reverts previous changes", points=2))
         score += 2
-
-    # --- Dependency changes ---
-    dep_files = [f for f in state.pr_files if any(re.search(p, f, re.IGNORECASE) for p in _DEPENDENCY_FILE_PATTERNS)]
-    if dep_files:
-        signals.append(
-            RiskSignal(
-                label="Dependency changes",
-                description=f"Modified: {', '.join(dep_files[:3])}",
-                points=2,
-            )
-        )
-        score += 2
-
-    # --- Breaking changes (public API / migrations) ---
-    breaking_hits = [
-        f for f in state.pr_files if any(re.search(p, f, re.IGNORECASE) for p in _BREAKING_CHANGE_PATTERNS)
-    ]
-    if breaking_hits:
-        signals.append(
-            RiskSignal(
-                label="Potential breaking changes",
-                description=f"Modified: {', '.join(breaking_hits[:3])}",
-                points=3,
-            )
-        )
-        score += 3
 
     state.risk_score = score
     state.risk_level = _risk_level_from_score(score)
