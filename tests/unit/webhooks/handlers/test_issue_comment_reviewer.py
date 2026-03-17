@@ -39,6 +39,29 @@ _MOCK_AGENT_RESULT = AgentResult(
         },
         "pr_author": "dev",
         "candidates": [],
+        "codeowners_team_slugs": [],
+    },
+)
+
+# Result where recommendations include a team slug alongside an individual user
+_MOCK_AGENT_RESULT_WITH_TEAM = AgentResult(
+    success=True,
+    message="ok",
+    data={
+        "risk_level": "high",
+        "risk_score": 8,
+        "risk_signals": [],
+        "pr_files_count": 5,
+        "llm_ranking": {
+            "ranked_reviewers": [
+                {"username": "alice", "reason": "billing expert"},
+                {"username": "frontend", "reason": "CODEOWNERS team"},
+            ],
+            "summary": "2 reviewers recommended.",
+        },
+        "pr_author": "dev",
+        "candidates": [],
+        "codeowners_team_slugs": ["frontend"],  # "frontend" is a team, not a user
     },
 )
 
@@ -142,6 +165,7 @@ class TestReviewersCommand:
         mock_get_agent.return_value = mock_agent
         mock_gh.create_pull_request_comment = AsyncMock(return_value={})
         mock_gh.add_labels_to_issue = AsyncMock(return_value=[])
+        mock_gh.request_reviewers = AsyncMock(return_value={})
 
         response = await self.handler.handle(_make_event("/reviewers"))
 
@@ -168,11 +192,57 @@ class TestReviewersCommand:
         mock_get_agent.return_value = mock_agent
         mock_gh.create_pull_request_comment = AsyncMock(return_value={})
         mock_gh.add_labels_to_issue = AsyncMock(return_value=[])
+        mock_gh.request_reviewers = AsyncMock(return_value={})
 
         response = await self.handler.handle(_make_event("/reviewers --force"))
 
         assert response.status == "ok"
         mock_agent.execute.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("src.webhooks.handlers.issue_comment.get_agent")
+    @patch("src.webhooks.handlers.issue_comment.github_client")
+    async def test_reviewers_command_assigns_individual_reviewers_to_pr(self, mock_gh, mock_get_agent):
+        mock_agent = MagicMock()
+        mock_agent.execute = AsyncMock(return_value=_MOCK_AGENT_RESULT)
+        mock_get_agent.return_value = mock_agent
+        mock_gh.create_pull_request_comment = AsyncMock(return_value={})
+        mock_gh.add_labels_to_issue = AsyncMock(return_value=[])
+        mock_gh.request_reviewers = AsyncMock(return_value={})
+
+        response = await self.handler.handle(_make_event("/reviewers"))
+
+        assert response.status == "ok"
+        mock_gh.request_reviewers.assert_called_once_with(
+            repo="owner/repo",
+            pr_number=42,
+            reviewers=["alice"],  # individual user
+            team_reviewers=[],  # no teams in this result
+            installation_id=99,
+        )
+
+    @pytest.mark.asyncio
+    @patch("src.webhooks.handlers.issue_comment.get_agent")
+    @patch("src.webhooks.handlers.issue_comment.github_client")
+    async def test_reviewers_team_slugs_go_to_team_reviewers_field(self, mock_gh, mock_get_agent):
+        """Team slugs from CODEOWNERS must be passed to team_reviewers, not reviewers."""
+        mock_agent = MagicMock()
+        mock_agent.execute = AsyncMock(return_value=_MOCK_AGENT_RESULT_WITH_TEAM)
+        mock_get_agent.return_value = mock_agent
+        mock_gh.create_pull_request_comment = AsyncMock(return_value={})
+        mock_gh.add_labels_to_issue = AsyncMock(return_value=[])
+        mock_gh.request_reviewers = AsyncMock(return_value={})
+
+        response = await self.handler.handle(_make_event("/reviewers"))
+
+        assert response.status == "ok"
+        mock_gh.request_reviewers.assert_called_once_with(
+            repo="owner/repo",
+            pr_number=42,
+            reviewers=["alice"],  # individual user only
+            team_reviewers=["frontend"],  # team slug goes here, NOT in reviewers
+            installation_id=99,
+        )
 
     @pytest.mark.asyncio
     @patch("src.webhooks.handlers.issue_comment.get_agent")
@@ -226,6 +296,7 @@ class TestSlashCommandCooldown:
         mock_get_agent.return_value = mock_agent
         mock_gh.create_pull_request_comment = AsyncMock(return_value={})
         mock_gh.add_labels_to_issue = AsyncMock(return_value=[])
+        mock_gh.request_reviewers = AsyncMock(return_value={})
 
         # First call succeeds
         response = await self.handler.handle(_make_event("/reviewers"))

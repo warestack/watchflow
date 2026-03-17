@@ -23,6 +23,7 @@ from src.agents.reviewer_recommendation_agent.nodes import (
     _match_watchflow_rules,
     _parse_codeowners,
     assess_risk,
+    fetch_pr_data,
     recommend_reviewers,
 )
 
@@ -46,32 +47,44 @@ class TestParseCodeowners:
     def test_simple_ownership(self):
         # More specific rule must come last — last match wins in CODEOWNERS
         content = "*.py @bob\nsrc/billing/ @alice"
-        result = _parse_codeowners(content, ["src/billing/charge.py", "utils/helper.py"])
-        assert "alice" in result.get("src/billing/charge.py", [])
-        assert "bob" in result.get("utils/helper.py", [])
+        individuals, teams = _parse_codeowners(content, ["src/billing/charge.py", "utils/helper.py"])
+        assert "alice" in individuals.get("src/billing/charge.py", [])
+        assert "bob" in individuals.get("utils/helper.py", [])
 
-    def test_org_team_stripped(self):
+    def test_org_team_goes_to_team_owners(self):
+        """@org/team entries must be in team_owners (not individual_owners) with slug only."""
         content = "infra/ @myorg/devops"
-        result = _parse_codeowners(content, ["infra/k8s/deploy.yaml"])
-        # team name after org/ prefix is kept
-        assert "devops" in result.get("infra/k8s/deploy.yaml", [])
+        individuals, teams = _parse_codeowners(content, ["infra/k8s/deploy.yaml"])
+        # team slug in team_owners
+        assert "devops" in teams.get("infra/k8s/deploy.yaml", [])
+        # NOT treated as an individual user
+        assert "devops" not in individuals.get("infra/k8s/deploy.yaml", [])
+
+    def test_individual_and_team_mixed(self):
+        """Lines with both @user and @org/team entries split correctly."""
+        content = "src/ @alice @myorg/frontend"
+        individuals, teams = _parse_codeowners(content, ["src/app.py"])
+        assert "alice" in individuals.get("src/app.py", [])
+        assert "frontend" in teams.get("src/app.py", [])
+        assert "frontend" not in individuals.get("src/app.py", [])
 
     def test_last_rule_wins(self):
         content = "*.py @first\nsrc/*.py @second"
-        result = _parse_codeowners(content, ["src/main.py"])
-        owners = result.get("src/main.py", [])
+        individuals, _ = _parse_codeowners(content, ["src/main.py"])
+        owners = individuals.get("src/main.py", [])
         assert "second" in owners
         assert "first" not in owners
 
     def test_comments_and_blank_lines_ignored(self):
         content = "# This is a comment\n\n*.md @carol"
-        result = _parse_codeowners(content, ["README.md"])
-        assert "carol" in result.get("README.md", [])
+        individuals, _ = _parse_codeowners(content, ["README.md"])
+        assert "carol" in individuals.get("README.md", [])
 
     def test_no_match_returns_empty(self):
         content = "src/ @alice"
-        result = _parse_codeowners(content, ["docs/readme.md"])
-        assert result.get("docs/readme.md") is None
+        individuals, teams = _parse_codeowners(content, ["docs/readme.md"])
+        assert individuals.get("docs/readme.md") is None
+        assert teams.get("docs/readme.md") is None
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +347,7 @@ class TestRecommendReviewers:
             codeowners_content="src/ @alice @bob",
             contributors=[],
             file_experts={},
+            risk_level="high",  # ensures both alice and bob are in top-3
             # alice has way more reviews than bob
             reviewer_load={"alice": 10, "bob": 2, "carol": 3},
         )
@@ -473,6 +487,200 @@ class TestRulesFirstRiskScoring:
 # ---------------------------------------------------------------------------
 
 
+class TestCodeownersTeamHandling:
+    """Team entries in CODEOWNERS are treated as team slugs, not individual user logins."""
+
+    @pytest.mark.asyncio
+    async def test_team_slug_becomes_candidate_with_team_reason(self):
+        state = _make_state(
+            pr_files=["infra/k8s/deploy.yaml"],
+            pr_author="dev",
+            codeowners_content="infra/ @myorg/devops",
+            contributors=[],
+            file_experts={},
+            risk_level="medium",
+        )
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(return_value=MagicMock(ranked_reviewers=[], summary="ok"))
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        result = await recommend_reviewers(state, mock_llm)
+        devops = next((c for c in result.candidates if c.username == "devops"), None)
+        assert devops is not None
+        assert any("team" in r.lower() for r in devops.reasons)
+
+    @pytest.mark.asyncio
+    async def test_team_slugs_stored_in_state(self):
+        state = _make_state(
+            pr_files=["src/app.py"],
+            pr_author="dev",
+            codeowners_content="src/ @alice @myorg/frontend",
+            contributors=[],
+            file_experts={},
+            risk_level="medium",
+        )
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(return_value=MagicMock(ranked_reviewers=[], summary="ok"))
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        result = await recommend_reviewers(state, mock_llm)
+        assert "frontend" in result.codeowners_team_slugs
+        # alice is individual — must NOT be in team slugs
+        assert "alice" not in result.codeowners_team_slugs
+
+
+class TestTimedecayCodeowners:
+    """Stale CODEOWNERS owners (no recent commits) get reduced score."""
+
+    @pytest.mark.asyncio
+    async def test_active_codeowner_gets_full_score(self):
+        state = _make_state(
+            pr_files=["src/billing/charge.py"],
+            pr_author="dev",
+            codeowners_content="src/billing/ @alice",
+            contributors=[],
+            file_experts={"src/billing/charge.py": ["alice"]},  # alice is active
+        )
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(return_value=MagicMock(ranked_reviewers=[], summary="ok"))
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        result = await recommend_reviewers(state, mock_llm)
+        alice = next(c for c in result.candidates if c.username == "alice")
+        assert alice.score >= 5
+        assert not any("no recent activity" in r for r in alice.reasons)
+
+    @pytest.mark.asyncio
+    async def test_stale_codeowner_gets_reduced_score(self):
+        state = _make_state(
+            pr_files=["src/billing/charge.py"],
+            pr_author="dev",
+            codeowners_content="src/billing/ @alice",
+            contributors=[],
+            file_experts={"src/billing/charge.py": ["bob"]},  # alice NOT in recent commits
+            risk_level="medium",  # return 2 candidates so alice isn't cut off
+        )
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(return_value=MagicMock(ranked_reviewers=[], summary="ok"))
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        result = await recommend_reviewers(state, mock_llm)
+        alice = next((c for c in result.candidates if c.username == "alice"), None)
+        assert alice is not None
+        assert alice.score <= 2
+        assert any("no recent activity" in r for r in alice.reasons)
+
+
+class TestRiskBasedReviewerCount:
+    """Reviewer count scales with risk level."""
+
+    @pytest.mark.asyncio
+    async def test_low_risk_returns_one_reviewer(self):
+        state = _make_state(
+            pr_files=["src/utils.py"],
+            pr_author="dev",
+            codeowners_content="src/ @alice @bob @carol",
+            contributors=[],
+            file_experts={"src/utils.py": ["alice", "bob", "carol"]},
+            risk_level="low",
+        )
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(return_value=MagicMock(ranked_reviewers=[], summary="ok"))
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        result = await recommend_reviewers(state, mock_llm)
+        assert len(result.candidates) == 1
+
+    @pytest.mark.asyncio
+    async def test_medium_risk_returns_two_reviewers(self):
+        state = _make_state(
+            pr_files=["src/utils.py"],
+            pr_author="dev",
+            codeowners_content="src/ @alice @bob @carol",
+            contributors=[],
+            file_experts={"src/utils.py": ["alice", "bob", "carol"]},
+            risk_level="medium",
+        )
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(return_value=MagicMock(ranked_reviewers=[], summary="ok"))
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        result = await recommend_reviewers(state, mock_llm)
+        assert len(result.candidates) == 2
+
+    @pytest.mark.asyncio
+    async def test_critical_risk_returns_three_reviewers(self):
+        state = _make_state(
+            pr_files=["src/auth/login.py"],
+            pr_author="dev",
+            codeowners_content="src/ @alice @bob @carol @dave",
+            contributors=[],
+            file_experts={"src/auth/login.py": ["alice", "bob", "carol", "dave"]},
+            risk_level="critical",
+        )
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(return_value=MagicMock(ranked_reviewers=[], summary="ok"))
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        result = await recommend_reviewers(state, mock_llm)
+        assert len(result.candidates) == 3
+
+
+class TestRuleInferredOwnership:
+    """When no CODEOWNERS, critical/high rules + commit history infer implicit owners."""
+
+    @pytest.mark.asyncio
+    async def test_rule_inferred_owner_gets_boosted(self):
+        state = _make_state(
+            pr_files=["src/billing/charge.py"],
+            pr_author="dev",
+            codeowners_content=None,  # no CODEOWNERS
+            contributors=[],
+            file_experts={"src/billing/charge.py": ["alice", "bob"]},
+            matched_rules=[{"description": "Protect billing paths", "severity": "critical"}],
+            risk_level="critical",
+        )
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(return_value=MagicMock(ranked_reviewers=[], summary="ok"))
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        result = await recommend_reviewers(state, mock_llm)
+        alice = next((c for c in result.candidates if c.username == "alice"), None)
+        assert alice is not None
+        assert any("Inferred owner" in r for r in alice.reasons)
+        assert alice.score >= 4
+
+    @pytest.mark.asyncio
+    async def test_low_severity_rule_does_not_infer_ownership(self):
+        state = _make_state(
+            pr_files=["src/utils.py"],
+            pr_author="dev",
+            codeowners_content=None,
+            contributors=[],
+            file_experts={"src/utils.py": ["alice"]},
+            matched_rules=[{"description": "Low severity rule", "severity": "low"}],
+            risk_level="low",
+        )
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(return_value=MagicMock(ranked_reviewers=[], summary="ok"))
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        result = await recommend_reviewers(state, mock_llm)
+        alice = next((c for c in result.candidates if c.username == "alice"), None)
+        # alice may still appear from file_experts, but NOT via rule-inferred ownership
+        if alice:
+            assert not any("Inferred owner" in r for r in alice.reasons)
+
+
 class TestNoCommitHistory:
     @pytest.mark.asyncio
     async def test_no_file_experts_still_recommends(self):
@@ -524,3 +732,163 @@ class TestNoCommitHistory:
         assert len(result.candidates) > 0
         usernames = [c.username for c in result.candidates]
         assert "alice" in usernames or "bob" in usernames
+
+
+# ---------------------------------------------------------------------------
+# Expertise profiles: scoring and persistence
+# ---------------------------------------------------------------------------
+
+
+class TestExpertiseProfilesScoring:
+    """Stored expertise profiles from .watchflow/expertise.json boost candidates with historical expertise."""
+
+    @pytest.mark.asyncio
+    async def test_stored_expertise_boosts_candidate(self):
+        """Candidate with historical expertise in changed files gets extra score points."""
+        state = _make_state(
+            pr_files=["src/billing/charge.py"],
+            pr_author="dev",
+            codeowners_content=None,
+            contributors=[],
+            file_experts={},
+            risk_level="medium",
+            expertise_profiles={
+                "alice": {"file_paths": ["src/billing/charge.py", "src/billing/invoice.py"], "commit_count": 12},
+            },
+        )
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(return_value=MagicMock(ranked_reviewers=[], summary="ok"))
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        result = await recommend_reviewers(state, mock_llm)
+        alice = next((c for c in result.candidates if c.username == "alice"), None)
+        assert alice is not None
+        assert alice.score >= 1
+        assert any("Historical expertise" in r for r in alice.reasons)
+
+    @pytest.mark.asyncio
+    async def test_stored_expertise_pr_author_excluded(self):
+        """PR author is excluded even if they appear in expertise profiles."""
+        state = _make_state(
+            pr_files=["src/main.py"],
+            pr_author="alice",
+            codeowners_content=None,
+            contributors=[],
+            file_experts={},
+            expertise_profiles={
+                "alice": {"file_paths": ["src/main.py"], "commit_count": 20},
+            },
+        )
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(return_value=MagicMock(ranked_reviewers=[], summary="ok"))
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        result = await recommend_reviewers(state, mock_llm)
+        assert not any(c.username == "alice" for c in result.candidates)
+
+    @pytest.mark.asyncio
+    async def test_no_overlap_in_expertise_profiles_gives_no_bonus(self):
+        """Expertise profiles for unrelated files don't boost the candidate."""
+        state = _make_state(
+            pr_files=["src/payments/stripe.py"],
+            pr_author="dev",
+            codeowners_content=None,
+            contributors=[],
+            file_experts={},
+            risk_level="medium",
+            expertise_profiles={
+                "alice": {"file_paths": ["src/unrelated/other.py"], "commit_count": 5},
+            },
+        )
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(return_value=MagicMock(ranked_reviewers=[], summary="ok"))
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        result = await recommend_reviewers(state, mock_llm)
+        alice = next((c for c in result.candidates if c.username == "alice"), None)
+        # alice may appear from contributors fallback but NOT from expertise
+        if alice:
+            assert not any("Historical expertise" in r for r in alice.reasons)
+
+
+class TestExpertisePersistence:
+    """fetch_pr_data reads and writes .watchflow/expertise.json via GitHub API."""
+
+    @pytest.mark.asyncio
+    @patch("src.agents.reviewer_recommendation_agent.nodes.github_client")
+    async def test_expertise_profiles_saved_after_fetch(self, mock_gh):
+        """After computing file_experts, expertise.json is written to the repo."""
+        mock_gh.get_pull_request = AsyncMock(
+            return_value={
+                "user": {"login": "dev"},
+                "additions": 10,
+                "deletions": 5,
+                "commits": 2,
+                "author_association": "MEMBER",
+                "title": "fix: stuff",
+                "base": {"ref": "main"},
+            }
+        )
+        mock_gh.get_pr_files = AsyncMock(return_value=[{"filename": "src/billing/charge.py"}])
+        mock_gh.get_codeowners = AsyncMock(return_value={})
+        mock_gh.get_repository_contributors = AsyncMock(return_value=[])
+        mock_gh.get_commits_for_file = AsyncMock(
+            return_value=[
+                {"author": {"login": "alice"}},
+                {"author": {"login": "bob"}},
+            ]
+        )
+        mock_gh.get_file_content = AsyncMock(return_value=None)  # no existing profile
+        mock_gh.create_or_update_file = AsyncMock(return_value={})
+        mock_gh.fetch_recent_pull_requests = AsyncMock(return_value=[])
+
+        from src.rules.loaders.github_loader import GitHubRuleLoader
+
+        with patch.object(GitHubRuleLoader, "get_rules", AsyncMock(return_value=[])):
+            state = _make_state()
+            await fetch_pr_data(state)
+
+        mock_gh.create_or_update_file.assert_called_once()
+        call_kwargs = mock_gh.create_or_update_file.call_args.kwargs
+        assert call_kwargs["path"] == ".watchflow/expertise.json"
+        assert call_kwargs["branch"] == "main"
+        import json
+
+        saved = json.loads(call_kwargs["content"])
+        assert "alice" in saved["contributors"]
+        assert "src/billing/charge.py" in saved["contributors"]["alice"]["file_paths"]
+
+    @pytest.mark.asyncio
+    @patch("src.agents.reviewer_recommendation_agent.nodes.github_client")
+    async def test_expertise_persistence_failure_is_graceful(self, mock_gh):
+        """If writing expertise.json fails, fetch_pr_data still succeeds."""
+        mock_gh.get_pull_request = AsyncMock(
+            return_value={
+                "user": {"login": "dev"},
+                "additions": 5,
+                "deletions": 2,
+                "commits": 1,
+                "author_association": "MEMBER",
+                "title": "fix: x",
+                "base": {"ref": "main"},
+            }
+        )
+        mock_gh.get_pr_files = AsyncMock(return_value=[{"filename": "src/utils.py"}])
+        mock_gh.get_codeowners = AsyncMock(return_value={})
+        mock_gh.get_repository_contributors = AsyncMock(return_value=[])
+        mock_gh.get_commits_for_file = AsyncMock(return_value=[])
+        mock_gh.get_file_content = AsyncMock(side_effect=Exception("network error"))
+        mock_gh.create_or_update_file = AsyncMock(return_value={})
+        mock_gh.fetch_recent_pull_requests = AsyncMock(return_value=[])
+
+        from src.rules.loaders.github_loader import GitHubRuleLoader
+
+        with patch.object(GitHubRuleLoader, "get_rules", AsyncMock(return_value=[])):
+            state = _make_state()
+            result = await fetch_pr_data(state)
+
+        assert result.error is None
+        assert result.expertise_profiles == {}

@@ -1,7 +1,10 @@
 # File: src/agents/reviewer_recommendation_agent/nodes.py
 
 import asyncio
+import contextlib
+import json
 import re
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -65,6 +68,8 @@ _BREAKING_CHANGE_PATTERNS = [
     r"graphql/schema",
 ]
 
+_REVIEWER_COUNT = {"low": 1, "medium": 2, "high": 3, "critical": 3}
+
 _SEVERITY_POINTS = {
     "critical": 5,
     "high": 3,
@@ -93,13 +98,17 @@ def _risk_level_from_score(score: int) -> str:
     return "critical"
 
 
-def _parse_codeowners(content: str, changed_files: list[str]) -> dict[str, list[str]]:
+def _parse_codeowners(content: str, changed_files: list[str]) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
     """
-    Returns a mapping of file_path -> list of owner logins that own it
-    based on a simple CODEOWNERS parse (last matching rule wins, like GitHub).
-    Handles @org/team and @username entries; strips @ prefix.
+    Returns (individual_owners, team_owners) where:
+    - individual_owners: file_path -> list of GitHub user logins  (@alice -> "alice")
+    - team_owners:       file_path -> list of team slugs          (@org/frontend -> "frontend")
+
+    Separating the two is required because GitHub's reviewer request API uses
+    separate fields: `reviewers` for individual users and `team_reviewers` for teams.
+    Last matching rule wins (GitHub CODEOWNERS behaviour).
     """
-    rules: list[tuple[str, list[str]]] = []
+    rules: list[tuple[str, list[str], list[str]]] = []
     for line in content.splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
@@ -108,22 +117,33 @@ def _parse_codeowners(content: str, changed_files: list[str]) -> dict[str, list[
         if len(parts) < 2:
             continue
         pattern = parts[0]
-        owners = [o.lstrip("@").split("/")[-1] for o in parts[1:]]  # strip org/ prefix for teams
-        rules.append((pattern, owners))
+        individuals: list[str] = []
+        teams: list[str] = []
+        for o in parts[1:]:
+            stripped = o.lstrip("@")
+            if "/" in stripped:
+                teams.append(stripped.split("/")[-1])  # team slug (e.g. "frontend")
+            else:
+                individuals.append(stripped)  # user login (e.g. "alice")
+        rules.append((pattern, individuals, teams))
 
-    ownership: dict[str, list[str]] = {}
+    individual_ownership: dict[str, list[str]] = {}
+    team_ownership: dict[str, list[str]] = {}
     for file_path in changed_files:
-        matched_owners: list[str] = []
-        for pattern, owners in rules:
-            # Convert glob-style to regex
+        matched_individuals: list[str] = []
+        matched_teams: list[str] = []
+        for pattern, ind, tms in rules:
             regex = re.escape(pattern).replace(r"\*", "[^/]*").replace(r"\*\*", ".*")
             if not regex.startswith("/"):
                 regex = ".*" + regex
             if re.search(regex, "/" + file_path, re.IGNORECASE):
-                matched_owners = owners  # last match wins
-        if matched_owners:
-            ownership[file_path] = matched_owners
-    return ownership
+                matched_individuals = ind
+                matched_teams = tms
+        if matched_individuals:
+            individual_ownership[file_path] = matched_individuals
+        if matched_teams:
+            team_ownership[file_path] = matched_teams
+    return individual_ownership, team_ownership
 
 
 def _match_watchflow_rules(rules: list[Any], changed_files: list[str]) -> list[dict[str, str]]:
@@ -183,6 +203,7 @@ async def fetch_pr_data(state: RecommendationState) -> RecommendationState:
     state.pr_commits_count = pr_data.get("commits", 0)
     state.pr_author_association = pr_data.get("author_association", "NONE")
     state.pr_title = pr_data.get("title", "")
+    state.pr_base_branch = pr_data.get("base", {}).get("ref", "main")
 
     # Changed files
     files_data = await github_client.get_pr_files(repo, pr_number, installation_id)
@@ -230,6 +251,67 @@ async def fetch_pr_data(state: RecommendationState) -> RecommendationState:
         if authors:
             file_experts[fp] = authors
     state.file_experts = file_experts
+
+    # Persist expertise profiles to .watchflow/expertise.json
+    try:
+        existing_content = await github_client.get_file_content(repo, ".watchflow/expertise.json", installation_id)
+        existing_profiles: dict[str, Any] = {}
+        if existing_content:
+            with contextlib.suppress(json.JSONDecodeError):
+                existing_profiles = json.loads(existing_content)
+
+        contributors_data: dict[str, Any] = existing_profiles.get("contributors", {})
+        for fp, authors in file_experts.items():
+            for login in authors:
+                if login not in contributors_data:
+                    contributors_data[login] = {"file_paths": [], "commit_count": 0}
+                profile = contributors_data[login]
+                if fp not in profile.get("file_paths", []):
+                    profile.setdefault("file_paths", []).append(fp)
+                profile["commit_count"] = profile.get("commit_count", 0) + 1
+
+        updated_profiles = {
+            "updated_at": datetime.now(UTC).isoformat(),
+            "contributors": contributors_data,
+        }
+        # Retry once on 409 Conflict (concurrent write race condition: re-read SHA and retry)
+        write_result = await github_client.create_or_update_file(
+            repo_full_name=repo,
+            path=".watchflow/expertise.json",
+            content=json.dumps(updated_profiles, indent=2),
+            message="chore: update reviewer expertise profiles [watchflow]",
+            branch=state.pr_base_branch,
+            installation_id=installation_id,
+        )
+        if write_result is None:
+            # First write failed (e.g. 409 conflict from concurrent PR) — re-read and retry once
+            existing_content = await github_client.get_file_content(repo, ".watchflow/expertise.json", installation_id)
+            if existing_content:
+                with contextlib.suppress(json.JSONDecodeError):
+                    merged = json.loads(existing_content)
+                    for login, profile in contributors_data.items():
+                        if login not in merged.get("contributors", {}):
+                            merged.setdefault("contributors", {})[login] = profile
+                    updated_profiles = {
+                        "updated_at": datetime.now(UTC).isoformat(),
+                        "contributors": merged["contributors"],
+                    }
+            await github_client.create_or_update_file(
+                repo_full_name=repo,
+                path=".watchflow/expertise.json",
+                content=json.dumps(updated_profiles, indent=2),
+                message="chore: update reviewer expertise profiles [watchflow]",
+                branch=state.pr_base_branch,
+                installation_id=installation_id,
+            )
+        state.expertise_profiles = contributors_data
+    except Exception as e:
+        logger.warning(
+            "expertise_profile_update_failed",
+            reason=str(e),
+            hint="If branch protection is enabled on the base branch, grant the GitHub App a bypass rule for contents:write.",
+        )
+        state.expertise_profiles = {}
 
     # Load balancing: fetch recent merged PRs and count review activity per reviewer
     try:
@@ -387,14 +469,36 @@ async def recommend_reviewers(state: RecommendationState, llm: object) -> Recomm
             candidates[username] = ReviewerCandidate(username=username)
         return candidates[username]
 
-    # CODEOWNERS ownership
+    # Active experts: set of logins with any recent commits to the changed files
+    all_recent_committers: set[str] = {login for authors in state.file_experts.values() for login in authors}
+
+    # CODEOWNERS ownership (with time-decay for stale owners)
+    # Individual users and team slugs are scored separately so they can be
+    # passed to the correct GitHub API fields when requesting reviewers.
     if state.codeowners_content:
-        ownership_map = _parse_codeowners(state.codeowners_content, state.pr_files)
-        for file_path, owners in ownership_map.items():
+        individual_owners, team_owners = _parse_codeowners(state.codeowners_content, state.pr_files)
+
+        # Collect all team slugs for later use in reviewer assignment
+        all_team_slugs: set[str] = {slug for slugs in team_owners.values() for slug in slugs}
+        state.codeowners_team_slugs = list(all_team_slugs)
+
+        for file_path, owners in individual_owners.items():
             for owner in owners:
                 c = get_or_create(owner)
-                c.score += 5
-                reason = f"CODEOWNERS owner of `{file_path}`"
+                if owner in all_recent_committers:
+                    c.score += 5
+                    reason = f"CODEOWNERS owner of `{file_path}`"
+                else:
+                    c.score += 2
+                    reason = f"CODEOWNERS owner of `{file_path}` (no recent activity)"
+                if reason not in c.reasons:
+                    c.reasons.append(reason)
+
+        for file_path, slugs in team_owners.items():
+            for slug in slugs:
+                c = get_or_create(slug)
+                c.score += 4  # slightly below individual owner; teams are broad
+                reason = f"CODEOWNERS team owner of `{file_path}`"
                 if reason not in c.reasons:
                     c.reasons.append(reason)
 
@@ -421,6 +525,44 @@ async def recommend_reviewers(state: RecommendationState, llm: object) -> Recomm
                     c.score += 2
                     c.reasons.append("Experienced reviewer (critical/high-severity rules matched)")
 
+    # Boost candidates with accumulated expertise from .watchflow/expertise.json
+    # (cross-PR historical expertise stored on previous runs)
+    if state.expertise_profiles:
+        for login, profile in state.expertise_profiles.items():
+            if login == state.pr_author:
+                continue
+            stored_paths: list[str] = profile.get("file_paths", [])
+            overlap = [fp for fp in state.pr_files if fp in stored_paths]
+            if overlap:
+                c = get_or_create(login)
+                pts = min(len(overlap), 3)  # cap at 3 bonus points
+                c.score += pts
+                reason = f"Historical expertise in {len(overlap)} changed file(s) (from expertise profiles)"
+                if reason not in c.reasons:
+                    c.reasons.append(reason)
+
+    # Rule-inferred ownership: when no CODEOWNERS, use matched rule path patterns
+    # to identify implicit owners from commit history
+    if not state.codeowners_content and state.matched_rules:
+        for rule in state.matched_rules:
+            severity = rule.get("severity", "medium")
+            if severity not in ("critical", "high"):
+                continue
+            # Find changed files that triggered this rule (via matched path patterns)
+            rule_experts: list[str] = []
+            for fp in state.pr_files:
+                if fp in state.file_experts:
+                    for login in state.file_experts[fp]:
+                        if login != state.pr_author and login not in rule_experts:
+                            rule_experts.append(login)
+            for rank, login in enumerate(rule_experts[:3]):
+                c = get_or_create(login)
+                pts = 4 - rank  # +4, +3, +2 — similar to CODEOWNERS but slightly less
+                c.score += pts
+                reason = f"Inferred owner for `{rule['description']}` rule path ({severity} severity)"
+                if reason not in c.reasons:
+                    c.reasons.append(reason)
+
     # Overall contributors fallback (add any top contributors not yet in candidates)
     for contrib in state.contributors[:10]:
         login = contrib.get("login", "")
@@ -443,8 +585,9 @@ async def recommend_reviewers(state: RecommendationState, llm: object) -> Recomm
                 c.score = max(c.score - penalty, 0)
                 c.reasons.append(f"Load penalty: {load_count} recent reviews (heavy queue)")
 
-    # Sort by score, keep top 5
-    sorted_candidates = sorted(candidates.values(), key=lambda c: c.score, reverse=True)[:5]
+    # Risk-based reviewer count: low→1, medium→2, high/critical→3
+    reviewer_count = _REVIEWER_COUNT.get(state.risk_level, 2)
+    sorted_candidates = sorted(candidates.values(), key=lambda c: c.score, reverse=True)[:reviewer_count]
 
     # Compute ownership percentage per candidate
     total_files = len(state.pr_files) or 1

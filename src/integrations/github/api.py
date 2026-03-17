@@ -548,6 +548,51 @@ class GitHubClient:
             logger.error(f"Error creating comment on PR #{pr_number} in {repo}: {e}")
             return {}
 
+    async def request_reviewers(
+        self,
+        repo: str,
+        pr_number: int,
+        reviewers: list[str],
+        installation_id: int,
+        team_reviewers: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Request individual and/or team reviewers for a pull request.
+
+        GitHub's API uses separate fields:
+        - `reviewers`      → individual user logins
+        - `team_reviewers` → team slugs (without org prefix, e.g. "frontend")
+        Mixing them in the wrong field returns 422.
+        """
+        try:
+            token = await self.get_installation_access_token(installation_id)
+            if not token:
+                return {}
+
+            headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+            url = f"{config.github.api_base_url}/repos/{repo}/pulls/{pr_number}/requested_reviewers"
+            data: dict[str, list[str]] = {}
+            if reviewers:
+                data["reviewers"] = reviewers
+            if team_reviewers:
+                data["team_reviewers"] = team_reviewers
+
+            session = await self._get_session()
+            async with session.post(url, headers=headers, json=data) as response:
+                if response.status == 201:
+                    result = await response.json()
+                    logger.info(f"Requested reviewers {reviewers} for PR #{pr_number} in {repo}")
+                    return cast("dict[str, Any]", result)
+                else:
+                    error_text = await response.text()
+                    logger.warning(
+                        f"Failed to request reviewers for PR #{pr_number} in {repo}. "
+                        f"Status: {response.status}, Response: {error_text}"
+                    )
+                    return {}
+        except Exception as e:
+            logger.warning(f"Error requesting reviewers for PR #{pr_number} in {repo}: {e}")
+            return {}
+
     async def update_check_run(
         self, repo: str, check_run_id: int, status: str, conclusion: str, output: dict[str, Any], installation_id: int
     ) -> dict[str, Any]:

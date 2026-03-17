@@ -128,7 +128,7 @@ class IssueCommentEventHandler(EventHandler):
                     comment=comment,
                     installation_id=installation_id,
                 )
-                # Apply labels: risk level + reviewer-recommendation
+                # Apply labels and assign reviewers
                 if reviewer_result.success:
                     risk_level = reviewer_result.data.get("risk_level", "low")
                     await github_client.add_labels_to_issue(
@@ -137,6 +137,24 @@ class IssueCommentEventHandler(EventHandler):
                         labels=[f"watchflow:risk-{risk_level}", "watchflow:reviewer-recommendation"],
                         installation_id=installation_id,
                     )
+                    # Assign recommended reviewers to the PR
+                    # Split into individual users vs CODEOWNERS team slugs so each
+                    # goes to the correct GitHub API field (reviewers vs team_reviewers).
+                    llm_ranking = reviewer_result.data.get("llm_ranking") or {}
+                    pr_author = reviewer_result.data.get("pr_author", "")
+                    team_slugs = set(reviewer_result.data.get("codeowners_team_slugs", []))
+                    ranked = llm_ranking.get("ranked_reviewers", []) if isinstance(llm_ranking, dict) else []
+                    all_logins = [r["username"] for r in ranked if r.get("username") and r["username"] != pr_author][:3]
+                    individual_reviewers = [u for u in all_logins if u not in team_slugs]
+                    team_reviewers = [u for u in all_logins if u in team_slugs]
+                    if individual_reviewers or team_reviewers:
+                        await github_client.request_reviewers(
+                            repo=repo,
+                            pr_number=pr_number,
+                            reviewers=individual_reviewers,
+                            team_reviewers=team_reviewers,
+                            installation_id=installation_id,
+                        )
                 logger.info(f"👥 Posted reviewer recommendations for PR #{pr_number}.")
                 self._mark_cooldown(repo, pr_number, "reviewers")
                 return WebhookResponse(status="ok")

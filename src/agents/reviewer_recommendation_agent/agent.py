@@ -83,6 +83,7 @@ class ReviewerRecommendationAgent(BaseAgent):
                     "llm_ranking": final_state.llm_ranking.model_dump() if final_state.llm_ranking else None,
                     "pr_files_count": len(final_state.pr_files),
                     "pr_author": final_state.pr_author,
+                    "codeowners_team_slugs": final_state.codeowners_team_slugs,
                 },
             )
 

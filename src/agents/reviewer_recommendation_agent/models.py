@@ -71,5 +71,13 @@ class RecommendationState(BaseModel):
     candidates: list[ReviewerCandidate] = Field(default_factory=list)
     llm_ranking: LLMReviewerRanking | None = None
 
+    # PR base branch (used when writing .watchflow/expertise.json)
+    pr_base_branch: str = "main"
+    # Team slugs extracted from CODEOWNERS (@org/team entries) — used to split
+    # reviewer assignment into `reviewers` vs `team_reviewers` GitHub API fields
+    codeowners_team_slugs: list[str] = Field(default_factory=list)
+    # Persisted expertise profiles loaded from .watchflow/expertise.json
+    expertise_profiles: dict[str, Any] = Field(default_factory=dict)
+
     # --- Execution Metadata ---
     error: str | None = None
