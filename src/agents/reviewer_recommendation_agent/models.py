@@ -59,6 +59,8 @@ class RecommendationState(BaseModel):
     matched_rules: list[dict[str, str]] = Field(default_factory=list)
     # Recent review activity: login -> count of reviews on recent PRs (for load balancing)
     reviewer_load: dict[str, int] = Field(default_factory=dict)
+    # Reviewer acceptance rates: login -> approval rate (0.0–1.0) from recent PRs
+    reviewer_acceptance_rates: dict[str, float] = Field(default_factory=dict)
     # PR title (for revert detection)
     pr_title: str = ""
 

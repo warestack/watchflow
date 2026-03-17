@@ -155,6 +155,24 @@ class IssueCommentEventHandler(EventHandler):
                             team_reviewers=team_reviewers,
                             installation_id=installation_id,
                         )
+                # Persist recommendation record for success-rate tracking
+                if reviewer_result.success:
+                    from src.services.recommendation_metrics import save_recommendation
+
+                    llm_ranking_raw = reviewer_result.data.get("llm_ranking") or {}
+                    ranked_raw = (
+                        llm_ranking_raw.get("ranked_reviewers", []) if isinstance(llm_ranking_raw, dict) else []
+                    )
+                    saved_logins = [r["username"] for r in ranked_raw if r.get("username")][:3]
+                    pr_base_branch = reviewer_result.data.get("pr_base_branch", "main")
+                    await save_recommendation(
+                        repo=repo,
+                        pr_number=pr_number,
+                        recommended_reviewers=saved_logins,
+                        risk_level=reviewer_result.data.get("risk_level", "low"),
+                        branch=pr_base_branch,
+                        installation_id=installation_id,
+                    )
                 logger.info(f"👥 Posted reviewer recommendations for PR #{pr_number}.")
                 self._mark_cooldown(repo, pr_number, "reviewers")
                 return WebhookResponse(status="ok")

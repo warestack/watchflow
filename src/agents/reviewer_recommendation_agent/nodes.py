@@ -68,7 +68,7 @@ _BREAKING_CHANGE_PATTERNS = [
     r"graphql/schema",
 ]
 
-_REVIEWER_COUNT = {"low": 1, "medium": 2, "high": 3, "critical": 3}
+_REVIEWER_COUNT = {"low": 1, "medium": 2, "high": 2, "critical": 3}
 
 _SEVERITY_POINTS = {
     "critical": 5,
@@ -313,10 +313,12 @@ async def fetch_pr_data(state: RecommendationState) -> RecommendationState:
         )
         state.expertise_profiles = {}
 
-    # Load balancing: fetch recent merged PRs and count review activity per reviewer
+    # Load balancing + acceptance rate: fetch recent merged PRs and analyse review activity
     try:
         recent_prs = await github_client.fetch_recent_pull_requests(repo, installation_id=installation_id, limit=20)
         reviewer_load: dict[str, int] = {}
+        reviewer_approvals: dict[str, int] = {}  # login -> APPROVED count
+        reviewer_total: dict[str, int] = {}  # login -> APPROVED + CHANGES_REQUESTED count
         for pr in recent_prs[:15]:
             rpr_number = pr.get("pr_number") or pr.get("number")
             if not rpr_number:
@@ -324,12 +326,24 @@ async def fetch_pr_data(state: RecommendationState) -> RecommendationState:
             reviews = await github_client.get_pull_request_reviews(repo, rpr_number, installation_id)
             for review in reviews:
                 reviewer_login = review.get("user", {}).get("login", "")
-                if reviewer_login:
-                    reviewer_load[reviewer_login] = reviewer_load.get(reviewer_login, 0) + 1
+                review_state = review.get("state", "")
+                if not reviewer_login:
+                    continue
+                reviewer_load[reviewer_login] = reviewer_load.get(reviewer_login, 0) + 1
+                if review_state in ("APPROVED", "CHANGES_REQUESTED"):
+                    reviewer_total[reviewer_login] = reviewer_total.get(reviewer_login, 0) + 1
+                    if review_state == "APPROVED":
+                        reviewer_approvals[reviewer_login] = reviewer_approvals.get(reviewer_login, 0) + 1
         state.reviewer_load = reviewer_load
+        state.reviewer_acceptance_rates = {
+            login: round(reviewer_approvals.get(login, 0) / count, 2)
+            for login, count in reviewer_total.items()
+            if count > 0
+        }
     except Exception as e:
         logger.info("reviewer_load_fetch_failed", reason=str(e))
         state.reviewer_load = {}
+        state.reviewer_acceptance_rates = {}
 
     return state
 
@@ -584,6 +598,19 @@ async def recommend_reviewers(state: RecommendationState, llm: object) -> Recomm
                 penalty = min(load_count - median_load, 3)
                 c.score = max(c.score - penalty, 0)
                 c.reasons.append(f"Load penalty: {load_count} recent reviews (heavy queue)")
+
+    # --- Acceptance rate boost: reward reviewers with high approval rates ---
+    for login, rate in state.reviewer_acceptance_rates.items():
+        if login not in candidates:
+            continue
+        c = candidates[login]
+        pct = int(rate * 100)
+        if rate >= 0.8:
+            c.score += 2
+            c.reasons.append(f"High review acceptance rate ({pct}%)")
+        elif rate >= 0.6:
+            c.score += 1
+            c.reasons.append(f"Good review acceptance rate ({pct}%)")
 
     # Risk-based reviewer count: low→1, medium→2, high/critical→3
     reviewer_count = _REVIEWER_COUNT.get(state.risk_level, 2)

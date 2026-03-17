@@ -892,3 +892,177 @@ class TestExpertisePersistence:
 
         assert result.error is None
         assert result.expertise_profiles == {}
+
+
+# ---------------------------------------------------------------------------
+# Acceptance rate tracking and scoring
+# ---------------------------------------------------------------------------
+
+
+class TestAcceptanceRateScoring:
+    """reviewer_acceptance_rates in state boost candidates with high approval rates."""
+
+    @pytest.mark.asyncio
+    async def test_high_acceptance_rate_boosts_candidate(self):
+        """Reviewer with ≥80% approval rate gets +2 score and reason."""
+        state = _make_state(
+            pr_files=["src/auth/login.py"],
+            pr_author="dev",
+            codeowners_content="src/ @alice",
+            contributors=[],
+            file_experts={"src/auth/login.py": ["alice"]},
+            risk_level="medium",
+            reviewer_acceptance_rates={"alice": 0.85},
+        )
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(return_value=MagicMock(ranked_reviewers=[], summary="ok"))
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        result = await recommend_reviewers(state, mock_llm)
+        alice = next(c for c in result.candidates if c.username == "alice")
+        assert any("High review acceptance rate" in r for r in alice.reasons)
+        # Score should include the +2 acceptance bonus on top of CODEOWNERS + file_experts base
+        assert alice.score >= 7  # 5 (active CODEOWNERS) + 2 (acceptance rate)
+
+    @pytest.mark.asyncio
+    async def test_good_acceptance_rate_boosts_candidate(self):
+        """Reviewer with 60–79% approval rate gets +1 score."""
+        state = _make_state(
+            pr_files=["src/app.py"],
+            pr_author="dev",
+            codeowners_content="src/ @bob",
+            contributors=[],
+            file_experts={"src/app.py": ["bob"]},
+            risk_level="medium",
+            reviewer_acceptance_rates={"bob": 0.65},
+        )
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(return_value=MagicMock(ranked_reviewers=[], summary="ok"))
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        result = await recommend_reviewers(state, mock_llm)
+        bob = next(c for c in result.candidates if c.username == "bob")
+        assert any("Good review acceptance rate" in r for r in bob.reasons)
+
+    @pytest.mark.asyncio
+    async def test_low_acceptance_rate_gives_no_bonus(self):
+        """Reviewer with <60% approval rate gets no acceptance-rate bonus."""
+        state = _make_state(
+            pr_files=["src/app.py"],
+            pr_author="dev",
+            codeowners_content="src/ @carol",
+            contributors=[],
+            file_experts={"src/app.py": ["carol"]},
+            risk_level="medium",
+            reviewer_acceptance_rates={"carol": 0.40},
+        )
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(return_value=MagicMock(ranked_reviewers=[], summary="ok"))
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        result = await recommend_reviewers(state, mock_llm)
+        carol = next(c for c in result.candidates if c.username == "carol")
+        assert not any("acceptance rate" in r for r in carol.reasons)
+
+    @pytest.mark.asyncio
+    async def test_acceptance_rate_ignored_for_non_candidates(self):
+        """Acceptance rate data for users not in candidates dict is silently ignored."""
+        state = _make_state(
+            pr_files=["src/app.py"],
+            pr_author="dev",
+            codeowners_content=None,
+            contributors=[],
+            file_experts={},
+            risk_level="low",
+            # ghost is not a candidate; should not raise
+            reviewer_acceptance_rates={"ghost": 0.99},
+        )
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.ainvoke = AsyncMock(return_value=MagicMock(ranked_reviewers=[], summary="ok"))
+        mock_llm.with_structured_output.return_value = mock_structured
+
+        # Should not raise
+        result = await recommend_reviewers(state, mock_llm)
+        assert not any(c.username == "ghost" for c in result.candidates)
+
+
+class TestAcceptanceRateFetch:
+    """fetch_pr_data computes reviewer_acceptance_rates from recent PR reviews."""
+
+    @pytest.mark.asyncio
+    @patch("src.agents.reviewer_recommendation_agent.nodes.github_client")
+    async def test_acceptance_rates_computed_from_reviews(self, mock_gh):
+        """reviewer_acceptance_rates reflects APPROVED / (APPROVED + CHANGES_REQUESTED) ratio."""
+        mock_gh.get_pull_request = AsyncMock(
+            return_value={
+                "user": {"login": "dev"},
+                "additions": 5,
+                "deletions": 2,
+                "commits": 1,
+                "author_association": "MEMBER",
+                "title": "fix: something",
+                "base": {"ref": "main"},
+            }
+        )
+        mock_gh.get_pr_files = AsyncMock(return_value=[{"filename": "src/utils.py"}])
+        mock_gh.get_codeowners = AsyncMock(return_value={})
+        mock_gh.get_repository_contributors = AsyncMock(return_value=[])
+        mock_gh.get_commits_for_file = AsyncMock(return_value=[])
+        mock_gh.get_file_content = AsyncMock(return_value=None)
+        mock_gh.create_or_update_file = AsyncMock(return_value={})
+        mock_gh.fetch_recent_pull_requests = AsyncMock(return_value=[{"number": 10}])
+        # alice: 2 approvals, 1 change_requested → 66% acceptance
+        # bob:   0 approvals, 1 change_requested → 0% acceptance
+        mock_gh.get_pull_request_reviews = AsyncMock(
+            return_value=[
+                {"user": {"login": "alice"}, "state": "APPROVED"},
+                {"user": {"login": "alice"}, "state": "APPROVED"},
+                {"user": {"login": "alice"}, "state": "CHANGES_REQUESTED"},
+                {"user": {"login": "bob"}, "state": "CHANGES_REQUESTED"},
+            ]
+        )
+
+        from src.rules.loaders.github_loader import GitHubRuleLoader
+
+        with patch.object(GitHubRuleLoader, "get_rules", AsyncMock(return_value=[])):
+            state = _make_state()
+            result = await fetch_pr_data(state)
+
+        assert result.reviewer_acceptance_rates["alice"] == pytest.approx(0.67, abs=0.01)
+        assert result.reviewer_acceptance_rates["bob"] == 0.0
+
+    @pytest.mark.asyncio
+    @patch("src.agents.reviewer_recommendation_agent.nodes.github_client")
+    async def test_acceptance_rates_empty_on_no_reviews(self, mock_gh):
+        """If no recent reviews exist, reviewer_acceptance_rates is empty."""
+        mock_gh.get_pull_request = AsyncMock(
+            return_value={
+                "user": {"login": "dev"},
+                "additions": 0,
+                "deletions": 0,
+                "commits": 1,
+                "author_association": "MEMBER",
+                "title": "chore: noop",
+                "base": {"ref": "main"},
+            }
+        )
+        mock_gh.get_pr_files = AsyncMock(return_value=[])
+        mock_gh.get_codeowners = AsyncMock(return_value={})
+        mock_gh.get_repository_contributors = AsyncMock(return_value=[])
+        mock_gh.get_commits_for_file = AsyncMock(return_value=[])
+        mock_gh.get_file_content = AsyncMock(return_value=None)
+        mock_gh.create_or_update_file = AsyncMock(return_value={})
+        mock_gh.fetch_recent_pull_requests = AsyncMock(return_value=[{"number": 5}])
+        mock_gh.get_pull_request_reviews = AsyncMock(return_value=[])
+
+        from src.rules.loaders.github_loader import GitHubRuleLoader
+
+        with patch.object(GitHubRuleLoader, "get_rules", AsyncMock(return_value=[])):
+            state = _make_state()
+            result = await fetch_pr_data(state)
+
+        assert result.reviewer_acceptance_rates == {}

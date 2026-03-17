@@ -84,6 +84,7 @@ class ReviewerRecommendationAgent(BaseAgent):
                     "pr_files_count": len(final_state.pr_files),
                     "pr_author": final_state.pr_author,
                     "codeowners_team_slugs": final_state.codeowners_team_slugs,
+                    "pr_base_branch": final_state.pr_base_branch,
                 },
             )
 
