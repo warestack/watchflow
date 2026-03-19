@@ -6,6 +6,7 @@ from src.event_processors.deployment_review import DeploymentReviewProcessor
 from src.event_processors.deployment_status import DeploymentStatusProcessor
 from src.event_processors.pull_request import PullRequestProcessor
 from src.event_processors.push import PushProcessor
+from src.event_processors.reviewer_recommendation import ReviewerRecommendationProcessor
 from src.event_processors.rule_creation import RuleCreationProcessor
 from src.event_processors.violation_acknowledgment import ViolationAcknowledgmentProcessor
 
@@ -23,6 +24,7 @@ class EventProcessorFactory:
         "deployment_protection_rule": DeploymentProtectionRuleProcessor,
         "rule_creation": RuleCreationProcessor,
         "violation_acknowledgment": ViolationAcknowledgmentProcessor,
+        "reviewer_recommendation": ReviewerRecommendationProcessor,
     }
 
     @classmethod

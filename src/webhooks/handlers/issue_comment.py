@@ -47,6 +47,8 @@ class IssueCommentEventHandler(EventHandler):
                     '- @watchflow ack "reason" — Short form for acknowledge.\n'
                     '- @watchflow evaluate "rule description" — Evaluate the feasibility of a rule.\n'
                     "- @watchflow validate — Validate the .watchflow/rules.yaml file.\n"
+                    "- /reviewers — Recommend the best reviewers for this PR.\n"
+                    "- /reviewers --force — Re-run reviewer recommendation (bypass cache).\n"
                     "- @watchflow help — Show this help message.\n"
                 )
                 logger.info("ℹ️ Responding to help command.")
@@ -130,6 +132,31 @@ class IssueCommentEventHandler(EventHandler):
                     logger.warning("Could not determine PR or issue number to post feasibility evaluation result.")
                     return WebhookResponse(status="ok", detail=comment)
 
+            # Reviewers—user wants reviewer recommendations.
+            reviewers_match = self._extract_reviewers_command(comment_body)
+            if reviewers_match is not None:
+                logger.info("🔍 Processing reviewers command.")
+                from src.event_processors.factory import EventProcessorFactory
+                from src.tasks.task_queue import Task
+
+                force = reviewers_match.get("force", False)
+
+                async def process_reviewer_recommendation(rec_task: Task) -> None:
+                    processor = EventProcessorFactory.get_processor("reviewer_recommendation")
+                    await processor.process(rec_task)
+
+                rec_payload = {**event.payload, "reviewers_force": force}
+                result = await task_queue.enqueue(
+                    process_reviewer_recommendation,
+                    "reviewer_recommendation",
+                    rec_payload,
+                )
+                logger.info(f"✅ Reviewer recommendation enqueued: {result}")
+                return WebhookResponse(
+                    status="ok",
+                    detail="Reviewer recommendation enqueued",
+                )
+
             # Validate—user wants rules.yaml sanity check.
             if self._is_validate_comment(comment_body):
                 logger.info("🔍 Processing validate command.")
@@ -200,6 +227,19 @@ class IssueCommentEventHandler(EventHandler):
         comment_body = comment_body.strip()
         pattern = r"@watchflow\s+validate"
         return re.search(pattern, comment_body, re.IGNORECASE) is not None
+
+    def _extract_reviewers_command(self, comment_body: str) -> dict[str, bool] | None:
+        """Detect /reviewers or @watchflow reviewers command. Returns dict with force flag, or None."""
+        comment_body = comment_body.strip()
+        patterns = [
+            r"(?:@watchflow\s+reviewers|/reviewers)(\s+--force)?",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, comment_body, re.IGNORECASE)
+            if match:
+                force = bool(match.group(1) and "--force" in match.group(1))
+                return {"force": force}
+        return None
 
     def _is_help_comment(self, comment_body: str) -> bool:
         patterns = [

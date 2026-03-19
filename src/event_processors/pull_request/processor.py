@@ -340,6 +340,7 @@ class PullRequestProcessor(BaseEventProcessor):
             await self.github_client.create_pull_request_comment(
                 task.repo_full_name, pr_number, comment_body, task.installation_id
             )
+
             logger.info(
                 "Posted violations comment",
                 extra={
