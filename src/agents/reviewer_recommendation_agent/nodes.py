@@ -367,11 +367,14 @@ async def assess_risk(state: RecommendationState) -> RecommendationState:
             rule_score += _SEVERITY_POINTS.get(severity, 1)
         # Cap at 10 to prevent one-sided dominance
         rule_score = min(rule_score, 10)
-        descriptions = [f"`{r['description']}` ({r['severity']})" for r in state.matched_rules[:5]]
+        total_rules = len(state.matched_rules)
+        shown = state.matched_rules[:5]
+        descriptions = [f"`{r['description']}` ({r['severity']})" for r in shown]
+        suffix = f" (+{total_rules - 5} more)" if total_rules > 5 else ""
         signals.append(
             RiskSignal(
                 label="Watchflow rule matches",
-                description=f"{len(state.matched_rules)} rule(s) matched: {', '.join(descriptions)}",
+                description=f"{total_rules} rule(s) matched: {', '.join(descriptions)}{suffix}",
                 points=rule_score,
             )
         )
