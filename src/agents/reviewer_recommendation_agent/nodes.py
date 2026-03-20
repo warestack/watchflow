@@ -645,8 +645,13 @@ async def recommend_reviewers(state: RecommendationState, llm: object) -> Recomm
             f"changes {len(state.pr_files)} files with risk level `{state.risk_level}`.\n"
             f"{rules_context}\n"
             f"Candidate reviewers and their expertise signals:\n{candidate_summary}\n\n"
-            "Rank them from best to worst fit and give a short one-sentence reason for each. "
-            "Also write a one-line summary of the overall recommendation."
+            "Rank them from best to worst fit and write a short one-sentence reason for each. "
+            "The reason MUST reference the specific signals listed above (e.g. 'Recent commits to `<file>`', "
+            "'CODEOWNERS owner of `<file>`', 'Inferred owner for <rule>'). "
+            "Do NOT use generic phrases like 'top contributor' or 'direct commit experience' — "
+            "always cite the actual file name or rule from the signals. "
+            "Also write a one-line summary of the overall recommendation that mentions commit history "
+            "if the primary signal is commit-based."
         )
         structured_llm = llm.with_structured_output(LLMReviewerRanking)  # type: ignore[union-attr]
         ranking: LLMReviewerRanking = await structured_llm.ainvoke([HumanMessage(content=prompt)])
