@@ -176,11 +176,9 @@ def _match_watchflow_rules(rules: list[Any], changed_files: list[str]) -> list[d
                 else:
                     continue
                 break
-        else:
-            # Non-path rules always match for pull_request event types
-            event_types = [e.value if hasattr(e, "value") else str(e) for e in (rule.event_types or [])]
-            if "pull_request" in event_types:
-                matched.append({"description": rule.description, "severity": severity})
+        # Rules without path patterns are process/compliance checks (e.g. linked issue,
+        # max lines, title pattern). They do not indicate content-based file-change risk,
+        # so they are intentionally excluded from risk scoring here.
 
     return matched
 
