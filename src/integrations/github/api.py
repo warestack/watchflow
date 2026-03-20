@@ -491,6 +491,34 @@ class GitHubClient:
         except Exception:
             return {}
 
+    async def remove_label_from_issue(self, repo: str, issue_number: int, label: str, installation_id: int) -> bool:
+        """Remove a single label from an issue or pull request. Returns True on success, False if not found or error."""
+        try:
+            token = await self.get_installation_access_token(installation_id)
+            if not token:
+                return False
+
+            headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+            encoded_label = quote(label, safe="")
+            url = f"{config.github.api_base_url}/repos/{repo}/issues/{issue_number}/labels/{encoded_label}"
+
+            session = await self._get_session()
+            async with session.delete(url, headers=headers) as response:
+                if response.status == 200:
+                    logger.info(f"Removed label '{label}' from #{issue_number} in {repo}")
+                    return True
+                elif response.status == 404:
+                    # Label wasn't on the issue — not an error
+                    return True
+                else:
+                    logger.warning(
+                        f"Failed to remove label '{label}' from #{issue_number} in {repo}. Status: {response.status}"
+                    )
+                    return False
+        except Exception as e:
+            logger.warning(f"Error removing label '{label}' from #{issue_number} in {repo}: {e}")
+            return False
+
     async def add_labels_to_issue(
         self, repo: str, issue_number: int, labels: list[str], installation_id: int
     ) -> list[dict[str, Any]]:

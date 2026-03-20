@@ -87,9 +87,17 @@ class IssueCommentEventHandler(EventHandler):
                     comment=comment,
                     installation_id=installation_id,
                 )
-                # Apply risk-level label
+                # Apply risk-level label (remove stale risk labels first)
                 if risk_result.success:
                     risk_level = risk_result.data.get("risk_level", "low")
+                    for old_level in ("low", "medium", "high", "critical"):
+                        if old_level != risk_level:
+                            await github_client.remove_label_from_issue(
+                                repo=repo,
+                                issue_number=pr_number,
+                                label=f"watchflow:risk-{old_level}",
+                                installation_id=installation_id,
+                            )
                     await github_client.add_labels_to_issue(
                         repo=repo,
                         issue_number=pr_number,
@@ -136,9 +144,17 @@ class IssueCommentEventHandler(EventHandler):
                     comment=comment,
                     installation_id=installation_id,
                 )
-                # Apply labels and assign reviewers
+                # Apply labels and assign reviewers (remove stale risk labels first)
                 if reviewer_result.success:
                     risk_level = reviewer_result.data.get("risk_level", "low")
+                    for old_level in ("low", "medium", "high", "critical"):
+                        if old_level != risk_level:
+                            await github_client.remove_label_from_issue(
+                                repo=repo,
+                                issue_number=pr_number,
+                                label=f"watchflow:risk-{old_level}",
+                                installation_id=installation_id,
+                            )
                     await github_client.add_labels_to_issue(
                         repo=repo,
                         issue_number=pr_number,
