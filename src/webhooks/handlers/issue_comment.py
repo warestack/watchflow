@@ -13,6 +13,27 @@ logger = logging.getLogger(__name__)
 
 # Simple in-memory cooldown for slash commands: (repo, pr_number, command) -> timestamp
 _COMMAND_COOLDOWN: dict[tuple[str, int, str], float] = {}
+
+_ALL_RISK_LEVELS = ("low", "medium", "high", "critical")
+
+
+async def _apply_risk_label(repo: str, pr_number: int, risk_level: str, installation_id: int) -> None:
+    """Remove all stale risk labels then apply the current one."""
+    for level in _ALL_RISK_LEVELS:
+        await github_client.remove_label_from_issue(
+            repo=repo,
+            issue_number=pr_number,
+            label=f"watchflow:risk-{level}",
+            installation_id=installation_id,
+        )
+    await github_client.add_labels_to_issue(
+        repo=repo,
+        issue_number=pr_number,
+        labels=[f"watchflow:risk-{risk_level}"],
+        installation_id=installation_id,
+    )
+
+
 _COOLDOWN_SECONDS = 30  # minimum seconds between identical slash commands
 
 
@@ -90,20 +111,7 @@ class IssueCommentEventHandler(EventHandler):
                 # Apply risk-level label (remove stale risk labels first)
                 if risk_result.success:
                     risk_level = risk_result.data.get("risk_level", "low")
-                    for old_level in ("low", "medium", "high", "critical"):
-                        if old_level != risk_level:
-                            await github_client.remove_label_from_issue(
-                                repo=repo,
-                                issue_number=pr_number,
-                                label=f"watchflow:risk-{old_level}",
-                                installation_id=installation_id,
-                            )
-                    await github_client.add_labels_to_issue(
-                        repo=repo,
-                        issue_number=pr_number,
-                        labels=[f"watchflow:risk-{risk_level}"],
-                        installation_id=installation_id,
-                    )
+                    await _apply_risk_label(repo, pr_number, risk_level, installation_id)
                 logger.info(f"📊 Posted risk assessment for PR #{pr_number}.")
                 return WebhookResponse(status="ok")
 
@@ -147,18 +155,11 @@ class IssueCommentEventHandler(EventHandler):
                 # Apply labels and assign reviewers (remove stale risk labels first)
                 if reviewer_result.success:
                     risk_level = reviewer_result.data.get("risk_level", "low")
-                    for old_level in ("low", "medium", "high", "critical"):
-                        if old_level != risk_level:
-                            await github_client.remove_label_from_issue(
-                                repo=repo,
-                                issue_number=pr_number,
-                                label=f"watchflow:risk-{old_level}",
-                                installation_id=installation_id,
-                            )
+                    await _apply_risk_label(repo, pr_number, risk_level, installation_id)
                     await github_client.add_labels_to_issue(
                         repo=repo,
                         issue_number=pr_number,
-                        labels=[f"watchflow:risk-{risk_level}", "watchflow:reviewer-recommendation"],
+                        labels=["watchflow:reviewer-recommendation"],
                         installation_id=installation_id,
                     )
                     # Assign recommended reviewers to the PR
