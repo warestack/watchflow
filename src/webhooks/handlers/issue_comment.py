@@ -68,6 +68,10 @@ class IssueCommentEventHandler(EventHandler):
                     logger.info(f"Slash command /risk on cooldown for PR #{pr_number}")
                     return WebhookResponse(status="ignored", detail="Command on cooldown")
 
+                # Mark cooldown immediately to block concurrent duplicate webhooks
+                # before the async agent.execute() call (prevents TOCTOU race).
+                self._mark_cooldown(repo, pr_number, "risk")
+
                 agent = get_agent("reviewer_recommendation")
                 risk_result = await agent.execute(
                     repo_full_name=repo,
@@ -93,7 +97,6 @@ class IssueCommentEventHandler(EventHandler):
                         installation_id=installation_id,
                     )
                 logger.info(f"📊 Posted risk assessment for PR #{pr_number}.")
-                self._mark_cooldown(repo, pr_number, "risk")
                 return WebhookResponse(status="ok")
 
             # /reviewers — recommend reviewers based on ownership + expertise.
@@ -112,6 +115,11 @@ class IssueCommentEventHandler(EventHandler):
                 if not force and self._is_on_cooldown(repo, pr_number, "reviewers"):
                     logger.info(f"Slash command /reviewers on cooldown for PR #{pr_number}")
                     return WebhookResponse(status="ignored", detail="Command on cooldown")
+
+                # Mark cooldown immediately to block concurrent duplicate webhooks
+                # before the async agent.execute() call (prevents TOCTOU race).
+                if not force:
+                    self._mark_cooldown(repo, pr_number, "reviewers")
 
                 agent = get_agent("reviewer_recommendation")
                 reviewer_result = await agent.execute(
@@ -174,7 +182,6 @@ class IssueCommentEventHandler(EventHandler):
                         installation_id=installation_id,
                     )
                 logger.info(f"👥 Posted reviewer recommendations for PR #{pr_number}.")
-                self._mark_cooldown(repo, pr_number, "reviewers")
                 return WebhookResponse(status="ok")
 
             # Help command—user likely lost/confused.
