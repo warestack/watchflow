@@ -1063,11 +1063,11 @@ class GitHubClient:
                 "Authorization": f"Bearer {token}",
                 "Accept": "application/vnd.github.v3+json",
             }
-            encoded_path = quote(file_path, safe="")
-            url = f"{config.github.api_base_url}/repos/{repo}/commits?path={encoded_path}&per_page={min(limit, 100)}"
+            url = f"{config.github.api_base_url}/repos/{repo}/commits"
+            params = {"path": file_path, "per_page": min(limit, 100)}
 
             session = await self._get_session()
-            async with session.get(url, headers=headers) as response:
+            async with session.get(url, headers=headers, params=params) as response:
                 if response.status == 200:
                     commits = await response.json()
                     return cast("list[dict[str, Any]]", commits)
