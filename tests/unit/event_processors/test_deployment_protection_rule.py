@@ -160,7 +160,8 @@ async def test_timeout_triggers_fallback_approval(processor, mock_agent, task):
 
 
 @pytest.mark.asyncio
-async def test_retry_exhaustion_returns_failure(processor, mock_agent, task):
+@patch("src.core.utils.retry.asyncio.sleep", new_callable=AsyncMock)
+async def test_retry_exhaustion_returns_failure(mock_sleep, processor, mock_agent, task):
     """When review_deployment_protection_rule returns None and retries exhaust, process returns failure."""
     processor.rule_provider.get_rules.return_value = [_make_deployment_rule()]
     mock_agent.execute.side_effect = RuntimeError("agent failed")
