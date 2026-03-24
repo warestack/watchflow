@@ -176,9 +176,10 @@ def _match_watchflow_rules(rules: list[Any], changed_files: list[str]) -> list[d
                 else:
                     continue
                 break
-        # Rules without path patterns are process/compliance checks (e.g. linked issue,
-        # max lines, title pattern). They do not indicate content-based file-change risk,
-        # so they are intentionally excluded from risk scoring here.
+        else:
+            # Rules without path patterns are process/compliance checks (e.g. linked issue,
+            # max lines, title pattern). They always apply to any PR.
+            matched.append({"description": rule.description, "severity": severity})
 
     return matched
 

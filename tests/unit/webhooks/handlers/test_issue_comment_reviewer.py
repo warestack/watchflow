@@ -111,6 +111,7 @@ class TestRiskCommand:
         mock_get_agent.return_value = mock_agent
         mock_gh.create_pull_request_comment = AsyncMock(return_value={})
         mock_gh.add_labels_to_issue = AsyncMock(return_value=[])
+        mock_gh.remove_label_from_issue = AsyncMock(return_value={})
 
         response = await self.handler.handle(_make_event("/risk"))
 
@@ -157,14 +158,16 @@ class TestReviewersCommand:
         self.handler = IssueCommentEventHandler()
 
     @pytest.mark.asyncio
+    @patch("src.services.recommendation_metrics.save_recommendation", new_callable=AsyncMock)
     @patch("src.webhooks.handlers.issue_comment.get_agent")
     @patch("src.webhooks.handlers.issue_comment.github_client")
-    async def test_reviewers_command_posts_comment_and_labels(self, mock_gh, mock_get_agent):
+    async def test_reviewers_command_posts_comment_and_labels(self, mock_gh, mock_get_agent, mock_save):
         mock_agent = MagicMock()
         mock_agent.execute = AsyncMock(return_value=_MOCK_AGENT_RESULT)
         mock_get_agent.return_value = mock_agent
         mock_gh.create_pull_request_comment = AsyncMock(return_value={})
         mock_gh.add_labels_to_issue = AsyncMock(return_value=[])
+        mock_gh.remove_label_from_issue = AsyncMock(return_value={})
         mock_gh.request_reviewers = AsyncMock(return_value={})
 
         response = await self.handler.handle(_make_event("/reviewers"))
@@ -184,14 +187,16 @@ class TestReviewersCommand:
         )
 
     @pytest.mark.asyncio
+    @patch("src.services.recommendation_metrics.save_recommendation", new_callable=AsyncMock)
     @patch("src.webhooks.handlers.issue_comment.get_agent")
     @patch("src.webhooks.handlers.issue_comment.github_client")
-    async def test_reviewers_force_flag_also_runs(self, mock_gh, mock_get_agent):
+    async def test_reviewers_force_flag_also_runs(self, mock_gh, mock_get_agent, mock_save):
         mock_agent = MagicMock()
         mock_agent.execute = AsyncMock(return_value=_MOCK_AGENT_RESULT)
         mock_get_agent.return_value = mock_agent
         mock_gh.create_pull_request_comment = AsyncMock(return_value={})
         mock_gh.add_labels_to_issue = AsyncMock(return_value=[])
+        mock_gh.remove_label_from_issue = AsyncMock(return_value={})
         mock_gh.request_reviewers = AsyncMock(return_value={})
 
         response = await self.handler.handle(_make_event("/reviewers --force"))
@@ -200,14 +205,16 @@ class TestReviewersCommand:
         mock_agent.execute.assert_called_once()
 
     @pytest.mark.asyncio
+    @patch("src.services.recommendation_metrics.save_recommendation", new_callable=AsyncMock)
     @patch("src.webhooks.handlers.issue_comment.get_agent")
     @patch("src.webhooks.handlers.issue_comment.github_client")
-    async def test_reviewers_command_assigns_individual_reviewers_to_pr(self, mock_gh, mock_get_agent):
+    async def test_reviewers_command_assigns_individual_reviewers_to_pr(self, mock_gh, mock_get_agent, mock_save):
         mock_agent = MagicMock()
         mock_agent.execute = AsyncMock(return_value=_MOCK_AGENT_RESULT)
         mock_get_agent.return_value = mock_agent
         mock_gh.create_pull_request_comment = AsyncMock(return_value={})
         mock_gh.add_labels_to_issue = AsyncMock(return_value=[])
+        mock_gh.remove_label_from_issue = AsyncMock(return_value={})
         mock_gh.request_reviewers = AsyncMock(return_value={})
 
         response = await self.handler.handle(_make_event("/reviewers"))
@@ -222,15 +229,17 @@ class TestReviewersCommand:
         )
 
     @pytest.mark.asyncio
+    @patch("src.services.recommendation_metrics.save_recommendation", new_callable=AsyncMock)
     @patch("src.webhooks.handlers.issue_comment.get_agent")
     @patch("src.webhooks.handlers.issue_comment.github_client")
-    async def test_reviewers_team_slugs_go_to_team_reviewers_field(self, mock_gh, mock_get_agent):
+    async def test_reviewers_team_slugs_go_to_team_reviewers_field(self, mock_gh, mock_get_agent, mock_save):
         """Team slugs from CODEOWNERS must be passed to team_reviewers, not reviewers."""
         mock_agent = MagicMock()
         mock_agent.execute = AsyncMock(return_value=_MOCK_AGENT_RESULT_WITH_TEAM)
         mock_get_agent.return_value = mock_agent
         mock_gh.create_pull_request_comment = AsyncMock(return_value={})
         mock_gh.add_labels_to_issue = AsyncMock(return_value=[])
+        mock_gh.remove_label_from_issue = AsyncMock(return_value={})
         mock_gh.request_reviewers = AsyncMock(return_value={})
 
         response = await self.handler.handle(_make_event("/reviewers"))
@@ -277,6 +286,7 @@ class TestSlashCommandCooldown:
         mock_get_agent.return_value = mock_agent
         mock_gh.create_pull_request_comment = AsyncMock(return_value={})
         mock_gh.add_labels_to_issue = AsyncMock(return_value=[])
+        mock_gh.remove_label_from_issue = AsyncMock(return_value={})
 
         # First call succeeds
         response = await self.handler.handle(_make_event("/risk"))
@@ -288,14 +298,16 @@ class TestSlashCommandCooldown:
         assert "cooldown" in response.detail.lower()
 
     @pytest.mark.asyncio
+    @patch("src.services.recommendation_metrics.save_recommendation", new_callable=AsyncMock)
     @patch("src.webhooks.handlers.issue_comment.get_agent")
     @patch("src.webhooks.handlers.issue_comment.github_client")
-    async def test_reviewers_force_bypasses_cooldown(self, mock_gh, mock_get_agent):
+    async def test_reviewers_force_bypasses_cooldown(self, mock_gh, mock_get_agent, mock_save):
         mock_agent = MagicMock()
         mock_agent.execute = AsyncMock(return_value=_MOCK_AGENT_RESULT)
         mock_get_agent.return_value = mock_agent
         mock_gh.create_pull_request_comment = AsyncMock(return_value={})
         mock_gh.add_labels_to_issue = AsyncMock(return_value=[])
+        mock_gh.remove_label_from_issue = AsyncMock(return_value={})
         mock_gh.request_reviewers = AsyncMock(return_value={})
 
         # First call succeeds
