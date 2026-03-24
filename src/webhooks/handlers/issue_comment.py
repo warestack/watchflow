@@ -155,11 +155,17 @@ class IssueCommentEventHandler(EventHandler):
                 # Apply labels and assign reviewers (remove stale risk labels first)
                 if reviewer_result.success:
                     risk_level = reviewer_result.data.get("risk_level", "low")
-                    await _apply_risk_label(repo, pr_number, risk_level, installation_id)
+                    for level in _ALL_RISK_LEVELS:
+                        await github_client.remove_label_from_issue(
+                            repo=repo,
+                            issue_number=pr_number,
+                            label=f"watchflow:risk-{level}",
+                            installation_id=installation_id,
+                        )
                     await github_client.add_labels_to_issue(
                         repo=repo,
                         issue_number=pr_number,
-                        labels=["watchflow:reviewer-recommendation"],
+                        labels=[f"watchflow:risk-{risk_level}", "watchflow:reviewer-recommendation"],
                         installation_id=installation_id,
                     )
                     # Assign recommended reviewers to the PR
