@@ -1,7 +1,10 @@
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.core.models import Acknowledgment, Severity, Violation
+
+if TYPE_CHECKING:
+    from src.event_processors.risk_assessment.signals import RiskAssessmentResult
 
 logger = logging.getLogger(__name__)
 
@@ -390,3 +393,39 @@ All rule violations have been properly acknowledged and overridden. The pull req
 Please address the remaining violations or acknowledge them with a valid reason.
 """
     return {"title": summary, "summary": summary, "text": text, "conclusion": conclusion}
+
+
+def format_risk_assessment_comment(result: "RiskAssessmentResult") -> str:
+    """Format a risk assessment result as a GitHub PR comment."""
+    from src.event_processors.risk_assessment.signals import _SEVERITY_SCORE
+
+    risk_emoji = SEVERITY_EMOJI.get(result.level, "⚪")
+    risk_label = result.level.capitalize()
+
+    lines = [f"### ⚠️ Watchflow Risk Assessment — {risk_emoji} {risk_label}"]
+
+    if not result.signals:
+        lines.append("")
+        lines.append("No risk signals detected.")
+    else:
+        # Sort signals by severity descending (CRITICAL first)
+        sorted_signals = sorted(result.signals, key=lambda s: _SEVERITY_SCORE.get(s.severity, 0), reverse=True)
+
+        lines.append("")
+        lines.append(f"<details><summary>📊 Risk Signals ({len(sorted_signals)} triggered)</summary>")
+        lines.append("")
+        lines.append("| Severity | Category | Signal |")
+        lines.append("|----------|----------|--------|")
+
+        for signal in sorted_signals:
+            sev_emoji = SEVERITY_EMOJI.get(signal.severity, "⚪")
+            sev_name = signal.severity.name
+            lines.append(f"| {sev_emoji} {sev_name} | {signal.category} | {signal.description} |")
+
+        lines.append("")
+        lines.append("</details>")
+
+    lines.append("")
+    lines.append("> _Triggered by /risk command_")
+
+    return "\n".join(lines)

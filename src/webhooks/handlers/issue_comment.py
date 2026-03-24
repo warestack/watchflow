@@ -47,6 +47,7 @@ class IssueCommentEventHandler(EventHandler):
                     '- @watchflow ack "reason" — Short form for acknowledge.\n'
                     '- @watchflow evaluate "rule description" — Evaluate the feasibility of a rule.\n'
                     "- @watchflow validate — Validate the .watchflow/rules.yaml file.\n"
+                    "- /risk — Show risk assessment.\n"
                     "- /reviewers — Recommend the best reviewers for this PR.\n"
                     "- /reviewers --force — Re-run reviewer recommendation (bypass cache).\n"
                     "- @watchflow help — Show this help message.\n"
@@ -179,6 +180,29 @@ class IssueCommentEventHandler(EventHandler):
                     logger.warning("Could not determine PR or issue number to post validation result.")
                     return WebhookResponse(status="ok", detail=str(validation_result))
 
+            # Risk assessment—user wants a risk assessment with risk level and reason.
+            if self._is_risk_comment(comment_body):
+                from src.event_processors.factory import EventProcessorFactory
+                from src.tasks.task_queue import Task
+
+                async def process_risk_assessment(risk_task: Task) -> None:
+                    processor = EventProcessorFactory.get_processor("risk_assessment")
+                    await processor.process(risk_task)
+
+                task = task_queue.build_task(
+                    "risk_assessment",
+                    event.payload,
+                    process_risk_assessment,
+                )
+                risk_result = await task_queue.enqueue(
+                    process_risk_assessment,
+                    "risk_assessment",
+                    event.payload,
+                    task,
+                )
+                logger.info(f"⚡ Risk assessment enqueued: {risk_result}")
+                return WebhookResponse(status="ok", detail="Risk assessment enqueued")
+
             else:
                 # No match—ignore, avoid noise.
                 logger.info("📋 Comment does not match any known patterns - ignoring")
@@ -247,3 +271,6 @@ class IssueCommentEventHandler(EventHandler):
         ]
         # Pythonic: use any() for pattern match—cleaner, faster.
         return any(re.search(pattern, comment_body, re.IGNORECASE) for pattern in patterns)
+
+    def _is_risk_comment(self, comment_body: str) -> bool:
+        return bool(re.search(r"^/risk\s*$", comment_body.strip(), re.IGNORECASE))
