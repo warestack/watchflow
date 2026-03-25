@@ -90,7 +90,7 @@ class IssueCommentEventHandler(EventHandler):
                 result = await task_queue.enqueue(
                     process_acknowledgment,
                     "violation_acknowledgment",
-                    ack_payload,
+                    payload=ack_payload,
                 )
                 logger.info(f"✅ Acknowledgment comment enqueued: {result}")
                 return WebhookResponse(
@@ -141,16 +141,21 @@ class IssueCommentEventHandler(EventHandler):
                 from src.tasks.task_queue import Task
 
                 force = reviewers_match.get("force", False)
-
-                async def process_reviewer_recommendation(rec_task: Task) -> None:
-                    processor = EventProcessorFactory.get_processor("reviewer_recommendation")
-                    await processor.process(rec_task)
-
                 rec_payload = {**event.payload, "reviewers_force": force}
-                result = await task_queue.enqueue(
-                    process_reviewer_recommendation,
+
+                processor = EventProcessorFactory.get_processor("reviewer_recommendation")
+                rec_task = task_queue.build_task(
                     "reviewer_recommendation",
                     rec_payload,
+                    processor.process,
+                    delivery_id=event.delivery_id,
+                )
+                result = await task_queue.enqueue(
+                    processor.process,
+                    "reviewer_recommendation",
+                    rec_payload,
+                    rec_task,
+                    delivery_id=event.delivery_id,
                 )
                 logger.info(f"✅ Reviewer recommendation enqueued: {result}")
                 return WebhookResponse(
@@ -183,22 +188,20 @@ class IssueCommentEventHandler(EventHandler):
             # Risk assessment—user wants a risk assessment with risk level and reason.
             if self._is_risk_comment(comment_body):
                 from src.event_processors.factory import EventProcessorFactory
-                from src.tasks.task_queue import Task
 
-                async def process_risk_assessment(risk_task: Task) -> None:
-                    processor = EventProcessorFactory.get_processor("risk_assessment")
-                    await processor.process(risk_task)
-
-                task = task_queue.build_task(
+                processor = EventProcessorFactory.get_processor("risk_assessment")
+                risk_task = task_queue.build_task(
                     "risk_assessment",
                     event.payload,
-                    process_risk_assessment,
+                    processor.process,
+                    delivery_id=event.delivery_id,
                 )
                 risk_result = await task_queue.enqueue(
-                    process_risk_assessment,
+                    processor.process,
                     "risk_assessment",
                     event.payload,
-                    task,
+                    risk_task,
+                    delivery_id=event.delivery_id,
                 )
                 logger.info(f"⚡ Risk assessment enqueued: {risk_result}")
                 return WebhookResponse(status="ok", detail="Risk assessment enqueued")
@@ -273,4 +276,4 @@ class IssueCommentEventHandler(EventHandler):
         return any(re.search(pattern, comment_body, re.IGNORECASE) for pattern in patterns)
 
     def _is_risk_comment(self, comment_body: str) -> bool:
-        return bool(re.search(r"^/risk\s*$", comment_body.strip(), re.IGNORECASE))
+        return bool(re.search(r"(?:@watchflow\s+)?/risk\s*$", comment_body.strip(), re.IGNORECASE))

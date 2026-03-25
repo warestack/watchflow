@@ -124,8 +124,8 @@ class CodeOwnersParser:
             regex = regex.replace("\\*", ".*")
             return f"^{regex}$"
 
-        # Exact match
-        return f"^{re.escape(pattern)}$"
+        # Bare path: matches the exact path OR anything under it (GitHub CODEOWNERS behaviour)
+        return f"^{re.escape(pattern)}(/.*)?$"
 
     def get_critical_files(self, critical_owners: list[str] | None = None) -> list[str]:
         """

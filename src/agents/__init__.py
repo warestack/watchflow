@@ -13,6 +13,7 @@ from src.agents.extractor_agent import RuleExtractorAgent
 from src.agents.factory import get_agent
 from src.agents.feasibility_agent import RuleFeasibilityAgent
 from src.agents.repository_analysis_agent import RepositoryAnalysisAgent
+from src.agents.reviewer_reasoning_agent import ReviewerReasoningAgent
 
 __all__ = [
     "BaseAgent",
@@ -22,5 +23,6 @@ __all__ = [
     "RuleExtractorAgent",
     "AcknowledgmentAgent",
     "RepositoryAnalysisAgent",
+    "ReviewerReasoningAgent",
     "get_agent",
 ]

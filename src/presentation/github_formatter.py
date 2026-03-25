@@ -264,11 +264,17 @@ def format_violations_comment(violations: list[Violation], content_hash: str | N
     return comment
 
 
+def _sanitize_mention(text: str) -> str:
+    """Escape @ mentions in user-controlled text to prevent accidental GitHub notifications."""
+    return text.replace("@", "@\u200b")
+
+
 def format_reviewer_recommendation_comment(
     risk_level: str,
     risk_reason: str,
     reviewers: list[tuple[str, str]],
     reasoning_lines: list[str],
+    review_load: dict[str, int] | None = None,
 ) -> str:
     """Format a reviewer recommendation as a GitHub PR comment.
 
@@ -276,7 +282,8 @@ def format_reviewer_recommendation_comment(
         risk_level: One of "critical", "high", "medium", "low".
         risk_reason: Human-readable explanation of the risk assessment.
         reviewers: List of (username, expertise_reason) tuples, ordered by rank.
-        reasoning_lines: Bullet-point reasoning strings.
+        reasoning_lines: Bullet-point reasoning strings (rules, risk signals, context).
+        review_load: Optional dict mapping username -> pending review count.
 
     Returns:
         Markdown formatted comment matching the Watchflow reviewer recommendation template.
@@ -293,7 +300,9 @@ def format_reviewer_recommendation_comment(
     if reviewers:
         lines.append("**Recommended:**")
         for i, (username, reason) in enumerate(reviewers, 1):
-            lines.append(f"{i}. @{username} — {reason}")
+            pending = (review_load or {}).get(username, 0)
+            load_note = f" · {pending} pending reviews" if review_load and pending > 0 else ""
+            lines.append(f"{i}. @{username} — {reason}{load_note}")
         lines.append("")
     else:
         lines.append("**Recommended:** No candidates found — consider requesting a review manually.")
