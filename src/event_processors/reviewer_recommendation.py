@@ -12,18 +12,7 @@ import yaml
 from src.core.models import EventType, Severity, Violation
 from src.core.utils.caching import AsyncCache
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
-from src.event_processors.risk_assessment.signals import (
-    compute_risk,
-    evaluate_breaking_changes,
-    evaluate_contributor_history,
-    evaluate_critical_path,
-    evaluate_dependency_changes,
-    evaluate_reverts,
-    evaluate_rule_matches,
-    evaluate_security_sensitive,
-    evaluate_size,
-    evaluate_test_coverage,
-)
+from src.event_processors.risk_assessment.signals import generate_risk_assessment
 from src.presentation import github_formatter
 from src.rules.loaders.github_loader import RulesFileNotFoundError
 from src.rules.models import Rule
@@ -622,18 +611,7 @@ class ReviewerRecommendationProcessor(BaseEventProcessor):
                 for rule in matched_rules
             ]
 
-            signals = [
-                *evaluate_size(pr_data or {}, changed_files),
-                *evaluate_critical_path(changed_files),
-                *evaluate_test_coverage(changed_files),
-                *evaluate_dependency_changes(changed_files),
-                *evaluate_contributor_history(pr_data or {}),
-                *evaluate_reverts(pr_data or {}),
-                *evaluate_security_sensitive(changed_files),
-                *evaluate_breaking_changes(pr_data or {}, changed_files),
-                *evaluate_rule_matches(rule_violations),
-            ]
-            risk_result = compute_risk(signals)
+            risk_result = await generate_risk_assessment(repo, installation_id, pr_data, changed_files)
             risk_level: str = risk_result.level
             risk_descriptions = [s.description for s in risk_result.signals]
             risk_reason = f"{len(risk_result.signals)} signal(s) — max severity: {risk_level}"
