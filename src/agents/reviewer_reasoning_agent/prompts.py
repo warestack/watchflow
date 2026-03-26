@@ -20,9 +20,9 @@ Rules:
 - Max ~15 words per item, max ~6 items total.
 
 Examples of good output:
-  "mentioned in CODEOWNERS for src/api, 6 recent commits on changed paths, python expertise (expertise.yaml)"
-  "required reviewer per rule: Security-sensitive paths, reviewed 8 high-risk PRs, expertise in src/auth (expertise.yaml)"
-  "mentioned in CODEOWNERS (80% of changed files), worked on 3 of the changed files (expertise.yaml), last active >6 months ago"
+  "mentioned in CODEOWNERS for src/api, 6 recent commits on changed paths, python expertise from expertise file "
+  "required reviewer per rule: Security-sensitive paths, reviewed 8 high-risk PRs, expertise in src/auth from expertise file"
+  "mentioned in CODEOWNERS (80% of changed files), worked on 3 of the changed files, from expertise file, last active >6 months ago"
 
 Respond with structured output matching the ReviewerReasoningOutput model."""
 

@@ -90,6 +90,31 @@ class TestFilePatternCondition:
             violations = await condition.evaluate(context)
             assert len(violations) == 0
 
+    def test_get_changed_files_from_files_key(self) -> None:
+        """Test that _get_changed_files extracts filenames from event.files."""
+        condition = FilePatternCondition()
+        event = {"files": [{"filename": "src/foo.py"}, {"filename": "src/bar.py"}]}
+        assert condition._get_changed_files(event) == ["src/foo.py", "src/bar.py"]
+
+    def test_get_changed_files_from_changed_files_key(self) -> None:
+        """Test that _get_changed_files falls back to event.changed_files."""
+        condition = FilePatternCondition()
+        event = {"changed_files": [{"filename": "src/foo.py"}]}
+        assert condition._get_changed_files(event) == ["src/foo.py"]
+
+    def test_get_changed_files_empty_event(self) -> None:
+        """Test that _get_changed_files returns empty list when no files present."""
+        condition = FilePatternCondition()
+        assert condition._get_changed_files({}) == []
+
+    @pytest.mark.asyncio
+    async def test_validate_uses_real_event_files(self) -> None:
+        """Test end-to-end: validate reads files from event without mocking."""
+        condition = FilePatternCondition()
+        event = {"files": [{"filename": "src/foo.py"}, {"filename": "src/bar.ts"}]}
+        result = await condition.validate({"pattern": "*.py", "condition_type": "files_match_pattern"}, event)
+        assert result is True
+
     def test_glob_to_regex_conversion(self) -> None:
         """Test glob pattern to regex conversion."""
         assert FilePatternCondition._glob_to_regex("*.py") == "^.*\\.py$"

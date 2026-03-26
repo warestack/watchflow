@@ -29,6 +29,26 @@ _load_cache = AsyncCache(maxsize=128, ttl=900)
 
 _REVIEWER_COUNT = {"low": 1, "medium": 2, "high": 2, "critical": 3}
 
+_LABEL_COLORS: dict[str, tuple[str, str]] = {
+    "watchflow:risk-low": ("0e8a16", "Watchflow: low risk PR"),
+    "watchflow:risk-medium": ("fbca04", "Watchflow: medium risk PR"),
+    "watchflow:risk-high": ("d93f0b", "Watchflow: high risk PR"),
+    "watchflow:risk-critical": ("7b2d8b", "Watchflow: critical risk PR"),
+    "watchflow:reviewer-recommendation": ("1d76db", "Watchflow: reviewer recommendation applied"),
+}
+
+# Maps risk signal categories (from generate_risk_assessment) to the rule parameter
+# keys that produce them.  Used to filter matched_rules down to only those that
+# caused a fired signal — keeps reasoning grounded in the actual /risk evaluation.
+_SIGNAL_CATEGORY_TO_PARAMS: dict[str, frozenset[str]] = {
+    "size-risk": frozenset({"max_lines", "max_file_size_mb"}),
+    "critical-path": frozenset({"critical_owners"}),
+    "test-coverage": frozenset({"require_tests"}),
+    "security-sensitive": frozenset({"security_patterns"}),
+}
+# Rules without any of these params are "leftover" rules evaluated by evaluate_rule_matches.
+_PROCESSED_PARAMS: frozenset[str] = frozenset().union(*_SIGNAL_CATEGORY_TO_PARAMS.values())
+
 _EXT_TO_LANGUAGE: dict[str, str] = {
     ".py": "python",
     ".js": "javascript",
@@ -52,8 +72,8 @@ _EXT_TO_LANGUAGE: dict[str, str] = {
 def _match_rules_to_files(
     rules: list[Rule],
     changed_filenames: list[str],
-) -> tuple[list[Rule], set[str]]:
-    """Return rules relevant to this PR, plus the set of matched filenames.
+) -> tuple[list[Rule], dict[str, list[str]]]:
+    """Return rules relevant to this PR, plus per-rule matched filenames.
 
     - Rules with ``file_patterns`` match only when at least one changed file
       satisfies a pattern.
@@ -61,11 +81,16 @@ def _match_rules_to_files(
       this preserves the original behaviour and ensures that repo-wide rules
       (e.g. ``critical_owners`` designations that apply to every PR) are not
       silently dropped from reviewer context.
+
+    Returns:
+        matched: list of matched Rule objects
+        per_rule_files: dict mapping rule description → list of matched file paths
+                        (only populated for rules that have file_patterns)
     """
     import fnmatch
 
     matched: list[Rule] = []
-    matched_files: set[str] = set()
+    per_rule_files: dict[str, list[str]] = {}
 
     for rule in rules:
         if EventType.PULL_REQUEST not in rule.event_types:
@@ -79,16 +104,45 @@ def _match_rules_to_files(
             matched.append(rule)
             continue
 
-        rule_hit = False
+        rule_matched: list[str] = []
         for pattern in file_patterns:
             for f in changed_filenames:
-                if fnmatch.fnmatch(f, pattern):
-                    matched_files.add(f)
-                    rule_hit = True
-        if rule_hit:
+                if fnmatch.fnmatch(f, pattern) and f not in rule_matched:
+                    rule_matched.append(f)
+        if rule_matched:
             matched.append(rule)
+            per_rule_files[rule.description] = rule_matched
 
-    return matched, matched_files
+    return matched, per_rule_files
+
+
+def _get_rule_path_if_files_match(rule: Rule, changed_filenames: list[str]) -> str | None:
+    """Return the rule's file path pattern if any changed files match it, else None.
+
+    Handles both ``file_patterns`` (list) and ``pattern`` + ``condition_type`` (string).
+    Returns the pattern string itself (e.g. "app/payments/*") for use in reasoning lines.
+    """
+    import fnmatch
+    import re
+
+    file_patterns = rule.parameters.get("file_patterns") or []
+    if file_patterns:
+        for pat in file_patterns:
+            for f in changed_filenames:
+                if fnmatch.fnmatch(f, pat):
+                    return pat
+        return None
+
+    # FilePatternCondition-style: single pattern + condition_type
+    pattern = rule.parameters.get("pattern")
+    condition_type = rule.parameters.get("condition_type", "")
+    if pattern and condition_type in ("files_match_pattern", "files_not_match_pattern"):
+        regex = "^" + pattern.replace(".", "\\.").replace("*", ".*").replace("?", ".") + "$"
+        for f in changed_filenames:
+            if re.match(regex, f):
+                return pattern
+
+    return None
 
 
 async def _fetch_review_load(
@@ -518,7 +572,13 @@ class ReviewerRecommendationProcessor(BaseEventProcessor):
             except RulesFileNotFoundError:
                 logger.info("No rules.yaml found — proceeding without rule matching")
 
-            matched_rules, _rule_matched_files = _match_rules_to_files(rules, changed_filenames)
+            matched_rules, per_rule_files = _match_rules_to_files(rules, changed_filenames)
+            # Rules with a file path pattern that matches at least one changed file: (rule, pattern)
+            path_matched_rules: list[tuple[Rule, str]] = [
+                (r, pat)
+                for r in matched_rules
+                if (pat := _get_rule_path_if_files_match(r, changed_filenames))
+            ]
 
             # 3. Fetch CODEOWNERS
             codeowners_content: str | None = None
@@ -792,31 +852,51 @@ class ReviewerRecommendationProcessor(BaseEventProcessor):
                 )
                 for login, score in top_reviewers
             ]
+            rule_labels: dict[str, str] = {}
             reasoning_result = await self.reasoning_agent.execute(
                 risk_level=risk_level,
                 changed_files=changed_filenames[:10],
                 risk_signals=risk_descriptions,
                 reviewers=reviewer_profile_models,
+                path_rules=[r.description for r, _ in path_matched_rules],
             )
-            # Merge agent reasons over mechanical ones where available
             if reasoning_result.success:
                 for login, sentence in reasoning_result.data.get("explanations", {}).items():
                     if login in candidate_reasons and sentence:
                         candidate_reasons[login] = sentence
+                rule_labels = reasoning_result.data.get("rule_labels", {})
 
-            # 9. Build reasoning lines for the comment
+            # 10. Build reasoning lines for the comment — mirror exactly what /risks shows.
             reasoning_lines: list[str] = []
 
-            # Matched rules
-            for rule in matched_rules[:5]:
-                sev = rule.severity.value if hasattr(rule.severity, "value") else str(rule.severity)
-                patterns = rule.parameters.get("file_patterns", [])
-                pattern_str = ", ".join(patterns[:3]) if patterns else "all files"
-                reasoning_lines.append(f"Rule `{pattern_str}` (severity: {sev}) — {rule.description}")
+            # Explain why top-1 reviewer was ranked first.
+            if top_reviewers:
+                top_login, top_score = top_reviewers[0]
+                top_reason = candidate_reasons.get(top_login, "strongest overall match")
+                if len(top_reviewers) > 1:
+                    second_score = top_reviewers[1][1]
+                    score_gap = top_score - second_score
+                    reasoning_lines.append(
+                        f"Top-1 reviewer @{top_login} — {top_reason}"
+                    )
+                else:
+                    reasoning_lines.append(f"Top-1 reviewer @{top_login} ranked highest — {top_reason}")
 
-            # Risk signals as context (merged into Reasoning, not a separate section)
+            # Build a lookup so risk signals that mention a known path pattern
+            # can be rewritten with the rule's actual description and severity.
+            path_to_rule: dict[str, tuple[str, str]] = {}
+            for rule, path in path_matched_rules:
+                severity = rule.severity.value if hasattr(rule.severity, "value") else str(rule.severity)
+                label = rule_labels.get(rule.description, rule.description.split(":")[0].strip().lower())
+                path_to_rule[path] = (label, severity, rule.description)
+
             for signal in risk_descriptions:
-                reasoning_lines.append(signal)
+                matched_path = next((p for p in path_to_rule if p in signal), None)
+                if matched_path:
+                    label, severity, description = path_to_rule[matched_path]
+                    reasoning_lines.append(f"{label} {matched_path} (severity: {severity}) - {description}")
+                else:
+                    reasoning_lines.append(signal)
 
             # First-time contributor note (use GitHub author association)
             author_assoc = (pr_data.get("author_association") or "").upper() if pr_data else ""
@@ -849,17 +929,18 @@ class ReviewerRecommendationProcessor(BaseEventProcessor):
 
             await self.github_client.create_pull_request_comment(repo, pr_number, comment, installation_id)
             api_calls += 1
+            for label in labels:
+                if label in _LABEL_COLORS:
+                    color, description = _LABEL_COLORS[label]
+                    await self.github_client.ensure_label(repo, label, color, description, installation_id)
+                    api_calls += 1
             applied = await self.github_client.add_labels_to_issue(repo, pr_number, labels, installation_id)
             api_calls += 1
             if not applied:
                 logger.warning(f"Failed to apply labels {labels} to {repo}#{pr_number}")
 
-            # 12. Fire-and-forget: update expertise profiles from this run's commit data
-            base_branch = (pr_data or {}).get("base", {}).get("ref", "main")
-            updated_profiles = _update_expertise_from_commits(expertise_profiles, commit_results, sampled_paths, now)
-            asyncio.create_task(
-                _save_expertise_profiles(self.github_client, repo, installation_id, updated_profiles, base_branch)
-            )
+            # Do not mutate expertise.yaml from reviewer evaluations.
+            # Expertise refresh is intentionally delegated to the dedicated scheduler endpoint/workflow.
 
             processing_time = int((time.time() - start_time) * 1000)
             logger.info(f"✅ Reviewer recommendation posted for {repo}#{pr_number} in {processing_time}ms")

@@ -976,6 +976,50 @@ class GitHubClient:
                 )
                 return []
 
+    async def ensure_label(
+        self, repo: str, name: str, color: str, description: str, installation_id: int
+    ) -> bool:
+        """Create or update a repository label so it exists with the desired color."""
+        try:
+            token = await self.get_installation_access_token(installation_id)
+            if not token:
+                logger.error(f"Failed to get installation token for {installation_id}")
+                return False
+
+            headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+            session = await self._get_session()
+
+            label_url = f"{config.github.api_base_url}/repos/{repo}/labels/{name}"
+            async with session.get(label_url, headers=headers) as resp:
+                if resp.status == 200:
+                    existing = await resp.json()
+                    if existing.get("color") == color:
+                        return True
+                    async with session.patch(
+                        label_url, headers=headers, json={"color": color, "description": description}
+                    ) as patch_resp:
+                        if patch_resp.status == 200:
+                            return True
+                        error_text = await patch_resp.text()
+                        logger.warning(f"Failed to update label {name} in {repo}: {error_text}")
+                        return False
+                elif resp.status == 404:
+                    create_url = f"{config.github.api_base_url}/repos/{repo}/labels"
+                    payload = {"name": name, "color": color, "description": description}
+                    async with session.post(create_url, headers=headers, json=payload) as create_resp:
+                        if create_resp.status == 201:
+                            return True
+                        error_text = await create_resp.text()
+                        logger.warning(f"Failed to create label {name} in {repo}: {error_text}")
+                        return False
+                else:
+                    error_text = await resp.text()
+                    logger.warning(f"Failed to check label {name} in {repo}: status {resp.status}, {error_text}")
+                    return False
+        except Exception as e:
+            logger.error(f"Error ensuring label {name} in {repo}: {e}")
+            return False
+
     async def add_labels_to_issue(
         self, repo: str, issue_number: int, labels: list[str], installation_id: int
     ) -> list[dict[str, Any]]:

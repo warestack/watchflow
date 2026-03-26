@@ -31,6 +31,14 @@ class ReviewerReasoningInput(BaseModel):
     changed_files: list[str] = Field(description="Sample of changed file paths", default_factory=list)
     risk_signals: list[str] = Field(description="Triggered risk signal descriptions", default_factory=list)
     reviewers: list[ReviewerProfile] = Field(description="Top reviewer candidates with profiles", default_factory=list)
+    global_rules: list[str] = Field(
+        description="Descriptions of matched rules that have no file_patterns (apply repo-wide)",
+        default_factory=list,
+    )
+    path_rules: list[str] = Field(
+        description="Descriptions of matched rules that have file_patterns (path-specific)",
+        default_factory=list,
+    )
 
 
 class ReviewerExplanation(BaseModel):
@@ -40,7 +48,18 @@ class ReviewerExplanation(BaseModel):
     reasoning: str = Field(description="One concise sentence explaining why this reviewer is the best fit for this PR")
 
 
+class RuleLabel(BaseModel):
+    """Short human-readable topic label for a global (no file_patterns) rule."""
+
+    description: str = Field(description="Original rule description, used as a key to match back")
+    label: str = Field(description="Short topic label, e.g. 'test coverage', 'PR size limit', 'dependency changes'")
+
+
 class ReviewerReasoningOutput(BaseModel):
-    """Structured LLM output: one explanation per reviewer."""
+    """Structured LLM output: one explanation per reviewer, plus labels for global rules."""
 
     explanations: list[ReviewerExplanation] = Field(description="One explanation per reviewer", default_factory=list)
+    rule_labels: list[RuleLabel] = Field(
+        description="Short topic labels for global rules (one entry per item in global_rules input)",
+        default_factory=list,
+    )

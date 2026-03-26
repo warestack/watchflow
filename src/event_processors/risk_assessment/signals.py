@@ -7,6 +7,7 @@ one per triggered condition. Returns [] if nothing noteworthy was found.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -68,6 +69,53 @@ _RULE_SEVERITY_TO_SEVERITY: dict[str, Severity] = {
 
 def _rule_severity(rule: Rule) -> Severity:
     return _RULE_SEVERITY_TO_SEVERITY.get(str(rule.severity.value).lower(), Severity.MEDIUM)
+
+
+_REQUIRED_PATTERN_RE = re.compile(r"No files match required pattern '([^']+)'")
+_FORBIDDEN_PATTERN_RE = re.compile(r"Files match forbidden pattern '([^']+)':")
+
+
+def _derive_path_risk_label(default_label: str, violation: Violation) -> str:
+    """Derive semantic label from rule description for path-based violations."""
+    rule_description = (violation.rule_description or "").strip()
+    if not rule_description:
+        return default_label
+
+    # Condition-level descriptions are generic and too verbose for comments.
+    if rule_description.startswith("Validates if files in the event match or don't match a pattern"):
+        return default_label
+
+    # Rule descriptions typically start with "<label>: ...".
+    label = rule_description.split(":", 1)[0].strip()
+    if not label:
+        return default_label
+
+    # For path-based security violations, use clearer path-specific wording.
+    if label.lower() == "security risk":
+        return "Security path risk"
+
+    return label
+
+
+def _format_path_signal_description(label: str, violation: Violation) -> str:
+    """Format path-based violation messages for reviewer/risk comments."""
+    message = violation.message
+
+    required_match = _REQUIRED_PATTERN_RE.search(message)
+    if required_match:
+        path = required_match.group(1)
+        severity = violation.severity.value if hasattr(violation.severity, "value") else str(violation.severity)
+        path_label = _derive_path_risk_label(label, violation)
+        return f"{path_label} {path} (severity: {severity}) - No files match required pattern"
+
+    forbidden_match = _FORBIDDEN_PATTERN_RE.search(message)
+    if forbidden_match:
+        path = forbidden_match.group(1)
+        severity = violation.severity.value if hasattr(violation.severity, "value") else str(violation.severity)
+        path_label = _derive_path_risk_label(label, violation)
+        return f"{path_label} {path} (severity: {severity}) - Files match forbidden pattern"
+
+    return f"{label} {message}"
 
 
 async def _load_pull_request_rules(
@@ -180,7 +228,7 @@ async def evaluate_security_sensitive(rules: list[Rule], event_data: dict[str, A
         RiskSignal(
             "security-sensitive",
             v.severity,
-            f"Security sensitive risk detected: {v.message}",
+            _format_path_signal_description("Security path risk", v),
         )
         for v in violations
         if v.severity != Severity.INFO
@@ -209,7 +257,7 @@ async def evaluate_rule_matches(rules: list[Rule], event_data: dict[str, Any]) -
         RiskSignal(
             "rule-match",
             v.severity,
-            f"Rule match risk detected: {v.message}",
+            _format_path_signal_description("Rule match risk detected:", v),
         )
         for v in violations
         if v.severity != Severity.INFO

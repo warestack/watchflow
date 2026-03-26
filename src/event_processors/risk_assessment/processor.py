@@ -27,7 +27,7 @@ _LABEL_COLORS = {
     "watchflow:risk-low": ("0e8a16", "Watchflow: low risk PR"),
     "watchflow:risk-medium": ("fbca04", "Watchflow: medium risk PR"),
     "watchflow:risk-high": ("d93f0b", "Watchflow: high risk PR"),
-    "watchflow:risk-critical": ("b60205", "Watchflow: critical risk PR"),
+    "watchflow:risk-critical": ("7b2d8b", "Watchflow: critical risk PR"),
 }
 
 
@@ -96,10 +96,11 @@ class RiskAssessmentProcessor(BaseEventProcessor):
             )
             api_calls += 1
 
-            await self.github_client.add_labels_to_issue(
-                repo, pr_number, [f"watchflow:risk-{risk_assessment_result.level}"], installation_id
-            )
-            api_calls += 1
+            risk_label = f"watchflow:risk-{risk_assessment_result.level}"
+            color, description = _LABEL_COLORS[risk_label]
+            await self.github_client.ensure_label(repo, risk_label, color, description, installation_id)
+            await self.github_client.add_labels_to_issue(repo, pr_number, [risk_label], installation_id)
+            api_calls += 2
 
             return ProcessingResult(
                 success=True,

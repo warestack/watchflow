@@ -50,6 +50,8 @@ class ReviewerReasoningAgent(BaseAgent):
                 changed_files=state.changed_files,
                 risk_signals=state.risk_signals,
                 reviewers=state.reviewers,
+                global_rules=state.global_rules,
+                path_rules=state.path_rules,
             )
             return {"result": result}
         except Exception as e:
@@ -62,18 +64,22 @@ class ReviewerReasoningAgent(BaseAgent):
         changed_files: list[str],
         risk_signals: list[str],
         reviewers: list[ReviewerProfile],
+        global_rules: list[str] | None = None,
+        path_rules: list[str] | None = None,
     ) -> AgentResult:
-        """Generate natural language reasoning for each reviewer.
+        """Generate natural language reasoning for each reviewer and labels for global/path rules.
 
-        Returns AgentResult with data["explanations"] = {login: sentence, ...}
+        Returns AgentResult with:
+          data["explanations"] = {login: sentence, ...}
+          data["rule_labels"]  = {description: label, ...}
         """
         if not reviewers:
-            return AgentResult(success=True, message="No reviewers to explain", data={"explanations": {}})
+            return AgentResult(success=True, message="No reviewers to explain", data={"explanations": {}, "rule_labels": {}})
 
         start_time = time.time()
 
         try:
-            human_prompt = create_reasoning_prompt(risk_level, changed_files, risk_signals, reviewers)
+            human_prompt = create_reasoning_prompt(risk_level, changed_files, risk_signals, reviewers, global_rules, path_rules)
 
             llm = get_chat_model(agent="reviewer_reasoning")
             structured_llm = llm.with_structured_output(ReviewerReasoningOutput)
@@ -91,10 +97,11 @@ class ReviewerReasoningAgent(BaseAgent):
                 return AgentResult(
                     success=False,
                     message="LLM returned empty reasoning",
-                    data={"explanations": {}},
+                    data={"explanations": {}, "rule_labels": {}},
                 )
 
             explanations = {e.login: e.reasoning for e in result.explanations if e.login and e.reasoning}
+            rule_labels = {rl.description: rl.label for rl in (result.rule_labels or []) if rl.description and rl.label}
 
             latency_ms = int((time.time() - start_time) * 1000)
             logger.info(f"Reviewer reasoning generated for {len(explanations)} reviewer(s) in {latency_ms}ms")
@@ -102,7 +109,7 @@ class ReviewerReasoningAgent(BaseAgent):
             return AgentResult(
                 success=True,
                 message=f"Generated reasoning for {len(explanations)} reviewer(s)",
-                data={"explanations": explanations},
+                data={"explanations": explanations, "rule_labels": rule_labels},
                 metadata={"latency_ms": latency_ms, "reviewer_count": len(explanations)},
             )
 
@@ -112,7 +119,7 @@ class ReviewerReasoningAgent(BaseAgent):
             return AgentResult(
                 success=False,
                 message=f"Reasoning generation failed: {e}",
-                data={"explanations": {}},
+                data={"explanations": {}, "rule_labels": {}},
                 metadata={"latency_ms": latency_ms, "error": str(e)},
             )
 
@@ -122,6 +129,8 @@ class ReviewerReasoningAgent(BaseAgent):
         changed_files = kwargs.get("changed_files", [])
         risk_signals = kwargs.get("risk_signals", [])
         reviewers = kwargs.get("reviewers", [])
+        global_rules = kwargs.get("global_rules", [])
+        path_rules = kwargs.get("path_rules", [])
 
         # Accept raw dicts and convert to ReviewerProfile
         reviewer_profiles = [r if isinstance(r, ReviewerProfile) else ReviewerProfile(**r) for r in reviewers]
@@ -131,4 +140,6 @@ class ReviewerReasoningAgent(BaseAgent):
             changed_files=changed_files,
             risk_signals=risk_signals,
             reviewers=reviewer_profiles,
+            global_rules=global_rules,
+            path_rules=path_rules,
         )

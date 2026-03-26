@@ -117,15 +117,15 @@ class FilePatternCondition(BaseCondition):
 
     def _get_changed_files(self, event: dict[str, Any]) -> list[str]:
         """Extract the list of changed files from the event."""
-        event_type = event.get("event_type", "")
-        if event_type == "pull_request":
-            # TODO: Pull request—fetch changed files via GitHub API. Placeholder for now.
-            return []
-        elif event_type == "push":
-            # Push event—files in commits, not implemented.
-            return []
-        else:
-            return []
+        files = event.get("files", [])
+        if files:
+            return [f.get("filename", "") for f in files if f.get("filename")]
+
+        changed_files = event.get("changed_files", [])
+        if changed_files:
+            return [f.get("filename", "") for f in changed_files if f.get("filename")]
+
+        return []
 
     @staticmethod
     def _glob_to_regex(glob_pattern: str) -> str:
