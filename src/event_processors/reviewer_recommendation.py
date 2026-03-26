@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from src.core.models import EventType, Severity, Violation
+from src.core.models import EventType
 from src.core.utils.caching import AsyncCache
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.event_processors.risk_assessment.signals import generate_risk_assessment
@@ -533,16 +533,42 @@ class ReviewerRecommendationProcessor(BaseEventProcessor):
                 except Exception:
                     continue
 
-            # 4. Build owner map from CODEOWNERS (filter out org/team entries)
+            # 4. Build owner map from CODEOWNERS.
+            # Individual owners (@user) feed the scoring pipeline directly.
+            # Team owners (@org/team) are expanded to their members (who also enter scoring)
+            # and also shown as a team in the comment so the whole team is notified.
             codeowner_candidates: dict[str, int] = defaultdict(int)
+            team_codeowner_candidates: dict[str, int] = defaultdict(int)
             if codeowners_content:
                 parser = CodeOwnersParser(codeowners_content)
                 for filename in changed_filenames:
                     owners = parser.get_owners_for_file(filename)
                     for owner in owners:
                         if "/" in owner:
-                            continue
-                        codeowner_candidates[owner] += 1
+                            team_codeowner_candidates[owner] += 1
+                        else:
+                            codeowner_candidates[owner] += 1
+
+            # Resolve team CODEOWNERS to individual members and add them to scoring.
+            # Members inherit the same file-count boost as if they were listed directly.
+            # Org is parsed from the team string itself (@org/team-slug) so cross-org
+            # entries like @other-org/platform resolve correctly.
+            if team_codeowner_candidates:
+                team_member_tasks = []
+                teams_ordered = list(team_codeowner_candidates)
+                for team in teams_ordered:
+                    slug = team.lstrip("@")
+                    org, _, team_slug = slug.partition("/")
+                    team_member_tasks.append(
+                        self.github_client.get_team_members(org, team_slug, installation_id)
+                    )
+                team_member_results = await asyncio.gather(*team_member_tasks, return_exceptions=True)
+                for team, members_result in zip(teams_ordered, team_member_results, strict=False):
+                    if isinstance(members_result, Exception) or not isinstance(members_result, list):
+                        continue
+                    file_count = team_codeowner_candidates[team]
+                    for member in members_result:
+                        codeowner_candidates[member] += file_count
 
             # 5. Build expertise profile from commit history with recency weighting
             directories = list({f.rsplit("/", 1)[0] if "/" in f else "." for f in changed_filenames})
@@ -589,28 +615,6 @@ class ReviewerRecommendationProcessor(BaseEventProcessor):
                     commit_author_scores[author_login] += weight
 
             # 6. Compute risk signals using canonical evaluators
-            # Create synthetic Violation objects for matched rules
-            _RULE_TO_SEVERITY = {
-                "critical": Severity.CRITICAL,
-                "high": Severity.HIGH,
-                "error": Severity.HIGH,
-                "medium": Severity.MEDIUM,
-                "warning": Severity.MEDIUM,
-                "low": Severity.LOW,
-                "info": Severity.INFO,
-            }
-            rule_violations = [
-                Violation(
-                    rule_description=rule.description,
-                    severity=_RULE_TO_SEVERITY.get(
-                        rule.severity.value if hasattr(rule.severity, "value") else "",
-                        Severity.MEDIUM,
-                    ),
-                    message=f"Rule matched: {rule.description}",
-                )
-                for rule in matched_rules
-            ]
-
             risk_result = await generate_risk_assessment(repo, installation_id, pr_data, changed_files)
             risk_level: str = risk_result.level
             risk_descriptions = [s.description for s in risk_result.signals]
@@ -827,12 +831,15 @@ class ReviewerRecommendationProcessor(BaseEventProcessor):
                 )
 
             # 10. Format comment
+            # Collect matched teams sorted by file coverage descending
+            matched_teams = sorted(team_codeowner_candidates.items(), key=lambda x: x[1], reverse=True)
             comment = github_formatter.format_reviewer_recommendation_comment(
                 risk_level=risk_level,
                 risk_reason=risk_reason,
                 reviewers=[(user, candidate_reasons.get(user, "contributor")) for user, _ in top_reviewers],
                 reasoning_lines=reasoning_lines,
                 review_load=review_load,
+                team_reviewers=matched_teams,
             )
 
             # 11. Cache result, post comment, apply labels

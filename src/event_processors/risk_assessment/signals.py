@@ -54,6 +54,21 @@ _GENERAL_SEVERITY_TRESHOLD: dict[Severity, int] = {
     Severity.CRITICAL: 1,
 }
 
+# RuleSeverity has legacy ERROR/WARNING values not present in Severity.
+# Map them to their canonical equivalents so _SEVERITY_SCORE lookups never KeyError.
+_RULE_SEVERITY_TO_SEVERITY: dict[str, Severity] = {
+    "low": Severity.LOW,
+    "medium": Severity.MEDIUM,
+    "high": Severity.HIGH,
+    "critical": Severity.CRITICAL,
+    "error": Severity.HIGH,
+    "warning": Severity.MEDIUM,
+}
+
+
+def _rule_severity(rule: Rule) -> Severity:
+    return _RULE_SEVERITY_TO_SEVERITY.get(str(rule.severity.value).lower(), Severity.MEDIUM)
+
 
 async def _load_pull_request_rules(
     repo: str,
@@ -107,7 +122,7 @@ async def evaluate_size(rules: list[Rule], event_data: dict[str, Any]) -> list[R
 async def evaluate_critical_path(rules: list[Rule], event_data: dict[str, Any]) -> list[RiskSignal]:
     """One signal per file matching a critical business path pattern."""
 
-    critical_owners_rules = [rule for rule in rules if "critical_owner" in rule.parameters]
+    critical_owners_rules = [rule for rule in rules if "critical_owners" in rule.parameters]
     if not critical_owners_rules:
         return []
 
@@ -147,7 +162,7 @@ async def evaluate_test_coverage(rules: list[Rule], event_data: dict[str, Any]) 
 def evaluate_contributor_history(pr_data: dict[str, Any]) -> list[RiskSignal]:
     """Signal based on the author's association to the repository."""
     association = (pr_data.get("author_association") or "").upper()
-    if association in ("FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER"):
+    if association in ("FIRST_TIME_CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR_ON_CREATE", "FIRST_TIMER", "NONE"):
         return [RiskSignal("contributor", Severity.HIGH, "Author is a first-time contributor")]
     return []
 
@@ -163,7 +178,7 @@ async def evaluate_security_sensitive(rules: list[Rule], event_data: dict[str, A
 
     return [
         RiskSignal(
-            "security-sensetive",
+            "security-sensitive",
             v.severity,
             f"Security sensitive risk detected: {v.message}",
         )
@@ -176,9 +191,9 @@ async def evaluate_rule_matches(rules: list[Rule], event_data: dict[str, Any]) -
     """One signal per rule violation."""
 
     already_processed_rule_parameters = [
-        "max_line",
+        "max_lines",
         "max_file_size_mb",
-        "critical_owner",
+        "critical_owners",
         "require_tests",
         "security_patterns",
     ]
@@ -207,7 +222,11 @@ def compute_risk(rules: list[Rule], signals: list[RiskSignal]) -> RiskAssessment
         return RiskAssessmentResult(level=Severity.LOW, signals=signals)
 
     max_level = max((s.severity for s in signals), key=lambda sev: _SEVERITY_SCORE[sev])
-    max_score = sum(_SEVERITY_SCORE[rule.severity] for rule in rules)
+    max_score = sum(_SEVERITY_SCORE[_rule_severity(rule)] for rule in rules)
+
+    if max_score == 0:
+        # No rules configured — cannot normalise; use the highest signal severity directly.
+        return RiskAssessmentResult(level=max_level, signals=signals)
 
     pr_score = max_score * _BOOST_MAX_SEVERITY[max_level] + sum(_SEVERITY_SCORE[signal.severity] for signal in signals)
     pr_score_percentage = pr_score / max_score

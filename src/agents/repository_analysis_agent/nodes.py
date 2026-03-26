@@ -227,7 +227,7 @@ async def fetch_pr_signals(state: AnalysisState) -> AnalysisState:
                 ai_detected_count += 1
 
             # First-time contributor detection via authorAssociation
-            is_first_time = author_assoc in ["FIRST_TIME_CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR_ON_CREATE", "NONE"]
+            is_first_time = author_assoc in ["FIRST_TIME_CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR_ON_CREATE", "FIRST_TIMER", "NONE"]
             if is_first_time:
                 first_time_count += 1
 

@@ -1680,6 +1680,28 @@ class GitHubClient:
             logger.error(f"Error fetching installation for {owner}/{repo}: {e}")
             return None
 
+    async def get_team_members(self, org: str, team_slug: str, installation_id: int) -> list[str]:
+        """Return GitHub logins of all members of *org*/*team_slug*.
+
+        Uses installation auth so the app must have ``members: read`` org permission.
+        Returns an empty list on any error (team not found, insufficient permissions, etc.).
+        """
+        try:
+            token = await self.get_installation_access_token(installation_id)
+            if not token:
+                return []
+            headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+            url = f"{config.github.api_base_url}/orgs/{org}/teams/{team_slug}/members?per_page=100"
+            session = await self._get_session()
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    members = await response.json()
+                    return [m["login"] for m in members if m.get("login")]
+                return []
+        except Exception as e:
+            logger.error(f"Error fetching team members for {org}/{team_slug}: {e}")
+            return []
+
     async def list_app_installations(self, per_page: int = 100) -> list[dict[str, Any]]:
         """List all GitHub App installations using JWT authentication."""
         try:

@@ -275,6 +275,7 @@ def format_reviewer_recommendation_comment(
     reviewers: list[tuple[str, str]],
     reasoning_lines: list[str],
     review_load: dict[str, int] | None = None,
+    team_reviewers: list[tuple[str, int]] | None = None,
 ) -> str:
     """Format a reviewer recommendation as a GitHub PR comment.
 
@@ -284,6 +285,7 @@ def format_reviewer_recommendation_comment(
         reviewers: List of (username, expertise_reason) tuples, ordered by rank.
         reasoning_lines: Bullet-point reasoning strings (rules, risk signals, context).
         review_load: Optional dict mapping username -> pending review count.
+        team_reviewers: Optional list of (@org/team, matched_file_count) tuples from CODEOWNERS.
 
     Returns:
         Markdown formatted comment matching the Watchflow reviewer recommendation template.
@@ -306,6 +308,12 @@ def format_reviewer_recommendation_comment(
         lines.append("")
     else:
         lines.append("**Recommended:** No candidates found — consider requesting a review manually.")
+        lines.append("")
+
+    if team_reviewers:
+        lines.append("**Team owners (CODEOWNERS):**")
+        for team, file_count in team_reviewers:
+            lines.append(f"- @{team} — owns {file_count} of the changed file(s)")
         lines.append("")
 
     if reasoning_lines:

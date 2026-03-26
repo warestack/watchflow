@@ -76,21 +76,24 @@ def _extract_profile_reviews(profile: dict[str, Any]) -> dict[str, int]:
 
 
 async def refresh_expertise_by_repo_name(repo_full_name: str) -> None:
-    """Refresh expertise.yaml for a single repo, resolving the installation ID via a direct API call."""
+    """Refresh expertise.yaml for a single repo, resolving installation from the repo name."""
     owner, _, repo = repo_full_name.partition("/")
     if not owner or not repo:
-        logger.warning(f"Invalid repo name: {repo_full_name!r}")
-        return
+        msg = f"Invalid repo name: {repo_full_name!r}"
+        logger.warning(msg)
+        raise ValueError(msg)
 
     installation = await _github_client.get_repo_installation(owner, repo)
     if not installation:
-        logger.warning(f"No installation found for {repo_full_name}")
-        return
+        msg = f"No installation found for {repo_full_name}"
+        logger.warning(msg)
+        raise RuntimeError(msg)
 
     installation_id = installation.get("id")
     if not installation_id:
-        logger.warning(f"Installation record for {repo_full_name} has no id")
-        return
+        msg = f"Installation record for {repo_full_name} has no id"
+        logger.warning(msg)
+        raise RuntimeError(msg)
 
     await refresh_expertise_for_repo(repo_full_name, installation_id)
     logger.info(f"Expertise refreshed for {repo_full_name}")

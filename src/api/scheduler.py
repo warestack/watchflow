@@ -36,10 +36,9 @@ class RefreshExpertiseRequest(BaseModel):
 @router.post("/refresh-expertise")
 async def refresh_expertise_profiles(
     body: RefreshExpertiseRequest,
-    background_tasks: BackgroundTasks,
     request: Request,
 ) -> dict[str, str]:
-    """Trigger a background refresh of .watchflow/expertise.yaml for a specific repo.
+    """Refresh .watchflow/expertise.yaml for a specific repo and wait for completion.
 
     Authentication: requires a GitHub Actions OIDC JWT in the Authorization header
     (``Authorization: Bearer <token>``).  The ``repository`` claim inside the token
@@ -59,5 +58,14 @@ async def refresh_expertise_profiles(
     except OIDCVerificationError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
-    background_tasks.add_task(refresh_expertise_by_repo_name, body.repo)
-    return {"status": "scheduled", "message": f"Expertise refresh started in background for {body.repo}."}
+    try:
+        await refresh_expertise_by_repo_name(body.repo)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Expertise refresh failed for {body.repo}: {exc}",
+        ) from exc
+
+    return {"status": "completed", "message": f"Expertise refresh completed for {body.repo}."}
