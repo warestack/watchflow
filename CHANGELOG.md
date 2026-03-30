@@ -13,6 +13,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the PR description semantically matches the actual code changes. First
   LLM-backed condition in Watchflow; adds ~1-3s latency. Gracefully skips
   (no violation) if the LLM is unavailable.
+- **Risk assessment** -- `/risk` slash command evaluates PR risk level
+  (low / medium / high / critical) by running existing rule-engine conditions
+  as signal evaluators. Risk labels (`watchflow:risk-*`) are applied and a
+  breakdown comment is posted to the PR. Adding a new rule to
+  `rules.yaml` automatically surfaces a corresponding risk signal with no
+  code changes. Closes #65 (Phase 1).
+- **Reviewer recommendation** -- `/reviewers` and `/reviewers --force` slash
+  commands post a ranked list of suggested reviewers.
+  `ReviewerRecommendationProcessor` uses a 3-tier scoring model: CODEOWNERS +
+  commit history → `.watchflow/expertise.yaml` profiles → review history and
+  critical-owner rule matches. Resolves team CODEOWNERS entries to individual
+  members. Reviewer count scales with risk level (1 for low → 3 for
+  critical). Closes #65 (Phases 2 & 3).
+- **Review load balancing** -- Pending review counts are fetched per candidate
+  (15-minute cache) and overloaded reviewers are penalized in the scoring
+  model.
+- **Reviewer Reasoning Agent** -- `ReviewerReasoningAgent` is a
+  single-responsibility LLM agent that produces a natural-language explanation
+  for each recommended reviewer and short topic labels for matched global
+  rules. Typed `ReviewerReasoningInput` / `ReviewerReasoningOutput` Pydantic
+  models at all boundaries. Supports global and path-specific rule context.
+  Gracefully degrades to mechanical scoring reasons on LLM failure.
+- **Contributor expertise profiles** -- Expertise data is stored in
+  `.watchflow/expertise.yaml` on the default branch. Each contributor entry
+  records `languages`, `commit_count`, `path_commit_counts`, `last_active`,
+  and `reviews` bucketed by risk level. Profiles are built via a layered
+  strategy: CODEOWNERS base → 1-year commit history → merged PR layer; layers
+  merge with `max()` to avoid score inflation.
+- **Automated expertise refresh** -- `.github/workflows/refresh-expertise.yaml`
+  triggers `expertise_scheduler.py` every n time via OIDC-authenticated POST.
+  No user-configured secrets required.
+
+### Fixed
+
+- **`FilePatternCondition._get_changed_files`** -- The method previously
+  contained only a `TODO` placeholder returning `[]`, silently disabling all
+  `files_match_pattern` and `files_not_match_pattern` evaluations. Now
+  correctly extracts changed files from the event's `files` /
+  `changed_files` arrays.
 
 ## [2026-03-01] -- PR #59
 
