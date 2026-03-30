@@ -575,9 +575,7 @@ class ReviewerRecommendationProcessor(BaseEventProcessor):
             matched_rules, per_rule_files = _match_rules_to_files(rules, changed_filenames)
             # Rules with a file path pattern that matches at least one changed file: (rule, pattern)
             path_matched_rules: list[tuple[Rule, str]] = [
-                (r, pat)
-                for r in matched_rules
-                if (pat := _get_rule_path_if_files_match(r, changed_filenames))
+                (r, pat) for r in matched_rules if (pat := _get_rule_path_if_files_match(r, changed_filenames))
             ]
 
             # 3. Fetch CODEOWNERS
@@ -619,9 +617,7 @@ class ReviewerRecommendationProcessor(BaseEventProcessor):
                 for team in teams_ordered:
                     slug = team.lstrip("@")
                     org, _, team_slug = slug.partition("/")
-                    team_member_tasks.append(
-                        self.github_client.get_team_members(org, team_slug, installation_id)
-                    )
+                    team_member_tasks.append(self.github_client.get_team_members(org, team_slug, installation_id))
                 team_member_results = await asyncio.gather(*team_member_tasks, return_exceptions=True)
                 for team, members_result in zip(teams_ordered, team_member_results, strict=False):
                     if isinstance(members_result, Exception) or not isinstance(members_result, list):
@@ -874,11 +870,7 @@ class ReviewerRecommendationProcessor(BaseEventProcessor):
                 top_login, top_score = top_reviewers[0]
                 top_reason = candidate_reasons.get(top_login, "strongest overall match")
                 if len(top_reviewers) > 1:
-                    second_score = top_reviewers[1][1]
-                    score_gap = top_score - second_score
-                    reasoning_lines.append(
-                        f"Top-1 reviewer @{top_login} — {top_reason}"
-                    )
+                    reasoning_lines.append(f"Top-1 reviewer @{top_login} — {top_reason}")
                 else:
                     reasoning_lines.append(f"Top-1 reviewer @{top_login} ranked highest — {top_reason}")
 

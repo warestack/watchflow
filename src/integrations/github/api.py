@@ -976,9 +976,7 @@ class GitHubClient:
                 )
                 return []
 
-    async def ensure_label(
-        self, repo: str, name: str, color: str, description: str, installation_id: int
-    ) -> bool:
+    async def ensure_label(self, repo: str, name: str, color: str, description: str, installation_id: int) -> bool:
         """Create or update a repository label so it exists with the desired color."""
         try:
             token = await self.get_installation_access_token(installation_id)

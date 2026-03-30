@@ -11,10 +11,7 @@ def test_format_required_pattern_signal_description():
 
     formatted = _format_path_signal_description("Security sensitive risk", violation)
 
-    assert (
-        formatted
-        == "Security path risk app/auth/* (severity: high) - No files match required pattern"
-    )
+    assert formatted == "Security path risk app/auth/* (severity: high) - No files match required pattern"
 
 
 def test_format_forbidden_pattern_signal_description():
@@ -26,9 +23,7 @@ def test_format_forbidden_pattern_signal_description():
 
     formatted = _format_path_signal_description("Rule match risk detected:", violation)
 
-    assert (
-        formatted == "Critical path risk app/payments/* (severity: medium) - Files match forbidden pattern"
-    )
+    assert formatted == "Critical path risk app/payments/* (severity: medium) - Files match forbidden pattern"
 
 
 def test_format_non_path_signal_description_falls_back_to_default():

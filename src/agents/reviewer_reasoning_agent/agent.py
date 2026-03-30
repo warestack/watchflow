@@ -74,12 +74,16 @@ class ReviewerReasoningAgent(BaseAgent):
           data["rule_labels"]  = {description: label, ...}
         """
         if not reviewers:
-            return AgentResult(success=True, message="No reviewers to explain", data={"explanations": {}, "rule_labels": {}})
+            return AgentResult(
+                success=True, message="No reviewers to explain", data={"explanations": {}, "rule_labels": {}}
+            )
 
         start_time = time.time()
 
         try:
-            human_prompt = create_reasoning_prompt(risk_level, changed_files, risk_signals, reviewers, global_rules, path_rules)
+            human_prompt = create_reasoning_prompt(
+                risk_level, changed_files, risk_signals, reviewers, global_rules, path_rules
+            )
 
             llm = get_chat_model(agent="reviewer_reasoning")
             structured_llm = llm.with_structured_output(ReviewerReasoningOutput)
