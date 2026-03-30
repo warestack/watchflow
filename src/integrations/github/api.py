@@ -987,11 +987,11 @@ class GitHubClient:
             headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
             session = await self._get_session()
 
-            label_url = f"{config.github.api_base_url}/repos/{repo}/labels/{name}"
+            label_url = f"{config.github.api_base_url}/repos/{repo}/labels/{quote(name, safe='')}"
             async with session.get(label_url, headers=headers) as resp:
                 if resp.status == 200:
                     existing = await resp.json()
-                    if existing.get("color") == color:
+                    if existing.get("color") == color and existing.get("description") == description:
                         return True
                     async with session.patch(
                         label_url, headers=headers, json={"color": color, "description": description}
