@@ -356,6 +356,7 @@ class GitHubClient:
         installation_id: int | None = None,
         state: str = "all",
         per_page: int = 20,
+        page: int = 1,
         user_token: str | None = None,
     ) -> list[dict[str, Any]]:
         """List pull requests for a repository."""
@@ -363,7 +364,7 @@ class GitHubClient:
             headers = await self._get_auth_headers(installation_id=installation_id, user_token=user_token)
             if not headers:
                 return []
-            url = f"{config.github.api_base_url}/repos/{repo}/pulls?state={state}&per_page={min(per_page, 100)}"
+            url = f"{config.github.api_base_url}/repos/{repo}/pulls?state={state}&per_page={min(per_page, 100)}&page={page}"
 
             session = await self._get_session()
             async with session.get(url, headers=headers) as response:
@@ -704,8 +705,7 @@ class GitHubClient:
             session = await self._get_session()
             while True:
                 url = (
-                    f"{config.github.api_base_url}/repos/{repo}/pulls/{pr_number}"
-                    f"/files?per_page={per_page}&page={page}"
+                    f"{config.github.api_base_url}/repos/{repo}/pulls/{pr_number}/files?per_page={per_page}&page={page}"
                 )
                 async with session.get(url, headers=headers) as response:
                     if response.status != 200:
@@ -975,6 +975,114 @@ class GitHubClient:
                     f"Failed to get commits by {username} in {repo}. Status: {response.status}, Response: {error_text}"
                 )
                 return []
+
+    async def ensure_label(self, repo: str, name: str, color: str, description: str, installation_id: int) -> bool:
+        """Create or update a repository label so it exists with the desired color."""
+        try:
+            token = await self.get_installation_access_token(installation_id)
+            if not token:
+                logger.error(f"Failed to get installation token for {installation_id}")
+                return False
+
+            headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+            session = await self._get_session()
+
+            label_url = f"{config.github.api_base_url}/repos/{repo}/labels/{quote(name, safe='')}"
+            async with session.get(label_url, headers=headers) as resp:
+                if resp.status == 200:
+                    existing = await resp.json()
+                    if existing.get("color") == color and existing.get("description") == description:
+                        return True
+                    async with session.patch(
+                        label_url, headers=headers, json={"color": color, "description": description}
+                    ) as patch_resp:
+                        if patch_resp.status == 200:
+                            return True
+                        error_text = await patch_resp.text()
+                        logger.warning(f"Failed to update label {name} in {repo}: {error_text}")
+                        return False
+                elif resp.status == 404:
+                    create_url = f"{config.github.api_base_url}/repos/{repo}/labels"
+                    payload = {"name": name, "color": color, "description": description}
+                    async with session.post(create_url, headers=headers, json=payload) as create_resp:
+                        if create_resp.status == 201:
+                            return True
+                        error_text = await create_resp.text()
+                        logger.warning(f"Failed to create label {name} in {repo}: {error_text}")
+                        return False
+                else:
+                    error_text = await resp.text()
+                    logger.warning(f"Failed to check label {name} in {repo}: status {resp.status}, {error_text}")
+                    return False
+        except Exception as e:
+            logger.error(f"Error ensuring label {name} in {repo}: {e}")
+            return False
+
+    async def add_labels_to_issue(
+        self, repo: str, issue_number: int, labels: list[str], installation_id: int
+    ) -> list[dict[str, Any]]:
+        """Add labels to an issue or pull request."""
+        try:
+            token = await self.get_installation_access_token(installation_id)
+            if not token:
+                logger.error(f"Failed to get installation token for {installation_id}")
+                return []
+
+            headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+            url = f"{config.github.api_base_url}/repos/{repo}/issues/{issue_number}/labels"
+            data = {"labels": labels}
+
+            session = await self._get_session()
+            async with session.post(url, headers=headers, json=data) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    logger.info(f"Added labels {labels} to issue #{issue_number} in {repo}")
+                    return cast("list[dict[str, Any]]", result)
+                else:
+                    error_text = await response.text()
+                    logger.error(
+                        f"Failed to add labels to issue #{issue_number} in {repo}. "
+                        f"Status: {response.status}, Response: {error_text}"
+                    )
+                    return []
+        except Exception as e:
+            logger.error(f"Error adding labels to issue #{issue_number} in {repo}: {e}")
+            return []
+
+    async def get_commits(
+        self,
+        repo: str,
+        installation_id: int,
+        path: str | None = None,
+        per_page: int = 30,
+        page: int = 1,
+        since: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch commits. When *path* is given, only commits touching that file are returned.
+
+        *since* is an ISO 8601 timestamp (e.g. ``"2025-01-01T00:00:00Z"``); only commits
+        after that timestamp are returned.  *page* enables pagination.
+        """
+        try:
+            token = await self.get_installation_access_token(installation_id)
+            if not token:
+                return []
+
+            headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+            url = f"{config.github.api_base_url}/repos/{repo}/commits?per_page={per_page}&page={page}"
+            if path:
+                url += f"&path={quote(path, safe='')}"
+            if since:
+                url += f"&since={quote(since, safe='')}"
+
+            session = await self._get_session()
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    return cast("list[dict[str, Any]]", await response.json())
+                return []
+        except Exception as e:
+            logger.error(f"Error fetching commits for {repo} (path={path}): {e}")
+            return []
 
     async def get_user_pull_requests(
         self, repo: str, username: str, installation_id: int, limit: int = 100
@@ -1585,6 +1693,99 @@ class GitHubClient:
                 if is_rate_limit:
                     return [], f"GitHub API rate limit exceeded. Error: {str(e)}"
                 return [], f"Failed to fetch PR data: {str(e)}"
+
+    async def get_repo_installation(self, owner: str, repo: str) -> dict[str, Any] | None:
+        """Return the installation record for a specific repository using JWT auth.
+
+        Equivalent to ``GET /repos/{owner}/{repo}/installation``.  Single API call,
+        no pagination — use this instead of scanning all installations when you already
+        know the repo name.
+        """
+        try:
+            jwt_token = self._generate_jwt()
+            headers = {"Authorization": f"Bearer {jwt_token}", "Accept": "application/vnd.github.v3+json"}
+            url = f"{config.github.api_base_url}/repos/{owner}/{repo}/installation"
+
+            session = await self._get_session()
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    return cast("dict[str, Any]", await response.json())
+                if response.status == 404:
+                    logger.warning(f"No installation found for {owner}/{repo}")
+                    return None
+                error_text = await response.text()
+                logger.error(
+                    f"Failed to get installation for {owner}/{repo}. Status: {response.status}, Response: {error_text}"
+                )
+                return None
+        except Exception as e:
+            logger.error(f"Error fetching installation for {owner}/{repo}: {e}")
+            return None
+
+    async def get_team_members(self, org: str, team_slug: str, installation_id: int) -> list[str]:
+        """Return GitHub logins of all members of *org*/*team_slug*.
+
+        Uses installation auth so the app must have ``members: read`` org permission.
+        Returns an empty list on any error (team not found, insufficient permissions, etc.).
+        """
+        try:
+            token = await self.get_installation_access_token(installation_id)
+            if not token:
+                return []
+            headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+            url = f"{config.github.api_base_url}/orgs/{org}/teams/{team_slug}/members?per_page=100"
+            session = await self._get_session()
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    members = await response.json()
+                    return [m["login"] for m in members if m.get("login")]
+                return []
+        except Exception as e:
+            logger.error(f"Error fetching team members for {org}/{team_slug}: {e}")
+            return []
+
+    async def list_app_installations(self, per_page: int = 100) -> list[dict[str, Any]]:
+        """List all GitHub App installations using JWT authentication."""
+        try:
+            jwt_token = self._generate_jwt()
+            headers = {"Authorization": f"Bearer {jwt_token}", "Accept": "application/vnd.github.v3+json"}
+            url = f"{config.github.api_base_url}/app/installations?per_page={min(per_page, 100)}"
+
+            session = await self._get_session()
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    return cast("list[dict[str, Any]]", await response.json())
+                error_text = await response.text()
+                logger.error(f"Failed to list app installations. Status: {response.status}, Response: {error_text}")
+                return []
+        except Exception as e:
+            logger.error(f"Error listing app installations: {e}")
+            return []
+
+    async def list_installation_repositories(self, installation_id: int, per_page: int = 100) -> list[dict[str, Any]]:
+        """List all repositories accessible to a given installation."""
+        try:
+            token = await self.get_installation_access_token(installation_id)
+            if not token:
+                logger.error(f"Failed to get token for installation {installation_id}")
+                return []
+            headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+            url = f"{config.github.api_base_url}/installation/repositories?per_page={min(per_page, 100)}"
+
+            session = await self._get_session()
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return cast("list[dict[str, Any]]", data.get("repositories", []))
+                error_text = await response.text()
+                logger.error(
+                    f"Failed to list repositories for installation {installation_id}. "
+                    f"Status: {response.status}, Response: {error_text}"
+                )
+                return []
+        except Exception as e:
+            logger.error(f"Error listing repositories for installation {installation_id}: {e}")
+            return []
 
 
 # Global instance

@@ -47,6 +47,9 @@ class IssueCommentEventHandler(EventHandler):
                     '- @watchflow ack "reason" — Short form for acknowledge.\n'
                     '- @watchflow evaluate "rule description" — Evaluate the feasibility of a rule.\n'
                     "- @watchflow validate — Validate the .watchflow/rules.yaml file.\n"
+                    "- /risk — Show risk assessment.\n"
+                    "- /reviewers — Recommend the best reviewers for this PR.\n"
+                    "- /reviewers --force — Re-run reviewer recommendation (bypass cache).\n"
                     "- @watchflow help — Show this help message.\n"
                 )
                 logger.info("ℹ️ Responding to help command.")
@@ -87,7 +90,7 @@ class IssueCommentEventHandler(EventHandler):
                 result = await task_queue.enqueue(
                     process_acknowledgment,
                     "violation_acknowledgment",
-                    ack_payload,
+                    payload=ack_payload,
                 )
                 logger.info(f"✅ Acknowledgment comment enqueued: {result}")
                 return WebhookResponse(
@@ -130,6 +133,36 @@ class IssueCommentEventHandler(EventHandler):
                     logger.warning("Could not determine PR or issue number to post feasibility evaluation result.")
                     return WebhookResponse(status="ok", detail=comment)
 
+            # Reviewers—user wants reviewer recommendations.
+            reviewers_match = self._extract_reviewers_command(comment_body)
+            if reviewers_match is not None:
+                logger.info("🔍 Processing reviewers command.")
+                from src.event_processors.factory import EventProcessorFactory
+                from src.tasks.task_queue import Task
+
+                force = reviewers_match.get("force", False)
+                rec_payload = {**event.payload, "reviewers_force": force}
+
+                processor = EventProcessorFactory.get_processor("reviewer_recommendation")
+                rec_task = task_queue.build_task(
+                    "reviewer_recommendation",
+                    rec_payload,
+                    processor.process,
+                    delivery_id=event.delivery_id,
+                )
+                result = await task_queue.enqueue(
+                    processor.process,
+                    "reviewer_recommendation",
+                    rec_payload,
+                    rec_task,
+                    delivery_id=event.delivery_id,
+                )
+                logger.info(f"✅ Reviewer recommendation enqueued: {result}")
+                return WebhookResponse(
+                    status="ok",
+                    detail="Reviewer recommendation enqueued",
+                )
+
             # Validate—user wants rules.yaml sanity check.
             if self._is_validate_comment(comment_body):
                 logger.info("🔍 Processing validate command.")
@@ -151,6 +184,27 @@ class IssueCommentEventHandler(EventHandler):
                 else:
                     logger.warning("Could not determine PR or issue number to post validation result.")
                     return WebhookResponse(status="ok", detail=str(validation_result))
+
+            # Risk assessment—user wants a risk assessment with risk level and reason.
+            if self._is_risk_comment(comment_body):
+                from src.event_processors.factory import EventProcessorFactory
+
+                processor = EventProcessorFactory.get_processor("risk_assessment")
+                risk_task = task_queue.build_task(
+                    "risk_assessment",
+                    event.payload,
+                    processor.process,
+                    delivery_id=event.delivery_id,
+                )
+                risk_result = await task_queue.enqueue(
+                    processor.process,
+                    "risk_assessment",
+                    event.payload,
+                    risk_task,
+                    delivery_id=event.delivery_id,
+                )
+                logger.info(f"⚡ Risk assessment enqueued: {risk_result}")
+                return WebhookResponse(status="ok", detail="Risk assessment enqueued")
 
             else:
                 # No match—ignore, avoid noise.
@@ -201,9 +255,25 @@ class IssueCommentEventHandler(EventHandler):
         pattern = r"@watchflow\s+validate"
         return re.search(pattern, comment_body, re.IGNORECASE) is not None
 
+    def _extract_reviewers_command(self, comment_body: str) -> dict[str, bool] | None:
+        """Detect /reviewers or @watchflow reviewers command. Returns dict with force flag, or None."""
+        comment_body = comment_body.strip()
+        patterns = [
+            r"(?:@watchflow\s+reviewers|/reviewers)(\s+--force)?",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, comment_body, re.IGNORECASE)
+            if match:
+                force = bool(match.group(1) and "--force" in match.group(1))
+                return {"force": force}
+        return None
+
     def _is_help_comment(self, comment_body: str) -> bool:
         patterns = [
             r"@watchflow\s+help",
         ]
         # Pythonic: use any() for pattern match—cleaner, faster.
         return any(re.search(pattern, comment_body, re.IGNORECASE) for pattern in patterns)
+
+    def _is_risk_comment(self, comment_body: str) -> bool:
+        return bool(re.search(r"(?:@watchflow\s+)?/risk\s*$", comment_body.strip(), re.IGNORECASE))
