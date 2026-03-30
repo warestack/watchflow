@@ -227,6 +227,7 @@ async def fetch_pr_signals(state: AnalysisState) -> AnalysisState:
                 ai_detected_count += 1
 
             # First-time contributor detection via authorAssociation
+            # Using NONE here to unclude cases when a user is a first-time and doesn't have an association like in this issue: https://github.com/orgs/community/discussions/78038#discussioncomment-7831863
             is_first_time = author_assoc in [
                 "FIRST_TIME_CONTRIBUTOR",
                 "FIRST_TIME_CONTRIBUTOR_ON_CREATE",

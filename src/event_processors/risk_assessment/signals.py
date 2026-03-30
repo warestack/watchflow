@@ -210,6 +210,9 @@ async def evaluate_test_coverage(rules: list[Rule], event_data: dict[str, Any]) 
 def evaluate_contributor_history(pr_data: dict[str, Any]) -> list[RiskSignal]:
     """Signal based on the author's association to the repository."""
     association = (pr_data.get("author_association") or "").upper()
+    
+    # First-time contributor detection via authorAssociation
+    # Using NONE here to unclude cases when a user is a first-time and doesn't have an association like in this issue: https://github.com/orgs/community/discussions/78038#discussioncomment-7831863
     if association in ("FIRST_TIME_CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR_ON_CREATE", "FIRST_TIMER", "NONE"):
         return [RiskSignal("contributor", Severity.HIGH, "Author is a first-time contributor")]
     return []
