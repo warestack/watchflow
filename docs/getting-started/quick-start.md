@@ -87,7 +87,43 @@ Parameter names must match the [supported conditions](configuration.md); see [Co
 |--------|--------|
 | `@watchflow acknowledge "reason"` / `@watchflow ack "reason"` | Record an acknowledgment for a violation (when the rule allows it). |
 | `@watchflow evaluate "rule in plain English"` | Ask whether a rule is feasible and get suggested YAML. |
+| `@watchflow risk` | Run a risk analysis on the PR and post a signal summary (file churn, ownership gaps, rule violations). |
+| `@watchflow reviewers` | Get AI-powered reviewer recommendations based on code ownership, commit history, and risk signals. |
 | `@watchflow help` | List commands. |
+
+---
+
+## Try it: risk analysis and reviewer recommendations
+
+Once Watchflow is installed and `.watchflow/rules.yaml` is in place, open a pull request and post a comment:
+
+```
+@watchflow risk
+```
+
+Watchflow will reply with a breakdown of risk signals — for example:
+
+> **Risk signals detected (2)**
+> - `src/auth/jwt.py` modified — no matching test file updated (medium)
+> - PR exceeds 500 lines changed (medium)
+>
+> **Active rules evaluated:** 7 · **Violations:** 2
+
+Then ask for reviewer suggestions:
+
+```
+@watchflow reviewers
+```
+
+Watchflow analyses commit history, CODEOWNERS, and the risk signals, then replies with ranked recommendations:
+
+> **Recommended reviewers**
+> 1. `@alice` — recent commits to `src/auth/jwt.py`, CODEOWNERS owner of `src/auth/`
+> 2. `@bob` — top contributor to `src/auth/` over the last 90 days
+>
+> *Tip: add a reviewer with `gh pr edit --add-reviewer alice`.*
+
+You can see a working example of both commands against a real repo at [test-watchflow](https://github.com/warestack/test-watchflow).
 
 ---
 
