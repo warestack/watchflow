@@ -5,6 +5,7 @@ that cannot be expressed as deterministic checks. These conditions are
 opt-in and clearly documented as having LLM latency in the evaluation path.
 """
 
+import asyncio
 import logging
 import time
 from typing import Any
@@ -218,7 +219,7 @@ class DescriptionDiffAlignmentCondition(BaseCondition):
                 )
 
                 if attempt < max_attempts:
-                    time.sleep(wait_time)
+                    await asyncio.sleep(wait_time)
                 else:
                     # All attempts failed - gracefully degrade
                     logger.error("All LLM retry attempts exhausted; skipping alignment check.")
