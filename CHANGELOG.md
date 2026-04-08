@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Blocking sleep in LLM condition** -- Replaced `time.sleep()` with
+  `await asyncio.sleep()` in `LLMAssisted` retry backoff to avoid
+  freezing the event loop during LLM retries.
+
 ### Added
 
 - **Description-diff alignment** -- `DescriptionDiffAlignmentCondition` uses
