@@ -8,6 +8,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **AI-powered reviewer recommendation** -- `/reviewers` slash command suggests
+  the best reviewers for a PR based on CODEOWNERS ownership, commit history
+  expertise, Watchflow rule severity, and current review load. Supports
+  `--force` flag to bypass cooldown. Recommended reviewers are automatically
+  assigned to the PR via the GitHub API.
+- **PR risk assessment** -- `/risk` slash command posts a detailed risk
+  breakdown (size, sensitive paths, test coverage, contributor history, revert
+  detection, dependency changes, breaking changes, and matched Watchflow rule
+  severity). Applies `watchflow:risk-{level}` labels automatically.
+- **Contributor expertise profiles** -- reviewer expertise is persisted to
+  `.watchflow/expertise.json` across PRs and used to boost candidates with
+  cross-PR historical ownership.
+- **CODEOWNERS + rule integration** -- CODEOWNERS individual users and
+  `@org/team` entries are handled separately; team slugs are passed to
+  GitHub's `team_reviewers` API field to prevent 422 errors. When no
+  CODEOWNERS exists, high/critical Watchflow rule path matches infer implicit
+  ownership from commit history.
+- **Load balancing** -- reviewers with heavy recent review queues are
+  penalised; reviewer count scales with risk level (low→1, medium→2,
+  high/critical→3). Stale CODEOWNERS owners (no recent commits) receive a
+  reduced score.
+
 - **Description-diff alignment** -- `DescriptionDiffAlignmentCondition` uses
   the configured AI provider (OpenAI / Bedrock / Vertex AI) to verify that
   the PR description semantically matches the actual code changes. First

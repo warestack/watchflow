@@ -491,6 +491,60 @@ class GitHubClient:
         except Exception:
             return {}
 
+    async def remove_label_from_issue(self, repo: str, issue_number: int, label: str, installation_id: int) -> bool:
+        """Remove a single label from an issue or pull request. Returns True on success, False if not found or error."""
+        try:
+            token = await self.get_installation_access_token(installation_id)
+            if not token:
+                return False
+
+            headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+            encoded_label = quote(label, safe="")
+            url = f"{config.github.api_base_url}/repos/{repo}/issues/{issue_number}/labels/{encoded_label}"
+
+            session = await self._get_session()
+            async with session.delete(url, headers=headers) as response:
+                if response.status == 200:
+                    logger.info(f"Removed label '{label}' from #{issue_number} in {repo}")
+                    return True
+                elif response.status == 404:
+                    # Label wasn't on the issue — not an error
+                    return True
+                else:
+                    logger.warning(
+                        f"Failed to remove label '{label}' from #{issue_number} in {repo}. Status: {response.status}"
+                    )
+                    return False
+        except Exception as e:
+            logger.warning(f"Error removing label '{label}' from #{issue_number} in {repo}: {e}")
+            return False
+
+    async def add_labels_to_issue(
+        self, repo: str, issue_number: int, labels: list[str], installation_id: int
+    ) -> list[dict[str, Any]]:
+        """Add labels to an issue or pull request (PRs are issues in GitHub API)."""
+        try:
+            token = await self.get_installation_access_token(installation_id)
+            if not token:
+                return []
+
+            headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+            url = f"{config.github.api_base_url}/repos/{repo}/issues/{issue_number}/labels"
+            data = {"labels": labels}
+
+            session = await self._get_session()
+            async with session.post(url, headers=headers, json=data) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    logger.info(f"Added labels {labels} to #{issue_number} in {repo}")
+                    return cast("list[dict[str, Any]]", result)
+                else:
+                    logger.warning(f"Failed to add labels to #{issue_number} in {repo}. Status: {response.status}")
+                    return []
+        except Exception as e:
+            logger.warning(f"Error adding labels to #{issue_number} in {repo}: {e}")
+            return []
+
     async def create_pull_request_comment(
         self, repo: str, pr_number: int, comment: str, installation_id: int
     ) -> dict[str, Any]:
@@ -520,6 +574,51 @@ class GitHubClient:
                     return {}
         except Exception as e:
             logger.error(f"Error creating comment on PR #{pr_number} in {repo}: {e}")
+            return {}
+
+    async def request_reviewers(
+        self,
+        repo: str,
+        pr_number: int,
+        reviewers: list[str],
+        installation_id: int,
+        team_reviewers: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Request individual and/or team reviewers for a pull request.
+
+        GitHub's API uses separate fields:
+        - `reviewers`      → individual user logins
+        - `team_reviewers` → team slugs (without org prefix, e.g. "frontend")
+        Mixing them in the wrong field returns 422.
+        """
+        try:
+            token = await self.get_installation_access_token(installation_id)
+            if not token:
+                return {}
+
+            headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+            url = f"{config.github.api_base_url}/repos/{repo}/pulls/{pr_number}/requested_reviewers"
+            data: dict[str, list[str]] = {}
+            if reviewers:
+                data["reviewers"] = reviewers
+            if team_reviewers:
+                data["team_reviewers"] = team_reviewers
+
+            session = await self._get_session()
+            async with session.post(url, headers=headers, json=data) as response:
+                if response.status == 201:
+                    result = await response.json()
+                    logger.info(f"Requested reviewers {reviewers} for PR #{pr_number} in {repo}")
+                    return cast("dict[str, Any]", result)
+                else:
+                    error_text = await response.text()
+                    logger.warning(
+                        f"Failed to request reviewers for PR #{pr_number} in {repo}. "
+                        f"Status: {response.status}, Response: {error_text}"
+                    )
+                    return {}
+        except Exception as e:
+            logger.warning(f"Error requesting reviewers for PR #{pr_number} in {repo}: {e}")
             return {}
 
     async def update_check_run(
@@ -975,6 +1074,37 @@ class GitHubClient:
                     f"Failed to get commits by {username} in {repo}. Status: {response.status}, Response: {error_text}"
                 )
                 return []
+
+    async def get_commits_for_file(
+        self, repo: str, file_path: str, installation_id: int, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """
+        Fetches recent commits that touched a specific file path.
+        Used to build contributor expertise profiles for reviewer recommendations.
+        """
+        try:
+            token = await self.get_installation_access_token(installation_id)
+            if not token:
+                return []
+
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github.v3+json",
+            }
+            url = f"{config.github.api_base_url}/repos/{repo}/commits"
+            params = {"path": file_path, "per_page": min(limit, 100)}
+
+            session = await self._get_session()
+            async with session.get(url, headers=headers, params=params) as response:
+                if response.status == 200:
+                    commits = await response.json()
+                    return cast("list[dict[str, Any]]", commits)
+                else:
+                    logger.warning(f"Failed to get commits for file {file_path} in {repo}. Status: {response.status}")
+                    return []
+        except Exception as e:
+            logger.warning(f"Error getting commits for file {file_path} in {repo}: {e}")
+            return []
 
     async def get_user_pull_requests(
         self, repo: str, username: str, installation_id: int, limit: int = 100

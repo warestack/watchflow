@@ -1,5 +1,6 @@
 import logging
 import re
+import time
 
 from src.agents import get_agent
 from src.core.models import EventType, WebhookEvent
@@ -9,6 +10,31 @@ from src.tasks.task_queue import task_queue
 from src.webhooks.handlers.base import EventHandler, WebhookResponse
 
 logger = logging.getLogger(__name__)
+
+# Simple in-memory cooldown for slash commands: (repo, pr_number, command) -> timestamp
+_COMMAND_COOLDOWN: dict[tuple[str, int, str], float] = {}
+
+_ALL_RISK_LEVELS = ("low", "medium", "high", "critical")
+
+
+async def _apply_risk_label(repo: str, pr_number: int, risk_level: str, installation_id: int) -> None:
+    """Remove all stale risk labels then apply the current one."""
+    for level in _ALL_RISK_LEVELS:
+        await github_client.remove_label_from_issue(
+            repo=repo,
+            issue_number=pr_number,
+            label=f"watchflow:risk-{level}",
+            installation_id=installation_id,
+        )
+    await github_client.add_labels_to_issue(
+        repo=repo,
+        issue_number=pr_number,
+        labels=[f"watchflow:risk-{risk_level}"],
+        installation_id=installation_id,
+    )
+
+
+_COOLDOWN_SECONDS = 30  # minimum seconds between identical slash commands
 
 
 class IssueCommentEventHandler(EventHandler):
@@ -20,6 +46,16 @@ class IssueCommentEventHandler(EventHandler):
 
     async def can_handle(self, event: WebhookEvent) -> bool:
         return event.event_type == EventType.ISSUE_COMMENT
+
+    def _is_on_cooldown(self, repo: str, pr_number: int, command: str) -> bool:
+        """Return True if the same slash command was run recently (prevents spam). Does not mutate state."""
+        key = (repo, pr_number, command)
+        last = _COMMAND_COOLDOWN.get(key)
+        return last is not None and time.monotonic() - last < _COOLDOWN_SECONDS
+
+    def _mark_cooldown(self, repo: str, pr_number: int, command: str) -> None:
+        """Record that a slash command was successfully executed now."""
+        _COMMAND_COOLDOWN[(repo, pr_number, command)] = time.monotonic()
 
     async def handle(self, event: WebhookEvent) -> WebhookResponse:
         """Handle issue comment events."""
@@ -39,6 +75,138 @@ class IssueCommentEventHandler(EventHandler):
 
             logger.info(f"👤 Processing comment from human user: {commenter}")
 
+            # /risk — show PR risk breakdown.
+            if self._is_risk_comment(comment_body):
+                pr_number = (
+                    event.payload.get("issue", {}).get("number")
+                    or event.payload.get("pull_request", {}).get("number")
+                    or event.payload.get("number")
+                )
+                if not pr_number:
+                    return WebhookResponse(status="ignored", detail="Could not determine PR number")
+
+                if self._is_on_cooldown(repo, pr_number, "risk"):
+                    logger.info(f"Slash command /risk on cooldown for PR #{pr_number}")
+                    return WebhookResponse(status="ignored", detail="Command on cooldown")
+
+                # Mark cooldown immediately to block concurrent duplicate webhooks
+                # before the async agent.execute() call (prevents TOCTOU race).
+                self._mark_cooldown(repo, pr_number, "risk")
+
+                agent = get_agent("reviewer_recommendation")
+                risk_result = await agent.execute(
+                    repo_full_name=repo,
+                    pr_number=pr_number,
+                    installation_id=installation_id,
+                )
+                from src.presentation.github_formatter import format_risk_assessment_comment
+
+                comment = format_risk_assessment_comment(risk_result)
+                await github_client.create_pull_request_comment(
+                    repo=repo,
+                    pr_number=pr_number,
+                    comment=comment,
+                    installation_id=installation_id,
+                )
+                # Apply risk-level label (remove stale risk labels first)
+                if risk_result.success:
+                    risk_level = risk_result.data.get("risk_level", "low")
+                    await _apply_risk_label(repo, pr_number, risk_level, installation_id)
+                logger.info(f"📊 Posted risk assessment for PR #{pr_number}.")
+                return WebhookResponse(status="ok")
+
+            # /reviewers — recommend reviewers based on ownership + expertise.
+            if self._is_reviewers_comment(comment_body):
+                pr_number = (
+                    event.payload.get("issue", {}).get("number")
+                    or event.payload.get("pull_request", {}).get("number")
+                    or event.payload.get("number")
+                )
+                if not pr_number:
+                    return WebhookResponse(status="ignored", detail="Could not determine PR number")
+
+                force = "--force" in comment_body
+
+                # --force skips cooldown; otherwise apply rate limiting
+                if not force and self._is_on_cooldown(repo, pr_number, "reviewers"):
+                    logger.info(f"Slash command /reviewers on cooldown for PR #{pr_number}")
+                    return WebhookResponse(status="ignored", detail="Command on cooldown")
+
+                # Mark cooldown immediately to block concurrent duplicate webhooks
+                # before the async agent.execute() call (prevents TOCTOU race).
+                if not force:
+                    self._mark_cooldown(repo, pr_number, "reviewers")
+
+                agent = get_agent("reviewer_recommendation")
+                reviewer_result = await agent.execute(
+                    repo_full_name=repo,
+                    pr_number=pr_number,
+                    installation_id=installation_id,
+                )
+                from src.presentation.github_formatter import format_reviewer_recommendation_comment
+
+                comment = format_reviewer_recommendation_comment(reviewer_result)
+                await github_client.create_pull_request_comment(
+                    repo=repo,
+                    pr_number=pr_number,
+                    comment=comment,
+                    installation_id=installation_id,
+                )
+                # Apply labels and assign reviewers (remove stale risk labels first)
+                if reviewer_result.success:
+                    risk_level = reviewer_result.data.get("risk_level", "low")
+                    for level in _ALL_RISK_LEVELS:
+                        await github_client.remove_label_from_issue(
+                            repo=repo,
+                            issue_number=pr_number,
+                            label=f"watchflow:risk-{level}",
+                            installation_id=installation_id,
+                        )
+                    await github_client.add_labels_to_issue(
+                        repo=repo,
+                        issue_number=pr_number,
+                        labels=[f"watchflow:risk-{risk_level}", "watchflow:reviewer-recommendation"],
+                        installation_id=installation_id,
+                    )
+                    # Assign recommended reviewers to the PR
+                    # Split into individual users vs CODEOWNERS team slugs so each
+                    # goes to the correct GitHub API field (reviewers vs team_reviewers).
+                    llm_ranking = reviewer_result.data.get("llm_ranking") or {}
+                    pr_author = reviewer_result.data.get("pr_author", "")
+                    team_slugs = set(reviewer_result.data.get("codeowners_team_slugs", []))
+                    ranked = llm_ranking.get("ranked_reviewers", []) if isinstance(llm_ranking, dict) else []
+                    all_logins = [r["username"] for r in ranked if r.get("username") and r["username"] != pr_author][:3]
+                    individual_reviewers = [u for u in all_logins if u not in team_slugs]
+                    team_reviewers = [u for u in all_logins if u in team_slugs]
+                    if individual_reviewers or team_reviewers:
+                        await github_client.request_reviewers(
+                            repo=repo,
+                            pr_number=pr_number,
+                            reviewers=individual_reviewers,
+                            team_reviewers=team_reviewers,
+                            installation_id=installation_id,
+                        )
+                # Persist recommendation record for success-rate tracking
+                if reviewer_result.success:
+                    from src.services.recommendation_metrics import save_recommendation
+
+                    llm_ranking_raw = reviewer_result.data.get("llm_ranking") or {}
+                    ranked_raw = (
+                        llm_ranking_raw.get("ranked_reviewers", []) if isinstance(llm_ranking_raw, dict) else []
+                    )
+                    saved_logins = [r["username"] for r in ranked_raw if r.get("username")][:3]
+                    pr_base_branch = reviewer_result.data.get("pr_base_branch", "main")
+                    await save_recommendation(
+                        repo=repo,
+                        pr_number=pr_number,
+                        recommended_reviewers=saved_logins,
+                        risk_level=reviewer_result.data.get("risk_level", "low"),
+                        branch=pr_base_branch,
+                        installation_id=installation_id,
+                    )
+                logger.info(f"👥 Posted reviewer recommendations for PR #{pr_number}.")
+                return WebhookResponse(status="ok")
+
             # Help command—user likely lost/confused.
             if self._is_help_comment(comment_body):
                 help_message = (
@@ -47,6 +215,9 @@ class IssueCommentEventHandler(EventHandler):
                     '- @watchflow ack "reason" — Short form for acknowledge.\n'
                     '- @watchflow evaluate "rule description" — Evaluate the feasibility of a rule.\n'
                     "- @watchflow validate — Validate the .watchflow/rules.yaml file.\n"
+                    "- /risk — Show PR risk assessment (size, sensitive paths, contributor signals).\n"
+                    "- /reviewers — Recommend reviewers based on code ownership and expertise.\n"
+                    "- /reviewers --force — Re-run reviewer recommendation.\n"
                     "- @watchflow help — Show this help message.\n"
                 )
                 logger.info("ℹ️ Responding to help command.")
@@ -207,3 +378,11 @@ class IssueCommentEventHandler(EventHandler):
         ]
         # Pythonic: use any() for pattern match—cleaner, faster.
         return any(re.search(pattern, comment_body, re.IGNORECASE) for pattern in patterns)
+
+    def _is_risk_comment(self, comment_body: str) -> bool:
+        return re.search(r"^/risk\s*$", comment_body.strip(), re.IGNORECASE | re.MULTILINE) is not None
+
+    def _is_reviewers_comment(self, comment_body: str) -> bool:
+        return (
+            re.search(r"^/reviewers(\s+--force)?\s*$", comment_body.strip(), re.IGNORECASE | re.MULTILINE) is not None
+        )
