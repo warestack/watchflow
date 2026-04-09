@@ -3,6 +3,7 @@
 Tests for FilePatternCondition, MaxFileSizeCondition, and MaxPrLocCondition classes.
 """
 
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -131,6 +132,36 @@ class TestFilePatternCondition:
         """Test that an empty event returns no files."""
         condition = FilePatternCondition()
         assert condition._get_changed_files({}) == []
+
+    def test_get_changed_files_with_malformed_payload(self) -> None:
+        """Test that malformed payload entries are filtered out without raising."""
+        condition = FilePatternCondition()
+
+        # changed_files with mixed valid/invalid entries
+        event_cf: dict[str, Any] = {
+            "changed_files": [
+                {"filename": "valid.py", "status": "modified"},
+                {"status": "added"},  # missing "filename"
+                None,  # type: ignore[list-item]
+                42,  # type: ignore[list-item]
+                "",  # empty string
+                {"filename": ""},  # empty filename
+                "also_valid.txt",
+            ]
+        }
+        result = condition._get_changed_files(event_cf)
+        assert result == ["valid.py", "also_valid.txt"]
+
+        # commits with non-dict entries and non-list/non-string values
+        event_commits: dict[str, Any] = {
+            "commits": [
+                {"added": ["good.py"], "modified": "not_a_list", "removed": [42, None, "removed.py"]},
+                "not_a_dict",  # type: ignore[list-item]
+                {"added": [None, "", "another.py"], "modified": [], "removed": []},
+            ]
+        }
+        result = condition._get_changed_files(event_commits)
+        assert result == ["another.py", "good.py", "removed.py"]
 
     @pytest.mark.asyncio
     async def test_evaluate_with_real_pr_event(self) -> None:

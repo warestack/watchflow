@@ -118,20 +118,28 @@ class FilePatternCondition(BaseCondition):
     def _get_changed_files(self, event: dict[str, Any]) -> list[str]:
         """Extract changed file paths from enriched PR data or push commits."""
         changed_files = event.get("changed_files", [])
-        if changed_files:
-            return [
-                f["filename"] if isinstance(f, dict) else f
-                for f in changed_files
-                if (f.get("filename") if isinstance(f, dict) else f)
-            ]
+        if isinstance(changed_files, list) and changed_files:
+            extracted: list[str] = []
+            for item in changed_files:
+                path = item.get("filename") if isinstance(item, dict) else item
+                if isinstance(path, str) and path:
+                    extracted.append(path)
+            if extracted:
+                return extracted
 
         commits = event.get("commits", [])
-        if commits:
+        if isinstance(commits, list) and commits:
             seen: set[str] = set()
             for commit in commits:
+                if not isinstance(commit, dict):
+                    continue
                 for key in ("added", "modified", "removed"):
-                    for path in commit.get(key, []):
-                        seen.add(path)
+                    paths = commit.get(key, [])
+                    if not isinstance(paths, list):
+                        continue
+                    for path in paths:
+                        if isinstance(path, str) and path:
+                            seen.add(path)
             return sorted(seen)
 
         return []
