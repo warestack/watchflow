@@ -96,6 +96,74 @@ class TestFilePatternCondition:
         assert FilePatternCondition._glob_to_regex("src/*.js") == "^src/.*\\.js$"
         assert FilePatternCondition._glob_to_regex("file?.txt") == "^file.\\.txt$"
 
+    def test_get_changed_files_from_pr_enriched_data(self) -> None:
+        """Test extracting files from enriched PR changed_files (list of dicts)."""
+        condition = FilePatternCondition()
+        event = {
+            "changed_files": [
+                {"filename": "src/main.py", "status": "modified", "additions": 10, "deletions": 2},
+                {"filename": "tests/test_main.py", "status": "added", "additions": 30, "deletions": 0},
+            ]
+        }
+        result = condition._get_changed_files(event)
+        assert result == ["src/main.py", "tests/test_main.py"]
+
+    def test_get_changed_files_from_pr_plain_strings(self) -> None:
+        """Test extracting files when changed_files contains plain strings."""
+        condition = FilePatternCondition()
+        event = {"changed_files": ["src/main.py", "README.md"]}
+        result = condition._get_changed_files(event)
+        assert result == ["src/main.py", "README.md"]
+
+    def test_get_changed_files_from_push_commits(self) -> None:
+        """Test extracting files from push event commit arrays."""
+        condition = FilePatternCondition()
+        event = {
+            "commits": [
+                {"added": ["new_file.py"], "modified": ["src/main.py"], "removed": []},
+                {"added": [], "modified": ["src/main.py"], "removed": ["old.py"]},
+            ]
+        }
+        result = condition._get_changed_files(event)
+        assert result == ["new_file.py", "old.py", "src/main.py"]
+
+    def test_get_changed_files_empty_event(self) -> None:
+        """Test that an empty event returns no files."""
+        condition = FilePatternCondition()
+        assert condition._get_changed_files({}) == []
+
+    @pytest.mark.asyncio
+    async def test_evaluate_with_real_pr_event(self) -> None:
+        """Test full evaluate flow with enriched PR data (no mocking)."""
+        condition = FilePatternCondition()
+        context = {
+            "parameters": {"pattern": "*.py", "condition_type": "files_match_pattern"},
+            "event": {
+                "changed_files": [
+                    {"filename": "src/app.py", "status": "modified", "additions": 5, "deletions": 1},
+                    {"filename": "docs/readme.md", "status": "modified", "additions": 2, "deletions": 0},
+                ]
+            },
+        }
+        violations = await condition.evaluate(context)
+        assert len(violations) == 0
+
+    @pytest.mark.asyncio
+    async def test_evaluate_with_real_push_event(self) -> None:
+        """Test full evaluate flow with push commit data (no mocking)."""
+        condition = FilePatternCondition()
+        context = {
+            "parameters": {"pattern": "*.yaml", "condition_type": "files_not_match_pattern"},
+            "event": {
+                "commits": [
+                    {"added": ["config/app.yaml"], "modified": [], "removed": []},
+                ]
+            },
+        }
+        violations = await condition.evaluate(context)
+        assert len(violations) == 1
+        assert "forbidden pattern" in violations[0].message
+
 
 class TestMaxFileSizeCondition:
     """Tests for MaxFileSizeCondition class."""
