@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`FilePatternCondition._get_changed_files` implementation** -- Replaced
+  stub that always returned `[]` with a working implementation that extracts
+  file paths from enriched PR data (`changed_files` list of dicts or plain
+  strings) and push event commits (`added`/`modified`/`removed` arrays with
+  deduplication). Added unit tests covering all extraction paths.
+
 ### Added
 
 - **AI-powered reviewer recommendation** -- `/reviewers` slash command suggests
