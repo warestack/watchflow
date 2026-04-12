@@ -14,6 +14,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   strings) and push event commits (`added`/`modified`/`removed` arrays with
   deduplication). Added unit tests covering all extraction paths.
 
+## [2026-04-12] -- PR #69
+
+### Fixed
+
+- **Blocking sleep in LLM condition** -- Replaced `time.sleep()` with
+  `await asyncio.sleep()` in `LLMAssisted` retry backoff to avoid
+  freezing the event loop during LLM retries.
+
+## [2026-04-08] -- PR #66
+
 ### Added
 
 - **AI-powered reviewer recommendation** -- `/reviewers` slash command suggests

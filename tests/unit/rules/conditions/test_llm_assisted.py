@@ -196,7 +196,7 @@ class TestDescriptionDiffAlignmentCondition:
         assert violations == []
 
     @pytest.mark.asyncio
-    @patch("time.sleep", return_value=None)  # Mock sleep to speed up test
+    @patch("asyncio.sleep", new_callable=AsyncMock)  # Mock async sleep to speed up test
     @patch("src.integrations.providers.get_chat_model")
     async def test_retry_logic_with_exponential_backoff(self, mock_get_chat_model, mock_sleep, condition):
         """When structured invoke fails, retries with exponential backoff."""
@@ -213,7 +213,7 @@ class TestDescriptionDiffAlignmentCondition:
         # Should have retried 3 times total
         assert mock_structured.ainvoke.await_count == 3
         # Should have slept twice (2s, 4s)
-        assert mock_sleep.call_count == 2
+        assert mock_sleep.await_count == 2
 
     @pytest.mark.asyncio
     @patch("src.integrations.providers.get_chat_model")
