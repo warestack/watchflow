@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Stale PR data in CODEOWNERS checks** -- `PullRequestEnricher` now
+  re-fetches PR details via `GET /repos/:owner/:repo/pulls/:num` before
+  building `event_data`, replacing the webhook payload's `requested_reviewers`
+  (and other point-in-time fields) with the current state. Fixes a race where
+  a `synchronize` webhook processed just before a `review_requested` webhook
+  would see a stale `requested_reviewers` list and incorrectly flag
+  `PathHasCodeOwnerCondition` / `RequireCodeOwnerReviewersCondition`
+  violations. Falls back to the webhook payload if the refresh fails.
+
 - **`FilePatternCondition._get_changed_files` implementation** -- Replaced
   stub that always returned `[]` with a working implementation that extracts
   file paths from enriched PR data (`changed_files` list of dicts or plain
