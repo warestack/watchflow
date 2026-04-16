@@ -45,6 +45,7 @@ async def test_fetch_api_data_success(enricher, mock_github_client):
 
 @pytest.mark.asyncio
 async def test_enrich_event_data(enricher, mock_task, mock_github_client):
+    mock_github_client.get_pull_request.return_value = {"number": 1, "user": {"login": "author"}}
     mock_github_client.get_pull_request_reviews.return_value = []
     mock_github_client.get_pull_request_files.return_value = [
         {"filename": "test.py", "status": "added", "additions": 10, "deletions": 0, "patch": "+print('hello')"}
@@ -59,6 +60,53 @@ async def test_enrich_event_data(enricher, mock_task, mock_github_client):
     assert len(event_data["changed_files"]) == 1
     assert event_data["changed_files"][0]["filename"] == "test.py"
     assert "diff_summary" in event_data
+
+
+@pytest.mark.asyncio
+async def test_enrich_event_data_refreshes_pr_details(enricher, mock_task, mock_github_client):
+    """Stale webhook requested_reviewers is replaced by fresh PR details from the API.
+
+    Simulates the synchronize+review_requested race: the webhook payload's
+    requested_reviewers is empty, but a fresh GET /pulls/:num shows alice was
+    requested. The enricher must surface the fresh state so CODEOWNERS rules
+    don't false-positive.
+    """
+    mock_task.payload["pull_request"] = {
+        "number": 1,
+        "user": {"login": "author"},
+        "requested_reviewers": [],
+        "requested_teams": [],
+    }
+    mock_github_client.get_pull_request.return_value = {
+        "number": 1,
+        "user": {"login": "author"},
+        "requested_reviewers": [{"login": "alice"}],
+        "requested_teams": [],
+    }
+    mock_github_client.get_pull_request_reviews.return_value = []
+    mock_github_client.get_pull_request_files.return_value = []
+
+    event_data = await enricher.enrich_event_data(mock_task, "fake_token")
+
+    assert event_data["pull_request_details"]["requested_reviewers"] == [{"login": "alice"}]
+    mock_github_client.get_pull_request.assert_called_once_with("owner/repo", 1, 12345)
+
+
+@pytest.mark.asyncio
+async def test_enrich_event_data_falls_back_to_webhook_pr_when_refresh_fails(enricher, mock_task, mock_github_client):
+    """If the refresh API call fails or returns None, the webhook payload PR data is kept."""
+    mock_task.payload["pull_request"] = {
+        "number": 1,
+        "user": {"login": "author"},
+        "requested_reviewers": [{"login": "bob"}],
+    }
+    mock_github_client.get_pull_request.return_value = None
+    mock_github_client.get_pull_request_reviews.return_value = []
+    mock_github_client.get_pull_request_files.return_value = []
+
+    event_data = await enricher.enrich_event_data(mock_task, "fake_token")
+
+    assert event_data["pull_request_details"]["requested_reviewers"] == [{"login": "bob"}]
 
 
 @pytest.mark.asyncio

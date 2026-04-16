@@ -55,6 +55,16 @@ class PullRequestEnricher:
         repo_full_name = getattr(task, "repo_full_name", "")
         installation_id = getattr(task, "installation_id", 0)
 
+        # the current state, not the stale webhook snapshot (webhooks for
+        # synchronize + review_requested can race).
+        if pr_number and repo_full_name:
+            try:
+                fresh_pr = await self.github_client.get_pull_request(repo_full_name, pr_number, installation_id)
+                if fresh_pr:
+                    pr_data = fresh_pr
+            except Exception as e:
+                logger.warning(f"Could not refresh PR #{pr_number} details: {e}")
+
         # Base event data
         event_data = {
             "pull_request_details": pr_data,
