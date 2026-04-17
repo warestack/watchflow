@@ -50,6 +50,7 @@ async def test_enrich_event_data(enricher, mock_task, mock_github_client):
     mock_github_client.get_pull_request_files.return_value = [
         {"filename": "test.py", "status": "added", "additions": 10, "deletions": 0, "patch": "+print('hello')"}
     ]
+    mock_github_client.search_merged_pr_count.return_value = 3
 
     event_data = await enricher.enrich_event_data(mock_task, "fake_token")
 
@@ -60,6 +61,38 @@ async def test_enrich_event_data(enricher, mock_task, mock_github_client):
     assert len(event_data["changed_files"]) == 1
     assert event_data["changed_files"][0]["filename"] == "test.py"
     assert "diff_summary" in event_data
+    assert event_data["contributor_context"]["login"] == "author"
+    assert event_data["contributor_context"]["merged_pr_count"] == 3
+    assert event_data["contributor_context"]["is_first_time"] is False
+    assert event_data["contributor_context"]["trusted"] is True
+
+
+@pytest.mark.asyncio
+async def test_enrich_event_data_first_time_contributor(enricher, mock_task, mock_github_client):
+    mock_github_client.get_pull_request_reviews.return_value = []
+    mock_github_client.get_pull_request_files.return_value = []
+    mock_github_client.search_merged_pr_count.return_value = 0
+
+    event_data = await enricher.enrich_event_data(mock_task, "fake_token")
+
+    ctx = event_data["contributor_context"]
+    assert ctx["merged_pr_count"] == 0
+    assert ctx["is_first_time"] is True
+    assert ctx["trusted"] is False
+
+
+@pytest.mark.asyncio
+async def test_enrich_event_data_merged_pr_count_unknown(enricher, mock_task, mock_github_client):
+    mock_github_client.get_pull_request_reviews.return_value = []
+    mock_github_client.get_pull_request_files.return_value = []
+    mock_github_client.search_merged_pr_count.return_value = None
+
+    event_data = await enricher.enrich_event_data(mock_task, "fake_token")
+
+    ctx = event_data["contributor_context"]
+    assert ctx["merged_pr_count"] is None
+    assert ctx["is_first_time"] is False  # unknown -> not first-time
+    assert ctx["trusted"] is False
 
 
 @pytest.mark.asyncio
