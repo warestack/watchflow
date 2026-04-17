@@ -96,6 +96,13 @@ class PullRequestEnricher:
                 ]
                 event_data["diff_summary"] = self.summarize_files(files)
 
+            # Build contributor context for rule `when:` predicates (first-time / trusted / pr_count_below).
+            author_login = (pr_data.get("user") or {}).get("login")
+            if author_login:
+                event_data["contributor_context"] = await self._build_contributor_context(
+                    repo_full_name, author_login, installation_id
+                )
+
             # Fetch CODEOWNERS so path-has-code-owner rule can evaluate without a local repo
             codeowners_paths = [".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"]
             for path in codeowners_paths:
@@ -108,6 +115,34 @@ class PullRequestEnricher:
                     continue
 
         return event_data
+
+    async def _build_contributor_context(
+        self, repo_full_name: str, username: str, installation_id: int
+    ) -> dict[str, Any]:
+        """
+        Build contributor context used by rule `when:` predicates.
+
+        Uses the Search API to count the author's prior merged PRs in this repo.
+        The PR currently being evaluated is not merged yet, so it is not counted.
+        On API failure, returns a context with `merged_pr_count=None` and
+        boolean predicates set to False — the `when_evaluator` treats missing
+        data as fail-open and will apply the rule.
+        """
+        merged_count: int | None = None
+        if hasattr(self.github_client, "search_merged_pr_count"):
+            try:
+                merged_count = await self.github_client.search_merged_pr_count(
+                    repo_full_name, username, installation_id
+                )
+            except Exception as e:
+                logger.warning(f"Error fetching merged PR count for {username} in {repo_full_name}: {e}")
+
+        return {
+            "login": username,
+            "merged_pr_count": merged_count,
+            "is_first_time": merged_count == 0,
+            "trusted": bool(merged_count and merged_count > 0),
+        }
 
     async def fetch_acknowledgments(self, repo: str, pr_number: int, installation_id: int) -> dict[str, Acknowledgment]:
         """Fetch and parse previous acknowledgments from PR comments."""

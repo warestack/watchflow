@@ -803,8 +803,7 @@ class GitHubClient:
             session = await self._get_session()
             while True:
                 url = (
-                    f"{config.github.api_base_url}/repos/{repo}/pulls/{pr_number}"
-                    f"/files?per_page={per_page}&page={page}"
+                    f"{config.github.api_base_url}/repos/{repo}/pulls/{pr_number}/files?per_page={per_page}&page={page}"
                 )
                 async with session.get(url, headers=headers) as response:
                     if response.status != 200:
@@ -1105,6 +1104,42 @@ class GitHubClient:
         except Exception as e:
             logger.warning(f"Error getting commits for file {file_path} in {repo}: {e}")
             return []
+
+    async def search_merged_pr_count(self, repo: str, username: str, installation_id: int) -> int | None:
+        """
+        Return the number of merged PRs authored by `username` in `repo` via the GitHub
+        Search API. Returns None when the request fails so callers can distinguish
+        "no data" from "zero merged PRs".
+        """
+        token = await self.get_installation_access_token(installation_id)
+        if not token:
+            return None
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        query = f"is:pr is:merged repo:{repo} author:{username}"
+        url = f"{config.github.api_base_url}/search/issues?q={quote(query)}&per_page=1"
+
+        try:
+            session = await self._get_session()
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return cast("int", data.get("total_count", 0))
+                error_text = await response.text()
+                logger.warning(
+                    "search_merged_pr_count failed",
+                    repo=repo,
+                    username=username,
+                    status=response.status,
+                    response=error_text[:200],
+                )
+                return None
+        except Exception as e:
+            logger.warning("search_merged_pr_count error", repo=repo, username=username, error=str(e))
+            return None
 
     async def get_user_pull_requests(
         self, repo: str, username: str, installation_id: int, limit: int = 100
