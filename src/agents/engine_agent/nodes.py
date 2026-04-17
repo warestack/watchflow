@@ -23,6 +23,7 @@ from src.agents.engine_agent.prompts import (
     get_llm_evaluation_system_prompt,
 )
 from src.integrations.providers import get_chat_model
+from src.rules.when_evaluator import should_apply_rule
 
 logger = logging.getLogger(__name__)
 
@@ -36,16 +37,25 @@ async def analyze_rule_descriptions(state: EngineState) -> dict[str, Any]:
     try:
         logger.info(f"🔍 Analyzing {len(state.rule_descriptions)} rule descriptions")
 
-        # Filter rules applicable to this event type
+        # Filter rules applicable to this event type, then apply optional `when:` predicates.
         applicable_rules = []
         for rule_desc in state.rule_descriptions:
-            if state.event_type in rule_desc.event_types:
-                applicable_rules.append(rule_desc)
-                logger.info(f"🔍 Rule '{rule_desc.description[:50]}...' is applicable to {state.event_type}")
-            else:
+            if state.event_type not in rule_desc.event_types:
                 logger.info(
                     f"🔍 Rule '{rule_desc.description[:50]}...' is NOT applicable (expects: {rule_desc.event_types})"
                 )
+                continue
+
+            applies, reason = should_apply_rule(rule_desc.when, state.event_data)
+            if not applies:
+                logger.debug(
+                    f"🔍 Rule '{rule_desc.description[:50]}...' skipped: {reason}",
+                )
+                state.analysis_steps.append(f"Skipped: {rule_desc.description[:50]}... — {reason}")
+                continue
+
+            applicable_rules.append(rule_desc)
+            logger.info(f"🔍 Rule '{rule_desc.description[:50]}...' is applicable to {state.event_type}")
 
         state.rule_descriptions = applicable_rules
         state.analysis_steps.append(f"Found {len(applicable_rules)} applicable rules out of {len(state.rules)} total")
