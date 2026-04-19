@@ -48,10 +48,8 @@ async def analyze_rule_descriptions(state: EngineState) -> dict[str, Any]:
 
             applies, reason = should_apply_rule(rule_desc.when, state.event_data)
             if not applies:
-                logger.debug(
-                    f"🔍 Rule '{rule_desc.description[:50]}...' skipped: {reason}",
-                )
-                state.analysis_steps.append(f"Skipped: {rule_desc.description[:50]}... — {reason}")
+                logger.debug(f'Rule "{rule_desc.description}" skipped: {reason}')
+                state.analysis_steps.append(f'Rule "{rule_desc.description}" skipped: {reason}')
                 continue
 
             applicable_rules.append(rule_desc)

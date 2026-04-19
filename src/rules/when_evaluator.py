@@ -36,6 +36,11 @@ def should_apply_rule(when: RuleWhen | None, event_data: dict[str, Any]) -> tupl
     if when.contributor is not None:
         if not contributor_ctx:
             logger.warning("when.contributor set but contributor_context missing — applying rule")
+        elif contributor_ctx.get("merged_pr_count") is None:
+            # API failure: we cannot tell whether the author is first-time or trusted.
+            # Fail-open (apply the rule) so a transient Search API outage does not
+            # silently disable stricter checks for newcomers.
+            logger.warning(f"when.contributor='{when.contributor}' set but merged_pr_count is unknown — applying rule")
         else:
             predicate = when.contributor.strip().lower()
             if predicate == "first_time":
