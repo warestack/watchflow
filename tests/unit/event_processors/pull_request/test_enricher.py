@@ -69,6 +69,7 @@ async def test_enrich_event_data(enricher, mock_task, mock_github_client):
 
 @pytest.mark.asyncio
 async def test_enrich_event_data_first_time_contributor(enricher, mock_task, mock_github_client):
+    mock_github_client.get_pull_request.return_value = {"number": 1, "user": {"login": "author"}}
     mock_github_client.get_pull_request_reviews.return_value = []
     mock_github_client.get_pull_request_files.return_value = []
     mock_github_client.search_merged_pr_count.return_value = 0
@@ -83,6 +84,7 @@ async def test_enrich_event_data_first_time_contributor(enricher, mock_task, moc
 
 @pytest.mark.asyncio
 async def test_enrich_event_data_merged_pr_count_unknown(enricher, mock_task, mock_github_client):
+    mock_github_client.get_pull_request.return_value = {"number": 1, "user": {"login": "author"}}
     mock_github_client.get_pull_request_reviews.return_value = []
     mock_github_client.get_pull_request_files.return_value = []
     mock_github_client.search_merged_pr_count.return_value = None
@@ -98,6 +100,7 @@ async def test_enrich_event_data_merged_pr_count_unknown(enricher, mock_task, mo
 @pytest.mark.asyncio
 async def test_enrich_event_data_search_api_raises(enricher, mock_task, mock_github_client):
     """Search API raising must not break enrichment — context still present with unknown count."""
+    mock_github_client.get_pull_request.return_value = {"number": 1, "user": {"login": "author"}}
     mock_github_client.get_pull_request_reviews.return_value = []
     mock_github_client.get_pull_request_files.return_value = []
     mock_github_client.search_merged_pr_count.side_effect = Exception("boom")
@@ -162,6 +165,7 @@ async def test_enrich_event_data_refreshes_pr_details(enricher, mock_task, mock_
     }
     mock_github_client.get_pull_request_reviews.return_value = []
     mock_github_client.get_pull_request_files.return_value = []
+    mock_github_client.search_merged_pr_count.return_value = 1
 
     event_data = await enricher.enrich_event_data(mock_task, "fake_token")
 
@@ -180,6 +184,7 @@ async def test_enrich_event_data_falls_back_to_webhook_pr_when_refresh_fails(enr
     mock_github_client.get_pull_request.return_value = None
     mock_github_client.get_pull_request_reviews.return_value = []
     mock_github_client.get_pull_request_files.return_value = []
+    mock_github_client.search_merged_pr_count.return_value = 1
 
     event_data = await enricher.enrich_event_data(mock_task, "fake_token")
 

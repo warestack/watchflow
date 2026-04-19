@@ -194,3 +194,33 @@ async def test_engine_skips_rule_when_when_block_does_not_match(engine_agent):
     violations = result.data["evaluation_result"].violations
     assert len(violations) == 1
     assert violations[0].message == "Should run"
+
+
+@pytest.mark.asyncio
+async def test_engine_logs_rule_skip_with_description_and_reason(engine_agent, caplog):
+    """Skip log format: Rule "<description>" skipped: <reason>."""
+    import logging
+
+    caplog.set_level(logging.DEBUG, logger="src.agents.engine_agent.nodes")
+
+    rule = Rule(
+        description="Require Changelog",
+        conditions=[MockCondition()],
+        event_types=["pull_request"],
+        when=RuleWhen(contributor="first_time"),
+    )
+
+    event_data = {
+        "contributor_context": {
+            "login": "alice",
+            "merged_pr_count": 10,
+            "is_first_time": False,
+            "trusted": True,
+        },
+    }
+
+    await engine_agent.execute(event_type="pull_request", event_data=event_data, rules=[rule])
+
+    assert any(
+        'Rule "Require Changelog" skipped: contributor is not first-time' in rec.message for rec in caplog.records
+    ), f"expected skip log not found, got: {[r.message for r in caplog.records]}"

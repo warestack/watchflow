@@ -319,3 +319,80 @@ async def test_get_pull_request_files_error_on_page2(github_client, mock_aiohttp
 
     # Should return the first page's results even if page 2 fails
     assert len(files) == 100
+
+
+@pytest.mark.asyncio
+async def test_search_merged_pr_count_returns_total(github_client, mock_aiohttp_session):
+    mock_token_response = mock_aiohttp_session.create_mock_response(201, json_data={"token": "access_token"})
+    mock_aiohttp_session.post.return_value = mock_token_response
+    mock_aiohttp_session.get.return_value = mock_aiohttp_session.create_mock_response(
+        200, json_data={"total_count": 7, "items": []}
+    )
+
+    count = await github_client.search_merged_pr_count("owner/repo", "alice", installation_id=123)
+
+    assert count == 7
+    call_url = mock_aiohttp_session.get.call_args[0][0]
+    assert "is%3Apr" in call_url
+    assert "is%3Amerged" in call_url
+    assert "repo%3Aowner/repo" in call_url
+    assert "author%3Aalice" in call_url
+
+
+@pytest.mark.asyncio
+async def test_search_merged_pr_count_zero_when_no_prior_prs(github_client, mock_aiohttp_session):
+    mock_token_response = mock_aiohttp_session.create_mock_response(201, json_data={"token": "access_token"})
+    mock_aiohttp_session.post.return_value = mock_token_response
+    mock_aiohttp_session.get.return_value = mock_aiohttp_session.create_mock_response(
+        200, json_data={"total_count": 0, "items": []}
+    )
+
+    count = await github_client.search_merged_pr_count("owner/repo", "newcomer", installation_id=123)
+
+    assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_search_merged_pr_count_returns_none_on_rate_limit(github_client, mock_aiohttp_session):
+    mock_token_response = mock_aiohttp_session.create_mock_response(201, json_data={"token": "access_token"})
+    mock_aiohttp_session.post.return_value = mock_token_response
+    mock_aiohttp_session.get.return_value = mock_aiohttp_session.create_mock_response(
+        403, text_data="API rate limit exceeded"
+    )
+
+    count = await github_client.search_merged_pr_count("owner/repo", "alice", installation_id=123)
+
+    assert count is None
+
+
+@pytest.mark.asyncio
+async def test_search_merged_pr_count_returns_none_on_server_error(github_client, mock_aiohttp_session):
+    mock_token_response = mock_aiohttp_session.create_mock_response(201, json_data={"token": "access_token"})
+    mock_aiohttp_session.post.return_value = mock_token_response
+    mock_aiohttp_session.get.return_value = mock_aiohttp_session.create_mock_response(502, text_data="Bad Gateway")
+
+    count = await github_client.search_merged_pr_count("owner/repo", "alice", installation_id=123)
+
+    assert count is None
+
+
+@pytest.mark.asyncio
+async def test_search_merged_pr_count_returns_none_when_no_token(github_client, mock_aiohttp_session):
+    """No installation token means we cannot query the Search API."""
+    mock_aiohttp_session.post.return_value = mock_aiohttp_session.create_mock_response(403, text_data="Forbidden")
+
+    count = await github_client.search_merged_pr_count("owner/repo", "alice", installation_id=999)
+
+    assert count is None
+    mock_aiohttp_session.get.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_search_merged_pr_count_returns_none_on_exception(github_client, mock_aiohttp_session):
+    mock_token_response = mock_aiohttp_session.create_mock_response(201, json_data={"token": "access_token"})
+    mock_aiohttp_session.post.return_value = mock_token_response
+    mock_aiohttp_session.get.side_effect = Exception("network down")
+
+    count = await github_client.search_merged_pr_count("owner/repo", "alice", installation_id=123)
+
+    assert count is None
