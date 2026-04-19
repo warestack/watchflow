@@ -91,7 +91,51 @@ async def test_enrich_event_data_merged_pr_count_unknown(enricher, mock_task, mo
 
     ctx = event_data["contributor_context"]
     assert ctx["merged_pr_count"] is None
-    assert ctx["is_first_time"] is False  # unknown -> not first-time
+    assert ctx["is_first_time"] is False  # unknown -> not first-time; fail-open handled in evaluator
+    assert ctx["trusted"] is False
+
+
+@pytest.mark.asyncio
+async def test_enrich_event_data_search_api_raises(enricher, mock_task, mock_github_client):
+    """Search API raising must not break enrichment — context still present with unknown count."""
+    mock_github_client.get_pull_request_reviews.return_value = []
+    mock_github_client.get_pull_request_files.return_value = []
+    mock_github_client.search_merged_pr_count.side_effect = Exception("boom")
+
+    event_data = await enricher.enrich_event_data(mock_task, "fake_token")
+
+    ctx = event_data["contributor_context"]
+    assert ctx["login"] == "author"
+    assert ctx["merged_pr_count"] is None
+    assert ctx["is_first_time"] is False
+    assert ctx["trusted"] is False
+
+
+@pytest.mark.asyncio
+async def test_enrich_event_data_client_without_search_method(mock_task):
+    """Older GitHub clients without search_merged_pr_count must still produce a context."""
+
+    class LegacyClient:
+        async def get_pull_request(self, *args, **kwargs):
+            return None
+
+        async def get_pull_request_reviews(self, *args, **kwargs):
+            return []
+
+        async def get_pull_request_files(self, *args, **kwargs):
+            return []
+
+        async def get_file_content(self, *args, **kwargs):
+            return None
+
+    enricher = PullRequestEnricher(LegacyClient())
+
+    event_data = await enricher.enrich_event_data(mock_task, "fake_token")
+
+    ctx = event_data["contributor_context"]
+    assert ctx["login"] == "author"
+    assert ctx["merged_pr_count"] is None
+    assert ctx["is_first_time"] is False
     assert ctx["trusted"] is False
 
 

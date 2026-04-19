@@ -121,3 +121,47 @@ def test_unknown_contributor_predicate_is_ignored():
     when = RuleWhen(contributor="mystery")
     applies, reason = should_apply_rule(when, {"contributor_context": _ctx(0)})
     assert applies is True
+
+
+def test_contributor_first_time_with_none_merged_count_fails_open():
+    """If the Search API failed, we cannot tell — apply the (stricter) rule."""
+    when = RuleWhen(contributor="first_time")
+    ctx = {"login": "alice", "merged_pr_count": None, "is_first_time": False, "trusted": False}
+    applies, reason = should_apply_rule(when, {"contributor_context": ctx})
+    assert applies is True
+    assert reason == ""
+
+
+def test_contributor_trusted_with_none_merged_count_fails_open():
+    when = RuleWhen(contributor="trusted")
+    ctx = {"login": "alice", "merged_pr_count": None, "is_first_time": False, "trusted": False}
+    applies, reason = should_apply_rule(when, {"contributor_context": ctx})
+    assert applies is True
+    assert reason == ""
+
+
+def test_files_match_with_empty_changed_files_skips_rule():
+    when = RuleWhen(files_match="src/auth/**")
+    applies, reason = should_apply_rule(when, {"changed_files": []})
+    assert applies is False
+    assert "no changed files match" in reason
+
+
+def test_files_match_with_missing_changed_files_key_skips_rule():
+    when = RuleWhen(files_match="src/auth/**")
+    applies, reason = should_apply_rule(when, {})
+    assert applies is False
+    assert "no changed files match" in reason
+
+
+def test_empty_when_block_always_applies():
+    """`when: {}` parses to a RuleWhen with all None fields — no gating."""
+    applies, reason = should_apply_rule(RuleWhen(), {"contributor_context": _ctx(0)})
+    assert applies is True
+    assert reason == ""
+
+
+def test_files_match_ignores_non_dict_entries():
+    when = RuleWhen(files_match="*.md")
+    applies, _ = should_apply_rule(when, {"changed_files": ["not-a-dict", {"filename": "README.md"}]})
+    assert applies is True
