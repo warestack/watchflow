@@ -66,6 +66,8 @@ def should_apply_rule(when: RuleWhen | None, event_data: dict[str, Any]) -> tupl
         patterns: list[str] = [when.files_match] if isinstance(when.files_match, str) else list(when.files_match)
         changed_files = event_data.get("changed_files") or []
         filenames = [f.get("filename", "") for f in changed_files if isinstance(f, dict) and f.get("filename")]
+        # TODO: swap fnmatch for pathspec gitwildmatch once the expression parser lands.
+        # fnmatch's `*` matches `/`, so `src/*.py` wrongly matches `src/sub/x.py`.
         if not any(fnmatch.fnmatch(name, pat) for name in filenames for pat in patterns):
             return False, f"no changed files match pattern {patterns}"
 
