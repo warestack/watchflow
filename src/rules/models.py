@@ -30,6 +30,28 @@ class RuleCategory(str, Enum):
     HYGIENE = "hygiene"  # AI spam detection, contribution governance (AI Immune System)
 
 
+class RuleWhen(BaseModel):
+    """
+    Structured predicate block controlling whether a rule is applied to an event.
+
+    When all predicates evaluate true, the rule runs; otherwise it is skipped.
+    An absent or empty block means the rule always runs.
+    """
+
+    contributor: str | None = Field(
+        default=None,
+        description="Contributor predicate: 'first_time' (no prior merged PRs) or 'trusted' (has merged PRs).",
+    )
+    pr_count_below: int | None = Field(
+        default=None,
+        description="Rule applies only when the author has fewer than N prior merged PRs.",
+    )
+    files_match: str | list[str] | None = Field(
+        default=None,
+        description="Glob pattern(s); rule applies only when at least one changed file matches.",
+    )
+
+
 class RuleCondition(BaseModel):
     """
     Represents a condition that must be met for a rule to be triggered.
@@ -60,6 +82,10 @@ class Rule(BaseModel):
     conditions: list["BaseCondition"] = Field(default_factory=list)  # noqa: UP037
     actions: list[RuleAction] = Field(default_factory=list)
     parameters: dict[str, Any] = Field(default_factory=dict)  # Store parameters as-is from YAML
+    when: RuleWhen | None = Field(
+        default=None,
+        description="Optional predicate block. Rule is skipped when predicates do not match the event.",
+    )
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
