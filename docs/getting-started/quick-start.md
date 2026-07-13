@@ -74,7 +74,7 @@ Parameter names must match the [supported conditions](configuration.md); see [Co
 
 1. **Open a PR** (or push to a protected branch if you use `no_force_push`).
 2. Check **GitHub Checks** for the Watchflow check run (pass / fail / neutral).
-3. If a rule is violated, you should see a **PR comment** with the violation and remediation hint.
+3. If a rule is violated, you should see a **PR comment** with the violation and remediation hint. Use **Watchflow Rules** in Checks for the current result; later new or higher-severity violations add a short follow-up alert.
 4. Where the rule allows it, reply with:
    `@watchflow acknowledge "Documentation-only change, no code impact"`
    (or `@watchflow ack "…"`).

@@ -8,7 +8,11 @@ from src.core.models import Violation
 from src.event_processors.pull_request.enricher import PullRequestEnricher
 from src.event_processors.pull_request.processor import PullRequestProcessor
 from src.integrations.github.check_runs import CheckRunManager
-from src.presentation.github_formatter import RULES_NOT_CONFIGURED_COMMENT_MARKER
+from src.presentation.github_formatter import (
+    RULES_NOT_CONFIGURED_COMMENT_MARKER,
+    build_violations_state,
+    format_check_run_output,
+)
 from src.rules.loaders.github_loader import RulesFileNotFoundError
 from src.tasks.task_queue import Task
 
@@ -29,6 +33,9 @@ def processor(monkeypatch, mock_agent):
     # Create a mock for the GitHub client that returns a token
     mock_github_client = AsyncMock()
     mock_github_client.get_installation_access_token.return_value = "fake_token"
+    mock_github_client.get_issue_comments.return_value = []
+    mock_github_client.get_check_runs.return_value = []
+    mock_github_client.create_pull_request_comment.return_value = {"id": 1}
 
     # Patch the instance's github_client
     proc.github_client = mock_github_client
@@ -126,7 +133,7 @@ async def test_process_with_violations(processor, mock_agent):
 
 
 @pytest.mark.asyncio
-async def test_process_reuses_comment_snapshot_for_acknowledgments_and_violation_dedup(processor, mock_agent):
+async def test_process_fetches_a_fresh_comment_snapshot_before_syncing_violation_report(processor, mock_agent):
     task = MagicMock(spec=Task)
     task.repo_full_name = "owner/repo"
     task.installation_id = 1
@@ -146,7 +153,8 @@ async def test_process_reuses_comment_snapshot_for_acknowledgments_and_violation
 
     await processor.process(task)
 
-    processor.github_client.get_issue_comments.assert_awaited_once_with("owner/repo", 1, 1)
+    assert processor.github_client.get_issue_comments.await_count == 2
+    processor.github_client.get_issue_comments.assert_awaited_with("owner/repo", 1, 1)
 
 
 @pytest.mark.asyncio
@@ -180,107 +188,246 @@ async def test_compute_violations_hash_different_for_different_violations(proces
 
 
 @pytest.mark.asyncio
-async def test_has_duplicate_comment_finds_existing(processor):
-    """Test that existing comment with matching hash is detected."""
-    processor.github_client.get_issue_comments = AsyncMock(
-        return_value=[
-            {"body": "Some other comment"},
-            {
-                "body": "<!-- watchflow-violations-hash:abc123def456 -->\n### Violations\nContent here",
-                "user": {"login": "watchflow[bot]"},
-            },
-            {"body": "Another comment"},
-        ]
-    )
-
-    has_duplicate = await processor._has_duplicate_comment("owner/repo", 123, "abc123def456", 1)
-
-    assert has_duplicate is True
-
-
-@pytest.mark.asyncio
-async def test_has_duplicate_comment_no_match(processor):
-    """Test that comments without matching hash are not detected as duplicates."""
-    processor.github_client.get_issue_comments = AsyncMock(
-        return_value=[
-            {"body": "Some other comment"},
-            {"body": "<!-- watchflow-violations-hash:different123 -->\n### Violations\nContent here"},
-        ]
-    )
-
-    has_duplicate = await processor._has_duplicate_comment("owner/repo", 123, "abc123def456", 1)
-
-    assert has_duplicate is False
-
-
-@pytest.mark.asyncio
-async def test_has_duplicate_comment_no_existing_comments(processor):
-    """Test that no duplicate is found when there are no comments."""
-    processor.github_client.get_issue_comments = AsyncMock(return_value=[])
-
-    has_duplicate = await processor._has_duplicate_comment("owner/repo", 123, "abc123def456", 1)
-
-    assert has_duplicate is False
-
-
-@pytest.mark.asyncio
-async def test_has_duplicate_comment_fails_open_on_error(processor):
-    """Test that duplicate check fails open (returns False) if API call fails."""
-    processor.github_client.get_issue_comments = AsyncMock(side_effect=Exception("API error"))
-
-    has_duplicate = await processor._has_duplicate_comment("owner/repo", 123, "abc123def456", 1)
-
-    assert has_duplicate is False  # Fail open to allow posting
-
-
-@pytest.mark.asyncio
-async def test_post_violations_skips_duplicate(processor):
-    """Test that posting is skipped when identical comment already exists."""
+async def test_initial_violations_create_a_marked_current_report(processor):
+    """The first violation result creates the canonical report without a delta alert."""
     from src.core.models import Severity
 
-    task = MagicMock(spec=Task)
-    task.repo_full_name = "owner/repo"
-    task.installation_id = 1
-    task.payload = {"pull_request": {"number": 123}}
-
+    task = violation_task()
     violations = [Violation(rule_description="Rule A", severity=Severity.HIGH, message="Message 1")]
-
-    # Mock that a duplicate exists
-    processor.github_client.get_issue_comments = AsyncMock(
-        return_value=[
-            {"body": "<!-- watchflow-violations-hash:abc123def456 -->\nContent", "user": {"login": "watchflow[bot]"}}
-        ]
-    )
-
-    # Mock the hash to match the existing comment
-    processor._compute_violations_hash = MagicMock(return_value="abc123def456")
+    processor.github_client.get_issue_comments = AsyncMock(return_value=[])
 
     await processor._post_violations_to_github(task, violations)
 
-    # Should NOT have called create_pull_request_comment
-    processor.github_client.create_pull_request_comment.assert_not_called()
+    processor.github_client.create_pull_request_comment.assert_awaited_once()
+    report = processor.github_client.create_pull_request_comment.call_args.args[2]
+    assert "watchflow:report=violations-current" in report
 
 
 @pytest.mark.asyncio
-async def test_post_violations_posts_when_no_duplicate(processor):
-    """Test that posting proceeds when no duplicate comment exists."""
-    from src.core.models import Severity
+async def test_first_violation_after_a_passing_check_creates_a_full_snapshot(processor):
+    task = violation_task()
+    violation = Violation(rule_id="description", rule_description="Description", severity="high", message="Missing")
 
+    await processor._post_violations_to_github(task, [])
+    await processor._post_violations_to_github(task, [violation])
+
+    processor.github_client.create_pull_request_comment.assert_awaited_once()
+    comment = processor.github_client.create_pull_request_comment.call_args.args[2]
+    assert "### 🛡️ Watchflow Governance Checks" in comment
+    assert "Governance Update" not in comment
+
+
+def violation_task(event_type: str = "pull_request", action: str = "synchronize") -> MagicMock:
     task = MagicMock(spec=Task)
     task.repo_full_name = "owner/repo"
     task.installation_id = 1
-    task.payload = {"pull_request": {"number": 123}}
+    task.event_type = event_type
+    task.payload = {
+        "action": action,
+        "pull_request": {"number": 123},
+        "review": {"user": {"login": "coderabbitai"}},
+    }
+    return task
 
-    violations = [Violation(rule_description="Rule A", severity=Severity.HIGH, message="Message 1")]
 
-    # Mock that no duplicate exists
-    processor.github_client.get_issue_comments = AsyncMock(return_value=[])
-    processor.github_client.create_pull_request_comment = AsyncMock()
+@pytest.mark.asyncio
+async def test_identical_violations_leave_current_report_untouched(processor):
+    violations = [
+        Violation(rule_id="description", rule_description="Description", severity="medium", message="Missing")
+    ]
 
-    await processor._post_violations_to_github(task, violations)
+    await processor._post_violations_to_github(violation_task(), violations, build_violations_state(violations), True)
 
-    # Should have called create_pull_request_comment
-    processor.github_client.create_pull_request_comment.assert_called_once()
+    processor.github_client.create_pull_request_comment.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_improved_violations_refresh_checks_without_a_timeline_comment(processor):
+    previous = [
+        Violation(rule_id="description", rule_description="Description", severity="medium", message="Missing"),
+        Violation(rule_id="changelog", rule_description="Changelog", severity="medium", message="Missing"),
+        Violation(rule_id="body", rule_description="Body", severity="medium", message="Empty"),
+    ]
+    current = previous[:2]
+    await processor._post_violations_to_github(
+        violation_task("pull_request_review", "submitted"), current, build_violations_state(previous), True
+    )
+
+    processor.github_client.create_pull_request_comment.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_new_violation_posts_a_regression_alert_without_editing_the_snapshot(processor):
+    previous = [Violation(rule_id="description", rule_description="Description", severity="medium", message="Missing")]
+    added = Violation(rule_id="changelog", rule_description="Changelog", severity="high", message="Missing")
+    await processor._post_violations_to_github(
+        violation_task("pull_request_review", "submitted"), [*previous, added], build_violations_state(previous), True
+    )
+
+    processor.github_client.create_pull_request_comment.assert_awaited_once()
+    alert = processor.github_client.create_pull_request_comment.call_args.args[2]
+    assert "review was submitted by @coderabbitai" in alert
+    assert "New **high** violation: Changelog" in alert
+    assert "highlights only new or worsened findings" in alert
+
+
+@pytest.mark.asyncio
+async def test_severity_increase_posts_regression_alert(processor):
+    previous = [Violation(rule_id="description", rule_description="Description", severity="low", message="Missing")]
+    worsened = Violation(rule_id="description", rule_description="Description", severity="high", message="Missing")
+    await processor._post_violations_to_github(violation_task(), [worsened], build_violations_state(previous), True)
+
+    alert = processor.github_client.create_pull_request_comment.call_args.args[2]
+    assert "increased from **low** to **high**" in alert
+
+
+def test_mixed_severity_changes_for_the_same_rule_do_not_create_a_false_regression(processor):
+    previous = [
+        {"id": "rule-a", "severity": "high"},
+        {"id": "rule-a", "severity": "low"},
+    ]
+    current = [Violation(rule_id="rule-a", rule_description="Rule A", severity="medium", message="Missing")]
+
+    added, worsened = processor._find_violation_regressions(previous, current)
+
+    assert added == []
+    assert worsened == []
+
+
+@pytest.mark.asyncio
+async def test_resolved_violations_do_not_create_a_timeline_comment(processor):
+    previous = [Violation(rule_id="description", rule_description="Description", severity="medium", message="Missing")]
+
+    await processor._post_violations_to_github(violation_task(), [], build_violations_state(previous), True)
+
+    processor.github_client.create_pull_request_comment.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_violation_reintroduced_after_resolution_posts_a_regression_alert(processor):
+    previous = [Violation(rule_id="description", rule_description="Description", severity="medium", message="Missing")]
+
+    await processor._post_violations_to_github(violation_task(), [], build_violations_state(previous), True)
+    await processor._post_violations_to_github(violation_task(), previous, build_violations_state(previous), True)
+
+    processor.github_client.create_pull_request_comment.assert_awaited_once()
+    alert = processor.github_client.create_pull_request_comment.call_args.args[2]
+    assert "Governance Update" in alert
+    assert "New **medium** violation: Description" in alert
+
+
+@pytest.mark.asyncio
+async def test_previous_state_is_loaded_from_the_prior_check_on_a_new_commit(processor):
+    previous = [Violation(rule_id="description", rule_description="Description", severity="medium", message="Missing")]
+    task = violation_task("pull_request", "synchronize")
+    task.payload["before"] = "previous-sha"
+    processor.github_client.get_check_runs.return_value = [
+        {
+            "id": 7,
+            "name": "Watchflow Rules",
+            "output": format_check_run_output(previous),
+        }
+    ]
+
+    state, has_previous_report = await processor._get_previous_violation_state(task, "current-sha", 1)
+
+    assert state == build_violations_state(previous)
+    assert has_previous_report is True
+    processor.github_client.get_check_runs.assert_awaited_once_with("owner/repo", "previous-sha", 1)
+    processor.github_client.get_issue_comments.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_passing_check_without_a_report_keeps_the_first_violation_eligible_for_a_snapshot(processor):
+    task = violation_task("pull_request", "synchronize")
+    task.payload["before"] = "previous-sha"
+    processor.github_client.get_check_runs.return_value = [
+        {
+            "id": 7,
+            "name": "Watchflow Rules",
+            "output": format_check_run_output([]),
+        }
+    ]
+
+    state, has_previous_report = await processor._get_previous_violation_state(task, "current-sha", 1)
+
+    assert state == []
+    assert has_previous_report is False
+    processor.github_client.get_issue_comments.assert_awaited_once_with("owner/repo", 123, 1)
+
+
+@pytest.mark.asyncio
+async def test_legacy_report_is_adopted_silently_and_non_watchflow_markers_are_ignored(processor):
+    violations = [
+        Violation(rule_id="description", rule_description="Description", severity="medium", message="Missing")
+    ]
+    legacy = {
+        "id": 2,
+        "body": "<!-- watchflow-violations-hash:legacy -->\nold report",
+        "user": {"login": "watchflow[bot]"},
+    }
+    imitation = {
+        "id": 3,
+        "body": "<!-- watchflow-violations-hash:fake -->",
+        "user": {"login": "someone-else"},
+    }
+    processor.github_client.get_issue_comments.return_value = [imitation, legacy]
+
+    previous_state, has_previous_report = await processor._get_previous_violation_state(violation_task(), "sha123", 1)
+    await processor._post_violations_to_github(violation_task(), violations, previous_state, has_previous_report)
+
+    processor.github_client.create_pull_request_comment.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_violation_comment_lookup_failure_does_not_create_comments(processor):
+    processor.github_client.get_issue_comments.return_value = None
+    violations = [Violation(rule_description="Description", severity="medium", message="Missing")]
+
+    previous_state, has_previous_report = await processor._get_previous_violation_state(violation_task(), "sha123", 1)
+    await processor._post_violations_to_github(violation_task(), violations, previous_state, has_previous_report)
+
+    processor.github_client.create_pull_request_comment.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unchanged_remediation_does_not_create_a_follow_up_comment(processor):
+    previous = [
+        Violation(
+            rule_id="description",
+            rule_description="Description",
+            severity="medium",
+            message="Missing",
+            how_to_fix="Add a description.",
+        )
+    ]
+    current = [
+        Violation(
+            rule_id="description",
+            rule_description="Description",
+            severity="medium",
+            message="Missing",
+            how_to_fix="Explain the implementation and tests.",
+        )
+    ]
+    await processor._post_violations_to_github(violation_task(), current, build_violations_state(previous), True)
+
+    processor.github_client.create_pull_request_comment.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_violation_sync_posts_one_regression_alert(processor):
+    previous = [Violation(rule_id="description", rule_description="Description", severity="medium", message="Missing")]
+    current = [
+        *previous,
+        Violation(rule_id="changelog", rule_description="Changelog", severity="high", message="Missing"),
+    ]
+    await asyncio.gather(
+        processor._post_violations_to_github(violation_task(), current, build_violations_state(previous), True),
+        processor._post_violations_to_github(violation_task(), current, build_violations_state(previous), True),
+    )
+
+    processor.github_client.create_pull_request_comment.assert_awaited_once()
 
 
 @pytest.mark.asyncio

@@ -28,7 +28,7 @@ graph TD
 3. **Processor** — Loads `.watchflow/rules.yaml` from default branch (via GitHub API). If missing, creates a neutral check run; on the initial PR-open event only, it also posts one setup-awareness comment with a link to watchflow.dev (`installation_id` + `repo`).
 4. **Enrichment** — Fetches PR files, reviews, CODEOWNERS content so conditions can run without a local clone.
 5. **Rule engine** — Passes **Rule objects** (with attached condition instances) to the engine. Engine runs each rule’s conditions; no conversion to dicts that would drop conditions.
-6. **Output** — Violations → check run + PR comment; developers can reply `@watchflow acknowledge "reason"` where the rule allows it.
+6. **Output** — Violations → current check run + an initial PR snapshot. Regressions add a concise follow-up alert; improvements change the check only. Developers can reply `@watchflow acknowledge "reason"` where the rule allows it.
 
 ## Core components
 

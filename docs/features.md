@@ -113,7 +113,7 @@ Later commits, reviews, review-thread changes, and re-runs refresh the neutral c
 - **GitHub App** — Install per org/repo; we use installation tokens for API access and webhooks.
 - **Webhooks** — `pull_request`, `push`; we also support `issue_comment` for acknowledgments, and deployment/workflow events for time-based and deploy rules.
 - **Check runs** — Violations show up as failed/neutral check runs with a summary and link to the rules file.
-- **PR comments** — Violation summary and remediation hints; acknowledgment replies parsed in-thread.
+- **PR comments** — An initial violation snapshot with remediation hints, plus concise follow-up alerts only for new or higher-severity violations. The Watchflow Rules check always shows the complete current result; acknowledgment replies are parsed in-thread.
 
 ---
 

@@ -1,6 +1,8 @@
 import asyncio
 import hashlib
+import json
 import time
+from collections import Counter, defaultdict
 from typing import Any
 
 import structlog
@@ -30,6 +32,9 @@ class PullRequestProcessor(BaseEventProcessor):
         self.enricher = PullRequestEnricher(self.github_client)
         self.check_run_manager = CheckRunManager(self.github_client)
         self._setup_awareness_locks: dict[tuple[str, int], tuple[asyncio.Lock, int]] = {}
+        self._violation_comment_locks: dict[tuple[str, int], tuple[asyncio.Lock, int]] = {}
+        self._violation_states: dict[tuple[str, int], list[dict[str, str]]] = {}
+        self._violation_reports: dict[tuple[str, int], bool] = {}
 
     def get_event_type(self) -> str:
         return "pull_request"
@@ -247,6 +252,9 @@ class PullRequestProcessor(BaseEventProcessor):
             violations = require_acknowledgment_violations
 
             # 6. Report results to GitHub
+            previous_violation_state, has_previous_violation_report = await self._get_previous_violation_state(
+                task, sha, installation_id
+            )
             if sha:
                 if previous_acknowledgments and original_violations:
                     await self.check_run_manager.create_acknowledgment_check_run(
@@ -265,9 +273,10 @@ class PullRequestProcessor(BaseEventProcessor):
                         violations=violations,
                     )
 
-            if violations:
-                logger.info(f"🚨 Found {len(violations)} violations, posting to PR...")
-                await self._post_violations_to_github(task, violations, existing_comments=comments_snapshot)
+            if pr_number:
+                await self._post_violations_to_github(
+                    task, violations, previous_violation_state, has_previous_violation_report
+                )
                 api_calls += 1
 
             processing_time = int((time.time() - start_time) * 1000)
@@ -302,55 +311,220 @@ class PullRequestProcessor(BaseEventProcessor):
             )
 
     async def _post_violations_to_github(
-        self, task: Task, violations: list[Violation], existing_comments: list[dict[str, Any]] | None = None
+        self,
+        task: Task,
+        violations: list[Violation],
+        previous_state: list[dict[str, str]] | None = None,
+        has_previous_report: bool = False,
     ) -> None:
-        """Post violations as comments on the pull request.
+        """Keep comments immutable: create a snapshot first, then alert only on regressions."""
+        pr_number = task.payload.get("pull_request", {}).get("number")
+        installation_id = task.installation_id
+        if not pr_number or not installation_id:
+            return
 
-        Implements comment-level deduplication by checking existing PR comments
-        and skipping if an identical Watchflow violations comment already exists.
-        """
+        lock_key = (task.repo_full_name, pr_number)
+        lock_entry = self._violation_comment_locks.get(lock_key)
+        if lock_entry is None:
+            lock, waiting_tasks = asyncio.Lock(), 0
+        else:
+            lock, waiting_tasks = lock_entry
+        self._violation_comment_locks[lock_key] = (lock, waiting_tasks + 1)
+
         try:
-            pr_number = task.payload.get("pull_request", {}).get("number")
-            if not pr_number or not task.installation_id:
-                return
+            async with lock:
+                effective_previous_state = self._violation_states.get(lock_key, previous_state)
+                effective_has_previous_report = self._violation_reports.get(lock_key, has_previous_report)
+                violations_hash = self._compute_violations_hash(violations)
+                current_state = github_formatter.build_violations_state(violations)
+                if violations and not effective_has_previous_report:
+                    snapshot = github_formatter.format_violations_comment(
+                        violations, content_hash=violations_hash, current_report=True
+                    )
+                    created = await self.github_client.create_pull_request_comment(
+                        task.repo_full_name, pr_number, snapshot, installation_id
+                    )
+                    if created:
+                        effective_has_previous_report = True
+                        logger.info("violations_snapshot_posted", repo=task.repo_full_name, pr_number=pr_number)
+                    else:
+                        logger.warning("violations_snapshot_post_failed", repo=task.repo_full_name, pr_number=pr_number)
+                elif effective_previous_state is not None:
+                    added, worsened = self._find_violation_regressions(effective_previous_state, violations)
+                    if added or worsened:
+                        alert = github_formatter.format_violation_regression_alert(
+                            self._describe_violation_trigger(task), added, worsened, violations
+                        )
+                        alert_created = await self.github_client.create_pull_request_comment(
+                            task.repo_full_name, pr_number, alert, installation_id
+                        )
+                        if alert_created:
+                            logger.info(
+                                "violations_regression_alert_posted",
+                                repo=task.repo_full_name,
+                                pr_number=pr_number,
+                                added_count=len(added),
+                                worsened_count=len(worsened),
+                            )
+                        else:
+                            logger.warning(
+                                "violations_regression_alert_failed", repo=task.repo_full_name, pr_number=pr_number
+                            )
+                    else:
+                        logger.info(
+                            "violations_comment_skipped_non_regression", repo=task.repo_full_name, pr_number=pr_number
+                        )
+                self._violation_states[lock_key] = current_state
+                self._violation_reports[lock_key] = effective_has_previous_report
+        except Exception as error:
+            logger.warning(
+                "violations_comment_sync_failed", repo=task.repo_full_name, pr_number=pr_number, error=str(error)
+            )
+        finally:
+            current_lock, waiting_tasks = self._violation_comment_locks.get(lock_key, (lock, 1))
+            if current_lock is lock:
+                if waiting_tasks == 1:
+                    self._violation_comment_locks.pop(lock_key, None)
+                else:
+                    self._violation_comment_locks[lock_key] = (lock, waiting_tasks - 1)
 
-            # Compute content hash for deduplication
-            violations_signature = self._compute_violations_hash(violations)
+    async def _get_previous_violation_state(
+        self, task: Task, sha: str | None, installation_id: int
+    ) -> tuple[list[dict[str, str]] | None, bool]:
+        """Load the last state from Checks, falling back to Watchflow's immutable comment snapshots."""
+        pr_number = task.payload.get("pull_request", {}).get("number")
+        if not pr_number:
+            return None, False
+        lock_key = (task.repo_full_name, pr_number)
+        if lock_key in self._violation_states:
+            state = self._violation_states[lock_key]
+            return state, self._violation_reports.get(lock_key, bool(state))
 
-            # Check if identical comment already exists
-            if await self._has_duplicate_comment(
-                task.repo_full_name,
-                pr_number,
-                violations_signature,
-                task.installation_id,
-                existing_comments=existing_comments,
-            ):
-                logger.info(
-                    "Skipping duplicate violations comment",
-                    extra={
-                        "pr_number": pr_number,
-                        "repo": task.repo_full_name,
-                        "violations_hash": violations_signature,
-                    },
+        reference_sha = sha
+        before_sha = task.payload.get("before")
+        if task.payload.get("action") == "synchronize" and isinstance(before_sha, str) and before_sha.strip("0"):
+            reference_sha = before_sha
+        check_state: list[dict[str, str]] | None = None
+        if reference_sha:
+            try:
+                check_runs = await self.github_client.get_check_runs(
+                    task.repo_full_name, reference_sha, installation_id
                 )
-                return
+                for check_run in sorted(check_runs or [], key=lambda item: int(item.get("id", 0)), reverse=True):
+                    if str(check_run.get("name", "")).lower() not in {"watchflow rules", "watchflow-rules"}:
+                        continue
+                    output = check_run.get("output") or {}
+                    state = github_formatter.parse_violations_state_marker(str(output.get("text") or ""))
+                    if state is not None:
+                        # A non-empty Check is enough to establish that violations were
+                        # already reported. For a passing Check, inspect comments below:
+                        # it may precede the first violations report on this PR.
+                        if state:
+                            return state, True
+                        check_state = state
+                        break
+            except Exception as error:
+                logger.warning(
+                    "violations_state_check_lookup_failed",
+                    repo=task.repo_full_name,
+                    pr_number=pr_number,
+                    error=str(error),
+                )
 
-            # Post new comment with hash marker
-            comment_body = github_formatter.format_violations_comment(violations, content_hash=violations_signature)
-            await self.github_client.create_pull_request_comment(
-                task.repo_full_name, pr_number, comment_body, task.installation_id
+        try:
+            comments = await self.github_client.get_issue_comments(task.repo_full_name, pr_number, installation_id)
+            if comments is None:
+                return None, True
+            for comment in reversed(comments):
+                if not self._is_watchflow_comment(comment):
+                    continue
+                body = str(comment.get("body") or "")
+                state = github_formatter.parse_violations_state_marker(body)
+                if state is not None:
+                    return check_state if check_state is not None else state, True
+                if github_formatter.VIOLATIONS_HASH_MARKER_PATTERN.search(body):
+                    return check_state, True
+        except Exception as error:
+            logger.warning(
+                "violations_state_comment_lookup_failed",
+                repo=task.repo_full_name,
+                pr_number=pr_number,
+                error=str(error),
             )
-            logger.info(
-                "Posted violations comment",
-                extra={
-                    "pr_number": pr_number,
-                    "repo": task.repo_full_name,
-                    "violations_count": len(violations),
-                    "violations_hash": violations_signature,
-                },
+            return None, True
+        return check_state, False
+
+    @staticmethod
+    def _severity_rank(severity: str) -> int:
+        return {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}.get(severity, 0)
+
+    @staticmethod
+    def _violation_identity(violation: Violation) -> str:
+        return violation.rule_id or violation.rule_description
+
+    def _find_violation_regressions(
+        self, previous_state: list[dict[str, str]], violations: list[Violation]
+    ) -> tuple[list[Violation], list[tuple[Violation, str]]]:
+        """Return violations added or raised in severity since the canonical report."""
+        previous_by_identity: dict[str, list[str]] = defaultdict(list)
+        for item in previous_state:
+            previous_by_identity[item["id"]].append(item["severity"])
+        current_by_identity: dict[str, list[Violation]] = defaultdict(list)
+        for violation in violations:
+            current_by_identity[self._violation_identity(violation)].append(violation)
+
+        added: list[Violation] = []
+        worsened: list[tuple[Violation, str]] = []
+        for identity in set(previous_by_identity) | set(current_by_identity):
+            previous = previous_by_identity[identity]
+            current = current_by_identity[identity]
+            previous_counts = Counter(previous)
+            unmatched_current: list[Violation] = []
+            for violation in current:
+                severity = violation.severity.value if hasattr(violation.severity, "value") else str(violation.severity)
+                if previous_counts[severity]:
+                    previous_counts[severity] -= 1
+                else:
+                    unmatched_current.append(violation)
+            unmatched_previous = [severity for severity, count in previous_counts.items() for _ in range(count)]
+            # Pair the most severe findings first. This avoids treating an
+            # improvement of a high finding plus resolution of a low finding
+            # as a false increase from low to medium when a rule emits more
+            # than one finding with the same identity.
+            unmatched_current.sort(
+                key=lambda violation: self._severity_rank(
+                    violation.severity.value if hasattr(violation.severity, "value") else str(violation.severity)
+                ),
+                reverse=True,
             )
-        except Exception as e:
-            logger.error(f"Error posting violations to GitHub: {e}")
+            unmatched_previous.sort(key=self._severity_rank, reverse=True)
+            for previous_severity, violation in zip(unmatched_previous, unmatched_current, strict=False):
+                current_severity = (
+                    violation.severity.value if hasattr(violation.severity, "value") else str(violation.severity)
+                )
+                if self._severity_rank(current_severity) > self._severity_rank(previous_severity):
+                    worsened.append((violation, previous_severity))
+            added.extend(unmatched_current[len(unmatched_previous) :])
+        return added, worsened
+
+    @staticmethod
+    def _describe_violation_trigger(task: Task) -> str:
+        event_type = getattr(task, "event_type", "")
+        event_type = getattr(event_type, "value", event_type)
+        event_type = event_type.lower() if isinstance(event_type, str) else ""
+        action = task.payload.get("action", "")
+        if event_type == "pull_request_review":
+            reviewer = task.payload.get("review", {}).get("user", {}).get("login")
+            return f"a review was {action}{f' by @{reviewer}' if reviewer else ''}"
+        if event_type == "pull_request_review_thread":
+            return f"a review thread was {action}"
+        return {
+            "synchronize": "new commits were pushed",
+            "edited": "the pull request details were edited",
+            "opened": "the pull request was opened",
+            "reopened": "the pull request was reopened",
+            "ready_for_review": "the pull request was marked ready for review",
+        }.get(action, "the pull request was re-evaluated")
 
     async def _post_rules_not_configured_comment(self, task: Task, pr_number: int | None, installation_id: int) -> None:
         """Post one setup-awareness comment for an initially opened PR.
@@ -421,7 +595,7 @@ class PullRequestProcessor(BaseEventProcessor):
     def _compute_violations_hash(self, violations: list[Violation]) -> str:
         """Compute a stable hash of violations for deduplication.
 
-        Uses rule_description + message + severity to create a fingerprint.
+        Uses the rendered violation fields to create a fingerprint.
         This allows detecting identical violation sets regardless of delivery_id.
         """
         # Sort violations to ensure consistent ordering
@@ -433,61 +607,19 @@ class PullRequestProcessor(BaseEventProcessor):
         # Build signature from key fields
         signature_parts = []
         for v in sorted_violations:
-            signature_parts.append(f"{v.rule_description}|{v.message}|{v.severity.value if v.severity else ''}")
+            details = json.dumps(v.details, sort_keys=True, default=str, separators=(",", ":"))
+            signature_parts.append(
+                f"{v.rule_id or ''}|{v.rule_description}|{v.message}|{v.severity.value if v.severity else ''}|"
+                f"{v.how_to_fix or ''}|{details}"
+            )
 
         signature_string = "::".join(signature_parts)
         return hashlib.sha256(signature_string.encode()).hexdigest()[:12]  # Use first 12 chars for readability
-
-    async def _has_duplicate_comment(
-        self,
-        repo: str,
-        pr_number: int,
-        violations_hash: str,
-        installation_id: int,
-        existing_comments: list[dict[str, Any]] | None = None,
-    ) -> bool:
-        """Check if a comment with the same violations hash already exists.
-
-        Looks for the hidden HTML marker in existing comments to detect duplicates.
-        """
-        marker = f"<!-- watchflow-violations-hash:{violations_hash} -->"
-        if existing_comments is not None:
-            return self._has_managed_comment_marker_in_comments(existing_comments, marker)
-
-        duplicate = await self._has_managed_comment_marker(repo, pr_number, marker, installation_id)
-        if duplicate is None:
-            logger.warning("Error checking for duplicate comments. Proceeding with post.")
-            # Fail open for violation reporting so an API-read failure does not
-            # hide enforcement feedback.
-            return False
-        return duplicate
-
-    async def _has_managed_comment_marker(
-        self, repo: str, pr_number: int, marker: str, installation_id: int
-    ) -> bool | None:
-        """Return whether Watchflow already posted ``marker`` on this PR.
-
-        ``None`` means the GitHub lookup failed. Callers choose whether that
-        failure should fail open (violations) or fail closed (onboarding).
-        """
-        try:
-            existing_comments = await self.github_client.get_issue_comments(repo, pr_number, installation_id)
-            if existing_comments is None:
-                return None
-            return self._has_managed_comment_marker_in_comments(existing_comments, marker)
-        except Exception as e:
-            logger.warning(f"Error checking for managed comment marker: {e}")
-            return None
 
     @staticmethod
     def _is_watchflow_comment(comment: dict[str, Any]) -> bool:
         expected_author = f"{config.github.app_name}[bot]"
         return (comment.get("user") or {}).get("login", "").lower() == expected_author.lower()
-
-    def _has_managed_comment_marker_in_comments(self, comments: list[dict[str, Any]], marker: str) -> bool:
-        return any(
-            marker in str(comment.get("body") or "") and self._is_watchflow_comment(comment) for comment in comments
-        )
 
     def _has_setup_awareness_comment(self, comments: list[dict[str, Any]]) -> bool:
         """Recognize marked comments and the legacy setup message emitted before markers existed."""
