@@ -1,8 +1,19 @@
+import base64
+import json
 import logging
+import re
+from binascii import Error as BinasciiError
 from typing import Any
 
 from src.agents.base import AgentResult
 from src.core.models import Acknowledgment, Severity, Violation
+
+RULES_NOT_CONFIGURED_COMMENT_MARKER = "<!-- watchflow:report=rules-not-configured -->"
+VIOLATIONS_CURRENT_REPORT_MARKER_PREFIX = "<!-- watchflow:report=violations-current;state="
+VIOLATIONS_CURRENT_REPORT_MARKER_PATTERN = re.compile(
+    r"<!-- watchflow:report=violations-current;state=([A-Za-z0-9+/=]+) -->"
+)
+VIOLATIONS_HASH_MARKER_PATTERN = re.compile(r"<!-- watchflow-violations-hash:([^\s]+) -->")
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +136,10 @@ def format_check_run_output(
         return {
             "title": "All rules passed",
             "summary": "✅ No rule violations detected",
-            "text": "All configured rules in `.watchflow/rules.yaml` have passed successfully.",
+            "text": (
+                "All configured rules in `.watchflow/rules.yaml` have passed successfully.\n\n"
+                f"{format_violations_state_marker([])}"
+            ),
         }
 
     # Group violations by severity
@@ -156,6 +170,7 @@ def format_check_run_output(
     text += _build_collapsible_violations_text(violations)
     text += "---\n"
     text += "💡 *To configure rules, edit the `.watchflow/rules.yaml` file in this repository.*"
+    text += f"\n\n{format_violations_state_marker(violations)}"
 
     return {"title": f"{len(violations)} rule violations found", "summary": summary, "text": text}
 
@@ -172,6 +187,7 @@ def format_rules_not_configured_comment(
         landing_url = f"https://watchflow.dev/analyze?repo={repo_full_name}"
 
     return (
+        f"{RULES_NOT_CONFIGURED_COMMENT_MARKER}\n"
         "## ⚙️ Watchflow rules not configured\n\n"
         "No rules file found in your repository. Watchflow can help enforce governance rules for your team.\n\n"
         "**Quick setup:**\n"
@@ -230,7 +246,54 @@ def format_suggested_rules_ambiguous_comment(
     return "\n".join(lines)
 
 
-def format_violations_comment(violations: list[Violation], content_hash: str | None = None) -> str:
+def build_violations_state(violations: list[Violation]) -> list[dict[str, str]]:
+    """Build stable, minimal state used to compare violation severity across evaluations."""
+    state = []
+    for violation in violations:
+        identity = violation.rule_id or violation.rule_description
+        state.append(
+            {
+                "id": identity,
+                "severity": violation.severity.value
+                if hasattr(violation.severity, "value")
+                else str(violation.severity),
+            }
+        )
+    return sorted(state, key=lambda item: (item["id"], item["severity"]))
+
+
+def format_violations_state_marker(violations: list[Violation]) -> str:
+    """Encode a versioned violation state in an invisible, HTML-comment-safe marker."""
+    payload = json.dumps(
+        {"version": 1, "violations": build_violations_state(violations)}, separators=(",", ":"), sort_keys=True
+    )
+    encoded = base64.b64encode(payload.encode("utf-8")).decode("ascii")
+    return f"{VIOLATIONS_CURRENT_REPORT_MARKER_PREFIX}{encoded} -->"
+
+
+def parse_violations_state_marker(comment_body: str) -> list[dict[str, str]] | None:
+    """Return a canonical report's saved state, or ``None`` when it is absent or malformed."""
+    match = VIOLATIONS_CURRENT_REPORT_MARKER_PATTERN.search(comment_body)
+    if not match:
+        return None
+    try:
+        payload = json.loads(base64.b64decode(match.group(1)).decode("utf-8"))
+        violations = payload.get("violations")
+        if payload.get("version") != 1 or not isinstance(violations, list):
+            return None
+        if not all(
+            isinstance(item, dict) and isinstance(item.get("id"), str) and isinstance(item.get("severity"), str)
+            for item in violations
+        ):
+            return None
+        return [{"id": item["id"], "severity": item["severity"]} for item in violations]
+    except (BinasciiError, UnicodeDecodeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def format_violations_comment(
+    violations: list[Violation], content_hash: str | None = None, current_report: bool = False
+) -> str:
     """Format violations as a GitHub comment.
 
     Args:
@@ -244,8 +307,10 @@ def format_violations_comment(violations: list[Violation], content_hash: str | N
     if not violations:
         return ""
 
-    # Add hidden HTML marker for deduplication (not visible in rendered markdown)
+    # Add hidden HTML markers for deduplication and canonical-report state.
     marker = f"<!-- watchflow-violations-hash:{content_hash} -->\n" if content_hash else ""
+    if current_report:
+        marker += f"{format_violations_state_marker(violations)}\n"
 
     comment = marker
     comment += f"### 🛡️ Watchflow Governance Checks\n**Status:** ❌ {len(violations)} Violations Found\n\n"
@@ -254,12 +319,38 @@ def format_violations_comment(violations: list[Violation], content_hash: str | N
     comment += (
         "💡 *Reply with `@watchflow ack [reason]` to override these rules, or `@watchflow help` for commands.*\n\n"
     )
+    comment += "*This is a snapshot. Check **Watchflow Rules** for the current result.*\n\n"
     comment += (
         "Thanks for using [Watchflow](https://watchflow.dev)! It's completely free for OSS and private repositories. "
     )
     comment += "You can also [self-host it easily](https://github.com/warestack/watchflow)."
 
     return comment
+
+
+def format_violation_regression_alert(
+    trigger: str,
+    added: list[Violation],
+    worsened: list[tuple[Violation, str]],
+    current_violations: list[Violation],
+) -> str:
+    """Format a concise timeline alert for newly introduced or worsened violations."""
+    lines = ["### 🛡️ Watchflow Governance Update", "", f"After {trigger}, Watchflow found a regression:", ""]
+    for violation in added:
+        severity = violation.severity.value if hasattr(violation.severity, "value") else str(violation.severity)
+        lines.append(f"- New **{severity}** violation: {violation.rule_description}")
+    for violation, previous_severity in worsened:
+        severity = violation.severity.value if hasattr(violation.severity, "value") else str(violation.severity)
+        lines.append(f"- **{violation.rule_description}** increased from **{previous_severity}** to **{severity}**")
+    lines.extend(
+        [
+            "",
+            "This alert highlights only new or worsened findings. See **Watchflow Rules** in Checks for the complete current result.",
+            "",
+            format_violations_state_marker(current_violations),
+        ]
+    )
+    return "\n".join(lines)
 
 
 def format_acknowledgment_summary(

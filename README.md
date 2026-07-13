@@ -134,7 +134,7 @@ Detailed steps: [Quick Start](docs/getting-started/quick-start.md). Configuratio
 - **`POST /api/v1/rules/recommend`** — Analyze a repo (structure, PR history) and return suggested rules. Accepts `repo_url`; optional `installation_id` (from install link) or user token for private repos and higher rate limits.
 - **`POST /api/v1/rules/recommend/proceed-with-pr`** — Create a PR that adds `.watchflow/rules.yaml` from recommended rules. Auth: Bearer token or `installation_id` in body.
 
-When no `.watchflow/rules.yaml` exists and a PR is opened, Watchflow posts a **welcome comment** with a link to watchflow.dev (including `installation_id` and `repo`) so maintainers can run analysis and create a rules PR without entering a PAT.
+When a newly opened PR has no `.watchflow/rules.yaml`, Watchflow posts one **setup-awareness comment** with a link to watchflow.dev (including `installation_id` and `repo`) so maintainers can run analysis and create a rules PR without entering a PAT. Later commits, reviews, and re-runs update the neutral check without repeating the comment.
 
 ---
 

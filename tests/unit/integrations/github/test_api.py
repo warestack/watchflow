@@ -114,6 +114,31 @@ async def test_get_installation_access_token_failure(github_client, mock_aiohttp
 
 
 @pytest.mark.asyncio
+async def test_get_issue_comments_paginates_all_results(github_client, mock_aiohttp_session):
+    github_client._token_cache[123] = "access_token"
+    first_page = mock_aiohttp_session.create_mock_response(200, json_data=[{"id": i} for i in range(100)])
+    second_page = mock_aiohttp_session.create_mock_response(200, json_data=[{"id": 100}])
+    mock_aiohttp_session.get.side_effect = [first_page, second_page]
+
+    comments = await github_client.get_issue_comments("owner/repo", 42, 123)
+
+    assert comments == [{"id": i} for i in range(101)]
+    assert mock_aiohttp_session.get.call_count == 2
+    assert mock_aiohttp_session.get.call_args_list[0].kwargs["params"] == {"per_page": 100, "page": 1}
+    assert mock_aiohttp_session.get.call_args_list[1].kwargs["params"] == {"per_page": 100, "page": 2}
+
+
+@pytest.mark.asyncio
+async def test_get_issue_comments_returns_none_on_api_failure(github_client, mock_aiohttp_session):
+    github_client._token_cache[123] = "access_token"
+    mock_aiohttp_session.get.return_value = mock_aiohttp_session.create_mock_response(500, text_data="Server error")
+
+    comments = await github_client.get_issue_comments("owner/repo", 42, 123)
+
+    assert comments is None
+
+
+@pytest.mark.asyncio
 async def test_get_repository_success(github_client, mock_aiohttp_session):
     # Initial token mock
     mock_token_response = mock_aiohttp_session.create_mock_response(201, json_data={"token": "access_token"})

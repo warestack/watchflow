@@ -101,6 +101,7 @@ class CheckRunManager:
             output_data = github_formatter.format_acknowledgment_check_run(
                 acknowledgable_violations, violations, acknowledgments
             )
+            output_data["text"] += f"\n\n{github_formatter.format_violations_state_marker(violations)}"
 
             await self.github_client.create_check_run(
                 repo=repo,

@@ -964,33 +964,47 @@ class GitHubClient:
             logger.error(f"Error reviewing deployment protection rule: {e}")
             return None
 
-    async def get_issue_comments(self, repo: str, issue_number: int, installation_id: int) -> list[dict[str, Any]]:
-        """Get comments for an issue."""
+    async def get_issue_comments(
+        self, repo: str, issue_number: int, installation_id: int
+    ) -> list[dict[str, Any]] | None:
+        """Get every comment for an issue, or ``None`` if the request fails."""
         try:
             token = await self.get_installation_access_token(installation_id)
             if not token:
                 logger.error(f"Failed to get installation token for {installation_id}")
-                return []
+                return None
 
             headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
 
             url = f"{config.github.api_base_url}/repos/{repo}/issues/{issue_number}/comments"
 
             session = await self._get_session()
-            async with session.get(url, headers=headers) as response:
-                if response.status == 200:
+            comments: list[dict[str, Any]] = []
+            page = 1
+            while True:
+                async with session.get(url, headers=headers, params={"per_page": 100, "page": page}) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(
+                            f"Failed to get comments for issue #{issue_number} in {repo}. "
+                            f"Status: {response.status}, Response: {error_text}"
+                        )
+                        return None
+
                     result = await response.json()
-                    logger.info(f"Retrieved {len(result)} comments for issue #{issue_number} in {repo}")
-                    return cast("list[dict[str, Any]]", result)
-                else:
-                    error_text = await response.text()
-                    logger.error(
-                        f"Failed to get comments for issue #{issue_number} in {repo}. Status: {response.status}, Response: {error_text}"
-                    )
-                    return []
+                    if not isinstance(result, list):
+                        logger.error(f"Unexpected comments response for issue #{issue_number} in {repo}")
+                        return None
+
+                    page_comments = cast("list[dict[str, Any]]", result)
+                    comments.extend(page_comments)
+                    if len(page_comments) < 100:
+                        logger.info(f"Retrieved {len(comments)} comments for issue #{issue_number} in {repo}")
+                        return comments
+                    page += 1
         except Exception as e:
             logger.error(f"Error getting comments for issue #{issue_number} in {repo}: {e}")
-            return []
+            return None
 
     async def update_deployment_status(
         self, callback_url: str, state: str, description: str, environment_url: str | None = None

@@ -1,9 +1,14 @@
 from src.core.models import Acknowledgment, Severity, Violation
 from src.presentation.github_formatter import (
+    RULES_NOT_CONFIGURED_COMMENT_MARKER,
+    VIOLATIONS_CURRENT_REPORT_MARKER_PREFIX,
     format_acknowledgment_summary,
     format_check_run_output,
+    format_rules_not_configured_comment,
+    format_violation_regression_alert,
     format_violations_comment,
     format_violations_for_check_run,
+    parse_violations_state_marker,
 )
 
 
@@ -86,6 +91,12 @@ def test_format_check_run_output_rules_not_configured():
     assert f"installation_id={inst_id}" in output["text"]
 
 
+def test_format_rules_not_configured_comment_includes_deduplication_marker():
+    comment = format_rules_not_configured_comment(repo_full_name="owner/repo", installation_id=123)
+
+    assert comment.startswith(f"{RULES_NOT_CONFIGURED_COMMENT_MARKER}\n")
+
+
 def test_format_acknowledgment_summary():
     violations = [Violation(rule_description="PR Title", severity=Severity.MEDIUM, message="Bad title")]
     acks = {"pr-title": Acknowledgment(rule_id="pr-title", reason="One-off", commenter="tom")}
@@ -116,6 +127,27 @@ def test_format_violations_comment_includes_hash_marker():
 
     assert "<!-- watchflow-violations-hash:abc123def456 -->" in comment
     assert "### 🛡️ Watchflow Governance Checks" in comment
+
+
+def test_current_violations_report_includes_parseable_state_marker():
+    violations = [Violation(rule_id="rule-a", rule_description="Rule A", severity=Severity.HIGH, message="Error")]
+
+    comment = format_violations_comment(violations, content_hash="abc123def456", current_report=True)
+
+    assert VIOLATIONS_CURRENT_REPORT_MARKER_PREFIX in comment
+    assert parse_violations_state_marker(comment) == [{"id": "rule-a", "severity": "high"}]
+
+
+def test_check_output_and_regression_alert_include_current_state():
+    violation = Violation(rule_description="Rule A", severity=Severity.HIGH, message="Error")
+
+    check_output = format_check_run_output([violation])
+    alert = format_violation_regression_alert("a review was submitted by @coderabbitai", [violation], [], [violation])
+
+    assert parse_violations_state_marker(check_output["text"]) == [{"id": "Rule A", "severity": "high"}]
+    assert "New **high** violation: Rule A" in alert
+    assert "Watchflow Rules** in Checks" in alert
+    assert parse_violations_state_marker(alert) == [{"id": "Rule A", "severity": "high"}]
 
 
 def test_format_violations_comment_no_hash_marker_when_not_provided():

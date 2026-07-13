@@ -44,7 +44,7 @@ We built it for teams that still care about traceability, CODEOWNERS, and review
 - **Condition-based rules** — `require_linked_issue`, `max_lines`, `require_code_owner_reviewers`, `no_force_push`, title patterns, approvals, labels, and more.
 - **CODEOWNERS-aware** — Require owners for modified paths to be requested as reviewers; or require every changed path to have an owner.
 - **Webhook-native** — Uses GitHub delivery IDs so handler and processor both run; comments and check runs stay in sync.
-- **Install-flow friendly** — When no rules file exists, we post a welcome comment with a link to watchflow.dev (installation_id + repo) so you can run analysis and create a rules PR without a PAT.
+- **Install-flow friendly** — When a newly opened PR has no rules file, we post one setup-awareness comment with a link to watchflow.dev (installation_id + repo) so you can run analysis and create a rules PR without a PAT.
 
 ## Quick example
 

@@ -113,24 +113,25 @@ class PullRequestEnricher:
         """Fetch and parse previous acknowledgments from PR comments."""
         try:
             comments = await self.github_client.get_issue_comments(repo, pr_number, installation_id)
-            if not comments:
-                return {}
-
-            acknowledgments = {}
-            for comment in comments:
-                comment_body = comment.get("body", "")
-                commenter = comment.get("user", {}).get("login", "")
-
-                if is_acknowledgment_comment(comment_body):
-                    acknowledged_violations = parse_acknowledgment_comment(comment_body, commenter)
-                    for ack in acknowledged_violations:
-                        if ack.rule_id:
-                            acknowledgments[ack.rule_id] = ack
-
-            return acknowledgments
+            return self.parse_acknowledgments(comments or [])
         except Exception as e:
             logger.error(f"Error fetching acknowledgments: {e}")
             return {}
+
+    def parse_acknowledgments(self, comments: list[dict[str, Any]]) -> dict[str, Acknowledgment]:
+        """Parse acknowledgments from a previously fetched PR-comment snapshot."""
+        acknowledgments = {}
+        for comment in comments:
+            comment_body = comment.get("body", "")
+            commenter = (comment.get("user") or {}).get("login", "")
+
+            if is_acknowledgment_comment(comment_body):
+                acknowledged_violations = parse_acknowledgment_comment(comment_body, commenter)
+                for ack in acknowledged_violations:
+                    if ack.rule_id:
+                        acknowledgments[ack.rule_id] = ack
+
+        return acknowledgments
 
     def prepare_webhook_data(self, task: Any) -> dict[str, Any]:
         """Extract data available in webhook payload."""
