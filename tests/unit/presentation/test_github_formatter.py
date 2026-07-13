@@ -1,7 +1,9 @@
 from src.core.models import Acknowledgment, Severity, Violation
 from src.presentation.github_formatter import (
+    RULES_NOT_CONFIGURED_COMMENT_MARKER,
     format_acknowledgment_summary,
     format_check_run_output,
+    format_rules_not_configured_comment,
     format_violations_comment,
     format_violations_for_check_run,
 )
@@ -84,6 +86,12 @@ def test_format_check_run_output_rules_not_configured():
     assert "Analyze your repository" in output["text"]
     assert f"repo={repo}" in output["text"]
     assert f"installation_id={inst_id}" in output["text"]
+
+
+def test_format_rules_not_configured_comment_includes_deduplication_marker():
+    comment = format_rules_not_configured_comment(repo_full_name="owner/repo", installation_id=123)
+
+    assert comment.startswith(f"{RULES_NOT_CONFIGURED_COMMENT_MARKER}\n")
 
 
 def test_format_acknowledgment_summary():

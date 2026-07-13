@@ -7,7 +7,7 @@ Get Watchflow running in a few minutes: install the app, add `.watchflow/rules.y
 ## What you get
 
 - **Rule evaluation** on every PR and push against your YAML rules.
-- **Check runs** and **PR comments** when rules are violated (or when no rules file exists, a welcome comment with a link to set one up).
+- **Check runs** and **PR comments** when rules are violated (or one setup-awareness comment when a newly opened PR has no rules file).
 - **Acknowledgment** in-thread: `@watchflow acknowledge "reason"` where the rule allows it.
 - **One config file** — `.watchflow/rules.yaml` on the default branch; rules are loaded from there via the GitHub API.
 
@@ -26,15 +26,15 @@ Get Watchflow running in a few minutes: install the app, add `.watchflow/rules.y
 2. Click **Install** and choose the org/repos you want to protect.
 3. Grant the requested permissions (webhooks, repo content for rules and PR data).
 
-Watchflow will start receiving webhooks. If there’s no `.watchflow/rules.yaml` yet, the first PR will get a **welcome comment** with a link to [watchflow.dev](https://watchflow.dev) (including `installation_id` and `repo`) so you can run repo analysis and create a rules PR **without entering a PAT**.
+Watchflow will start receiving webhooks. If a newly opened PR has no `.watchflow/rules.yaml`, it gets one **setup-awareness comment** with a link to [watchflow.dev](https://watchflow.dev) (including `installation_id` and `repo`) so you can run repo analysis and create a rules PR **without entering a PAT**. Later commits and reviews do not repeat it.
 
 ---
 
 ## Step 2: Add rules
 
-**Option A — From the welcome comment (no PAT)**
+**Option A — From the setup-awareness comment (no PAT)**
 
-1. Open a PR (or any PR) and find the Watchflow welcome comment.
+1. Open a new PR and find the Watchflow setup-awareness comment.
 2. Click the link to **watchflow.dev/analyze?installation_id=…&repo=owner/repo**.
 3. Run repo analysis; review suggested rules and click **Create PR** to add `.watchflow/rules.yaml` to a branch.
 

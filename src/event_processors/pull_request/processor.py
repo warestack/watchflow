@@ -1,13 +1,14 @@
+import asyncio
 import hashlib
-import logging
-import re
 import time
 from typing import Any
 
+import structlog
 import yaml
 
 from src.agents import get_agent
 from src.api.recommendations import get_suggested_rules_from_repo
+from src.core.config import config
 from src.core.models import Violation
 from src.event_processors.base import BaseEventProcessor, ProcessingResult
 from src.event_processors.pull_request.enricher import PullRequestEnricher
@@ -17,7 +18,7 @@ from src.rules.ai_rules_scan import is_relevant_pr
 from src.rules.loaders.github_loader import GitHubRuleLoader, RulesFileNotFoundError
 from src.tasks.task_queue import Task
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class PullRequestProcessor(BaseEventProcessor):
@@ -28,6 +29,7 @@ class PullRequestProcessor(BaseEventProcessor):
         self.engine_agent = get_agent("engine")
         self.enricher = PullRequestEnricher(self.github_client)
         self.check_run_manager = CheckRunManager(self.github_client)
+        self._setup_awareness_locks: dict[tuple[str, int], tuple[asyncio.Lock, int]] = {}
 
     def get_event_type(self) -> str:
         return "pull_request"
@@ -156,18 +158,7 @@ class PullRequestProcessor(BaseEventProcessor):
                         conclusion="neutral",
                         error="Rules not configured. Please create `.watchflow/rules.yaml` in your repository.",
                     )
-                # Post welcome comment with instructions and link to watchflow.dev (installation_id as URL param)
-                if pr_number and installation_id:
-                    try:
-                        welcome_comment = github_formatter.format_rules_not_configured_comment(
-                            repo_full_name=repo_full_name,
-                            installation_id=installation_id,
-                        )
-                        await self.github_client.create_pull_request_comment(
-                            repo_full_name, pr_number, welcome_comment, installation_id
-                        )
-                    except Exception as comment_err:
-                        logger.warning(f"Could not post rules-not-configured comment: {comment_err}")
+                await self._post_rules_not_configured_comment(task, pr_number, installation_id)
                 return ProcessingResult(
                     success=True,
                     violations=[],
@@ -216,10 +207,13 @@ class PullRequestProcessor(BaseEventProcessor):
 
             # 3. Check for existing acknowledgments
             previous_acknowledgments = {}
+            comments_snapshot: list[dict[str, Any]] | None = None
             if pr_number:
-                previous_acknowledgments = await self.enricher.fetch_acknowledgments(
+                comments_snapshot = await self.github_client.get_issue_comments(
                     repo_full_name, pr_number, installation_id
                 )
+                if comments_snapshot:
+                    previous_acknowledgments = self.enricher.parse_acknowledgments(comments_snapshot)
                 if previous_acknowledgments:
                     logger.info(f"📋 Found {len(previous_acknowledgments)} previous acknowledgments")
 
@@ -273,7 +267,7 @@ class PullRequestProcessor(BaseEventProcessor):
 
             if violations:
                 logger.info(f"🚨 Found {len(violations)} violations, posting to PR...")
-                await self._post_violations_to_github(task, violations)
+                await self._post_violations_to_github(task, violations, existing_comments=comments_snapshot)
                 api_calls += 1
 
             processing_time = int((time.time() - start_time) * 1000)
@@ -307,7 +301,9 @@ class PullRequestProcessor(BaseEventProcessor):
                 error=str(e),
             )
 
-    async def _post_violations_to_github(self, task: Task, violations: list[Violation]) -> None:
+    async def _post_violations_to_github(
+        self, task: Task, violations: list[Violation], existing_comments: list[dict[str, Any]] | None = None
+    ) -> None:
         """Post violations as comments on the pull request.
 
         Implements comment-level deduplication by checking existing PR comments
@@ -323,7 +319,11 @@ class PullRequestProcessor(BaseEventProcessor):
 
             # Check if identical comment already exists
             if await self._has_duplicate_comment(
-                task.repo_full_name, pr_number, violations_signature, task.installation_id
+                task.repo_full_name,
+                pr_number,
+                violations_signature,
+                task.installation_id,
+                existing_comments=existing_comments,
             ):
                 logger.info(
                     "Skipping duplicate violations comment",
@@ -352,6 +352,72 @@ class PullRequestProcessor(BaseEventProcessor):
         except Exception as e:
             logger.error(f"Error posting violations to GitHub: {e}")
 
+    async def _post_rules_not_configured_comment(self, task: Task, pr_number: int | None, installation_id: int) -> None:
+        """Post one setup-awareness comment for an initially opened PR.
+
+        Missing rules are surfaced in the neutral check run on every relevant
+        event. The timeline comment is onboarding-only, so it must never be
+        repeated after the initial ``pull_request.opened`` delivery.
+        """
+        if not pr_number:
+            return
+
+        if task.payload.get("action") != "opened":
+            logger.info(
+                "setup_awareness_skipped_non_opened",
+                pr_number=pr_number,
+                repo=task.repo_full_name,
+                action=task.payload.get("action"),
+            )
+            return
+
+        lock_key = (task.repo_full_name, pr_number)
+        lock_entry = self._setup_awareness_locks.get(lock_key)
+        if lock_entry is None:
+            lock, waiting_tasks = asyncio.Lock(), 0
+        else:
+            lock, waiting_tasks = lock_entry
+        self._setup_awareness_locks[lock_key] = (lock, waiting_tasks + 1)
+        try:
+            async with lock:
+                existing_comments = await self.github_client.get_issue_comments(
+                    task.repo_full_name, pr_number, installation_id
+                )
+                if existing_comments is None:
+                    logger.warning(
+                        "setup_awareness_skipped_lookup_error", pr_number=pr_number, repo=task.repo_full_name
+                    )
+                    return
+                if self._has_setup_awareness_comment(existing_comments):
+                    logger.info("setup_awareness_skipped_existing", pr_number=pr_number, repo=task.repo_full_name)
+                    return
+
+                welcome_comment = github_formatter.format_rules_not_configured_comment(
+                    repo_full_name=task.repo_full_name,
+                    installation_id=installation_id,
+                )
+                result = await self.github_client.create_pull_request_comment(
+                    task.repo_full_name, pr_number, welcome_comment, installation_id
+                )
+                if result:
+                    logger.info("setup_awareness_posted", pr_number=pr_number, repo=task.repo_full_name)
+                else:
+                    logger.warning("setup_awareness_post_failed", pr_number=pr_number, repo=task.repo_full_name)
+        except Exception as comment_err:
+            logger.warning(
+                "setup_awareness_post_failed",
+                pr_number=pr_number,
+                repo=task.repo_full_name,
+                error=str(comment_err),
+            )
+        finally:
+            current_lock, waiting_tasks = self._setup_awareness_locks.get(lock_key, (lock, 1))
+            if current_lock is lock:
+                if waiting_tasks == 1:
+                    self._setup_awareness_locks.pop(lock_key, None)
+                else:
+                    self._setup_awareness_locks[lock_key] = (lock, waiting_tasks - 1)
+
     def _compute_violations_hash(self, violations: list[Violation]) -> str:
         """Compute a stable hash of violations for deduplication.
 
@@ -373,29 +439,67 @@ class PullRequestProcessor(BaseEventProcessor):
         return hashlib.sha256(signature_string.encode()).hexdigest()[:12]  # Use first 12 chars for readability
 
     async def _has_duplicate_comment(
-        self, repo: str, pr_number: int, violations_hash: str, installation_id: int
+        self,
+        repo: str,
+        pr_number: int,
+        violations_hash: str,
+        installation_id: int,
+        existing_comments: list[dict[str, Any]] | None = None,
     ) -> bool:
         """Check if a comment with the same violations hash already exists.
 
         Looks for the hidden HTML marker in existing comments to detect duplicates.
         """
+        marker = f"<!-- watchflow-violations-hash:{violations_hash} -->"
+        if existing_comments is not None:
+            return self._has_managed_comment_marker_in_comments(existing_comments, marker)
+
+        duplicate = await self._has_managed_comment_marker(repo, pr_number, marker, installation_id)
+        if duplicate is None:
+            logger.warning("Error checking for duplicate comments. Proceeding with post.")
+            # Fail open for violation reporting so an API-read failure does not
+            # hide enforcement feedback.
+            return False
+        return duplicate
+
+    async def _has_managed_comment_marker(
+        self, repo: str, pr_number: int, marker: str, installation_id: int
+    ) -> bool | None:
+        """Return whether Watchflow already posted ``marker`` on this PR.
+
+        ``None`` means the GitHub lookup failed. Callers choose whether that
+        failure should fail open (violations) or fail closed (onboarding).
+        """
         try:
             existing_comments = await self.github_client.get_issue_comments(repo, pr_number, installation_id)
-
-            # Pattern to extract hash from hidden marker: <!-- watchflow-violations-hash:ABC123 -->
-            hash_pattern = re.compile(r"<!-- watchflow-violations-hash:([a-f0-9]+) -->")
-
-            for comment in existing_comments:
-                body = comment.get("body", "")
-                match = hash_pattern.search(body)
-                if match and match.group(1) == violations_hash:
-                    return True
-
-            return False
+            if existing_comments is None:
+                return None
+            return self._has_managed_comment_marker_in_comments(existing_comments, marker)
         except Exception as e:
-            logger.warning(f"Error checking for duplicate comments: {e}. Proceeding with post.")
-            # Fail open: if we can't check, allow posting to avoid blocking
-            return False
+            logger.warning(f"Error checking for managed comment marker: {e}")
+            return None
+
+    @staticmethod
+    def _is_watchflow_comment(comment: dict[str, Any]) -> bool:
+        expected_author = f"{config.github.app_name}[bot]"
+        return (comment.get("user") or {}).get("login", "").lower() == expected_author.lower()
+
+    def _has_managed_comment_marker_in_comments(self, comments: list[dict[str, Any]], marker: str) -> bool:
+        return any(
+            marker in str(comment.get("body") or "") and self._is_watchflow_comment(comment) for comment in comments
+        )
+
+    def _has_setup_awareness_comment(self, comments: list[dict[str, Any]]) -> bool:
+        """Recognize marked comments and the legacy setup message emitted before markers existed."""
+        legacy_heading = "watchflow rules not configured"
+        return any(
+            self._is_watchflow_comment(comment)
+            and (
+                github_formatter.RULES_NOT_CONFIGURED_COMMENT_MARKER in str(comment.get("body") or "")
+                or legacy_heading in str(comment.get("body") or "").lower()
+            )
+            for comment in comments
+        )
 
     async def prepare_webhook_data(self, task: Task) -> dict[str, Any]:
         """Extract data available in webhook payload."""

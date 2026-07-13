@@ -7,7 +7,7 @@ Thanks for considering contributing. Watchflow is a **rule engine** for GitHub�
 ## Direction and scope
 
 - **Rule engine** — Conditions map parameter keys to built-in logic (e.g. `require_linked_issue`, `max_lines`, `require_code_owner_reviewers`). New conditions live in `src/rules/conditions/` and are registered in `src/rules/registry.py` and `src/rules/acknowledgment.py`.
-- **Webhooks** — Delivery ID–based dedup so handler and processor both run; welcome comment when no rules file exists.
+- **Webhooks** — Delivery ID–based dedup so handler and processor both run; one setup-awareness comment on an initially opened PR when no rules file exists.
 - **API** — Repo analysis and proceed-with-PR support `installation_id` so install-flow users don’t need a PAT.
 - **Docs** — All MD files should speak to engineers: direct, no fluff, immune-system framing (Watchflow as necessary governance, not “another AI tool”).
 

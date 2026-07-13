@@ -4,6 +4,8 @@ from typing import Any
 from src.agents.base import AgentResult
 from src.core.models import Acknowledgment, Severity, Violation
 
+RULES_NOT_CONFIGURED_COMMENT_MARKER = "<!-- watchflow:report=rules-not-configured -->"
+
 logger = logging.getLogger(__name__)
 
 SEVERITY_EMOJI = {
@@ -172,6 +174,7 @@ def format_rules_not_configured_comment(
         landing_url = f"https://watchflow.dev/analyze?repo={repo_full_name}"
 
     return (
+        f"{RULES_NOT_CONFIGURED_COMMENT_MARKER}\n"
         "## ⚙️ Watchflow rules not configured\n\n"
         "No rules file found in your repository. Watchflow can help enforce governance rules for your team.\n\n"
         "**Quick setup:**\n"

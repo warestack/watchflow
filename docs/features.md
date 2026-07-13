@@ -77,7 +77,7 @@ Suggested rules use the **same parameter names** as above so they work out of th
 
 ## Welcome comment when no rules file
 
-When `.watchflow/rules.yaml` is missing and a PR is opened, Watchflow:
+When `.watchflow/rules.yaml` is missing when a PR is initially opened, Watchflow:
 
 1. Creates a **neutral check run** (“Rules not configured”).
 2. Posts a **welcome comment** with:
@@ -86,6 +86,8 @@ When `.watchflow/rules.yaml` is missing and a PR is opened, Watchflow:
    - Note that rules are read from the default branch.
 
 So maintainers get one clear next step instead of a silent skip.
+
+Later commits, reviews, review-thread changes, and re-runs refresh the neutral check run but do not repeat the setup-awareness comment.
 
 ---
 
