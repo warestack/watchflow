@@ -203,6 +203,7 @@ class RuleEngineAgent(BaseAgent):
                 event_types = [et.value if hasattr(et, "value") else str(et) for et in rule.event_types]
                 severity = str(rule.severity.value) if hasattr(rule.severity, "value") else str(rule.severity)
                 rule_id = getattr(rule, "rule_id", None)
+                when = getattr(rule, "when", None)
             else:
                 # It's a dict
                 description = (
@@ -216,6 +217,7 @@ class RuleEngineAgent(BaseAgent):
                 event_types = rule.get("event_types", [])
                 severity = rule.get("severity", "medium")
                 rule_id = rule.get("rule_id")
+                when = None
 
             rule_description = RuleDescription(
                 description=description,
@@ -227,6 +229,7 @@ class RuleEngineAgent(BaseAgent):
                 validator_name=None,  # Will be selected by LLM
                 fallback_to_llm=True,
                 conditions=conditions,
+                when=when,
             )
 
             rule_descriptions.append(rule_description)

@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Conditional rule applicability via `when:` block** (issue #73, PR 1/3) --
+  Rules in `.watchflow/rules.yaml` can now declare a structured `when:` block
+  with named predicates that gate rule evaluation. Supported predicates:
+  `contributor: first_time | trusted`, `pr_count_below: N`, and
+  `files_match: <glob>` (or a list of globs). All predicates must hold for the
+  rule to run; otherwise it is skipped and logged at debug level. Enables
+  stricter checks for first-time contributors and path-scoped rules without an
+  expression parser. Contributor context (merged PR count, first-time flag,
+  trusted flag) is fetched via the GitHub Search API and attached to the
+  enriched event data. Expression-parser support (`and`/`or`/comparisons) and
+  extended predicates (`risk.level`, `contributor.role`) will follow in later
+  PRs.
+
 ### Fixed
 
 - **Stale PR data in CODEOWNERS checks** -- `PullRequestEnricher` now

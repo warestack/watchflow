@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.models import Violation  # noqa: TCH001, TCH002, TC001
 from src.rules.conditions.base import BaseCondition  # noqa: TCH001, TCH002, TC001
-from src.rules.models import Rule  # noqa: TCH001, TCH002, TC001
+from src.rules.models import Rule, RuleWhen  # noqa: TCH001, TCH002, TC001
 
 
 class EngineRequest(BaseModel):
@@ -111,6 +111,9 @@ class RuleDescription(BaseModel):
     validator_name: str | None = Field(default=None, description="Specific validator to use")
     fallback_to_llm: bool = Field(default=True, description="Whether to fallback to LLM if validator fails")
     conditions: list["BaseCondition"] = Field(default_factory=list, description="Attached executable conditions")  # noqa: UP037
+    when: RuleWhen | None = Field(
+        default=None, description="Optional predicate block for conditional rule applicability"
+    )
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

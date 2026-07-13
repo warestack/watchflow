@@ -13,7 +13,7 @@ from src.core.config import config
 from src.core.models import EventType
 from src.integrations.github import GitHubClient, github_client
 from src.rules.interface import RuleLoader
-from src.rules.models import Rule, RuleAction, RuleSeverity
+from src.rules.models import Rule, RuleAction, RuleSeverity, RuleWhen
 from src.rules.registry import CONDITION_CLASS_TO_RULE_ID, ConditionRegistry
 
 logger = logging.getLogger(__name__)
@@ -113,6 +113,22 @@ class GitHubRuleLoader(RuleLoader):
                 rule_id_val = rid.value
                 break
 
+        # Parse optional `when:` block (structured predicates controlling rule applicability).
+        when_block: RuleWhen | None = None
+        when_data = rule_data.get("when")
+        if when_data is not None:
+            if isinstance(when_data, dict):
+                try:
+                    when_block = RuleWhen(**when_data)
+                except Exception as e:
+                    logger.warning(
+                        f"Invalid `when` block in rule '{rule_data.get('description', 'unknown')}': {e} — ignoring"
+                    )
+            else:
+                logger.warning(
+                    f"`when` block in rule '{rule_data.get('description', 'unknown')}' is not a mapping — ignoring"
+                )
+
         # Actions are optional and not mapped
         actions = []
         if "actions" in rule_data:
@@ -129,6 +145,7 @@ class GitHubRuleLoader(RuleLoader):
             actions=actions,
             parameters=parameters,
             rule_id=rule_id_val,
+            when=when_block,
         )
         return rule
 
